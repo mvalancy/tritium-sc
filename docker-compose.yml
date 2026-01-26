@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  tritium:
+    build: .
+    container_name: tritium
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      # Application code (for development)
+      - ./app:/app/app
+      - ./frontend:/app/frontend
+      # Recordings (read-only)
+      - /mnt/nvme-raid5/mvalancy/sec-cameras:/data:ro
+      # Database (persistent)
+      - tritium_db:/app/data
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:///./data/tritium.db
+      - RECORDINGS_PATH=/data
+      - DEBUG=false
+    # GPU support for future phases
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  # go2rtc for RTSP streaming (Phase 2)
+  # go2rtc:
+  #   image: alexxit/go2rtc
+  #   container_name: go2rtc
+  #   restart: unless-stopped
+  #   network_mode: host
+  #   volumes:
+  #     - ./go2rtc.yaml:/config/go2rtc.yaml:ro
+
+  # MQTT Broker (Phase 4)
+  # mosquitto:
+  #   image: eclipse-mosquitto:2
+  #   container_name: mosquitto
+  #   restart: unless-stopped
+  #   ports:
+  #     - "1883:1883"
+  #     - "9001:9001"
+  #   volumes:
+  #     - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+  #     - mosquitto_data:/mosquitto/data
+  #     - mosquitto_log:/mosquitto/log
+
+volumes:
+  tritium_db:
+  # mosquitto_data:
+  # mosquitto_log:
+
+networks:
+  default:
+    name: tritium

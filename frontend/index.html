@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TRITIUM-SC - Security Camera Intelligence Platform</title>
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Orbitron:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Styles -->
+    <link rel="stylesheet" href="/static/css/cybercore.css">
+    <link rel="stylesheet" href="/static/css/tritium.css">
+
+    <!-- Favicon -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👁️</text></svg>">
+</head>
+<body>
+    <div class="app-container" id="app">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <span class="logo-text glitch" data-text="TRITIUM-SC">TRITIUM-SC</span>
+                <span class="logo-version">v0.1.0</span>
+            </div>
+            <div class="header-status">
+                <div id="nvr-status" class="nvr-status"></div>
+                <div class="system-time" id="system-time">--:--:-- UTC</div>
+                <div class="connection-status">
+                    <span class="connection-dot" id="connection-dot"></span>
+                    <span id="connection-text">CONNECTING</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Sidebar -->
+            <aside class="sidebar">
+                <!-- Channels Section -->
+                <div class="sidebar-section">
+                    <div class="section-header">
+                        <span class="section-title" onclick="toggleSection('channels')">CHANNELS</span>
+                        <button class="btn btn-cyber" style="padding: 2px 8px; font-size: 0.6rem;" onclick="scanNvr()">SCAN</button>
+                    </div>
+                    <ul class="channel-list" id="channel-list">
+                        <!-- Populated by JavaScript -->
+                    </ul>
+                </div>
+
+                <!-- Dates Section -->
+                <div class="sidebar-section">
+                    <div class="section-header" onclick="toggleSection('dates')">
+                        <span class="section-title">DATES</span>
+                        <span class="section-toggle" id="dates-toggle">▼</span>
+                    </div>
+                    <ul class="date-list" id="date-list">
+                        <!-- Populated by JavaScript -->
+                    </ul>
+                </div>
+
+                <!-- Recent Events Section -->
+                <div class="sidebar-section">
+                    <div class="section-header" onclick="toggleSection('events')">
+                        <span class="section-title">RECENT EVENTS</span>
+                        <span class="section-toggle" id="events-toggle">▼</span>
+                    </div>
+                    <ul class="tree-list" id="event-list">
+                        <!-- Populated by JavaScript -->
+                    </ul>
+                </div>
+            </aside>
+
+            <!-- View Area -->
+            <div class="view-area">
+                <!-- View Switcher -->
+                <div class="view-controls" style="padding: var(--space-md); display: flex; gap: var(--space-md); border-bottom: 1px solid rgba(0, 240, 255, 0.2);">
+                    <button class="btn btn-cyber active" onclick="switchView('grid')" id="btn-grid">GRID</button>
+                    <button class="btn btn-cyber" onclick="switchView('player')" id="btn-player">PLAYER</button>
+                    <button class="btn btn-cyber" onclick="switchView('3d')" id="btn-3d">3D VIEW</button>
+                    <div style="flex: 1;"></div>
+                    <select id="grid-size" class="input" style="width: auto; padding: var(--space-xs) var(--space-md);">
+                        <option value="1">1x1</option>
+                        <option value="4" selected>2x2</option>
+                        <option value="6">3x2</option>
+                        <option value="9">3x3</option>
+                    </select>
+                </div>
+
+                <!-- Grid View -->
+                <div class="view-content" id="view-grid">
+                    <div class="video-grid grid-4" id="video-grid">
+                        <!-- Video cells populated by JavaScript -->
+                    </div>
+                </div>
+
+                <!-- Player View -->
+                <div class="view-content hidden" id="view-player">
+                    <div class="player-container">
+                        <div class="player-wrapper">
+                            <video id="main-player" controls></video>
+                        </div>
+                        <div class="player-controls">
+                            <button class="play-btn" id="play-btn" onclick="togglePlay()">▶</button>
+                            <div class="timeline" id="timeline" onclick="seekTo(event)">
+                                <div class="timeline-progress" id="timeline-progress"></div>
+                                <div class="timeline-events" id="timeline-events"></div>
+                            </div>
+                            <div class="time-display">
+                                <span id="current-time">00:00:00</span> / <span id="duration">00:00:00</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3D View -->
+                <div class="view-content hidden" id="view-3d">
+                    <canvas id="three-canvas"></canvas>
+                    <div class="canvas-overlay" style="position: absolute; top: var(--space-md); left: var(--space-md);">
+                        <div class="panel" style="padding: var(--space-sm);">
+                            <span class="text-cyan">3D CAMERA GRID</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Video List (when a date is selected) -->
+                <div class="view-content hidden" id="view-list">
+                    <div class="video-list" id="video-list">
+                        <!-- Populated by JavaScript -->
+                    </div>
+                </div>
+
+                <!-- Empty State -->
+                <div class="view-content hidden" id="view-empty">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📹</div>
+                        <div class="empty-state-title">NO CHANNEL SELECTED</div>
+                        <div class="empty-state-message">
+                            Select a channel from the sidebar to browse recordings or view live streams.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Timeline Bar -->
+                <div class="timeline-bar" id="timeline-bar">
+                    <div class="timeline-header">
+                        <span class="timeline-date" id="timeline-date">SELECT A DATE</span>
+                    </div>
+                    <div class="timeline-track" id="day-timeline">
+                        <!-- Timeline segments populated by JavaScript -->
+                    </div>
+                    <div class="timeline-hours">
+                        <span>00</span>
+                        <span>06</span>
+                        <span>12</span>
+                        <span>18</span>
+                        <span>24</span>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Footer / Command Bar -->
+        <footer class="footer">
+            <div class="command-input">
+                <span class="command-prompt">&gt;</span>
+                <input type="text" id="command-input" placeholder="search: person red jacket yesterday" autocomplete="off">
+                <span class="command-hint">[ENTER]</span>
+            </div>
+        </footer>
+
+        <!-- Notifications Container -->
+        <div class="notification-container" id="notifications"></div>
+    </div>
+
+    <!-- Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <!-- Application Scripts -->
+    <script src="/static/js/app.js"></script>
+    <script src="/static/js/grid.js"></script>
+    <script src="/static/js/player.js"></script>
+</body>
+</html>

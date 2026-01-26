@@ -1,0 +1,46 @@
+# SENTINEL - Security Camera Intelligence Platform
+# Phase 1: Foundation + Cyberpunk UI
+
+# Core Framework
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.6
+jinja2>=3.1.2
+aiofiles>=23.2.1
+pydantic-settings>=2.1.0
+
+# Database
+sqlalchemy>=2.0.25
+aiosqlite>=0.19.0
+
+# Utilities
+python-dotenv>=1.0.0
+loguru>=0.7.2
+httpx>=0.26.0
+
+# ============================================
+# Future Phases (commented out for now)
+# ============================================
+
+# Phase 2: Live Streaming
+# aiortc>=1.6.0
+
+# Phase 3: Detection
+# opencv-python-headless>=4.9.0
+# ultralytics>=8.1.0
+# torch>=2.1.0
+# torchvision>=0.16.0
+# supervision>=0.18.0
+# numpy>=1.26.0
+
+# Phase 4: Integrations
+# aiomqtt>=2.0.0
+
+# Phase 5: LLaVA
+# ollama>=0.1.6
+
+# Phase 6: Whisper
+# openai-whisper>=20231117
+
+# Phase 7: 3D Fusion
+# scipy>=1.11.0

@@ -1,0 +1,119 @@
+# TRITIUM-SC .gitignore
+# Protects secrets, recordings, and generated data
+
+# ==================
+# SECRETS & CONFIG
+# ==================
+.env
+.env.*
+*.env
+config.local.*
+secrets/
+credentials/
+
+# ==================
+# VIDEO RECORDINGS
+# ==================
+# Never commit video footage
+*.mp4
+*.mkv
+*.avi
+*.mov
+*.webm
+channel_*/
+recordings/
+
+# ==================
+# DATABASE
+# ==================
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+tritium.db
+sentinel.db
+
+# ==================
+# CACHE & GENERATED
+# ==================
+.cache/
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Thumbnails and AI cache
+thumbnails/
+vectors.json
+labels.json
+merges.json
+feedback.json
+
+# ==================
+# LOGS
+# ==================
+*.log
+logs/
+/tmp/
+
+# ==================
+# VIRTUAL ENV
+# ==================
+.venv/
+venv/
+env/
+.python-version
+
+# ==================
+# IDE
+# ==================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# ==================
+# BUILD
+# ==================
+dist/
+build/
+*.egg-info/
+.eggs/
+
+# ==================
+# ML MODELS
+# ==================
+# Downloaded at runtime
+*.pt
+*.onnx
+*.engine
+models/
+
+# ==================
+# DOCKER
+# ==================
+# Allow docker-compose.yml but not secrets
+docker-compose.override.yml
+.docker/
+
+# ==================
+# NODE (if frontend grows)
+# ==================
+node_modules/
+package-lock.json
+yarn.lock
+
+# ==================
+# LOCAL ONLY
+# ==================
+# Keep these out of repo
+*.local
+*.local.*
+scratchpad/
+test_videos/
+sample_data/

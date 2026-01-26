@@ -1,0 +1,150 @@
+"""WebSocket endpoints for real-time updates."""
+
+import asyncio
+import json
+from datetime import datetime
+from typing import Set
+
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from loguru import logger
+
+router = APIRouter(prefix="/ws", tags=["websocket"])
+
+
+class ConnectionManager:
+    """Manages WebSocket connections for real-time updates."""
+
+    def __init__(self):
+        self.active_connections: Set[WebSocket] = set()
+        self._lock = asyncio.Lock()
+
+    async def connect(self, websocket: WebSocket):
+        """Accept and register a new WebSocket connection."""
+        await websocket.accept()
+        async with self._lock:
+            self.active_connections.add(websocket)
+        logger.info(f"WebSocket connected. Total connections: {len(self.active_connections)}")
+
+    async def disconnect(self, websocket: WebSocket):
+        """Remove a WebSocket connection."""
+        async with self._lock:
+            self.active_connections.discard(websocket)
+        logger.info(f"WebSocket disconnected. Total connections: {len(self.active_connections)}")
+
+    async def broadcast(self, message: dict):
+        """Broadcast a message to all connected clients."""
+        if not self.active_connections:
+            return
+
+        message_str = json.dumps(message)
+        disconnected = set()
+
+        async with self._lock:
+            for connection in self.active_connections:
+                try:
+                    await connection.send_text(message_str)
+                except Exception as e:
+                    logger.warning(f"Failed to send to websocket: {e}")
+                    disconnected.add(connection)
+
+            # Remove disconnected clients
+            self.active_connections -= disconnected
+
+    async def send_to(self, websocket: WebSocket, message: dict):
+        """Send a message to a specific client."""
+        try:
+            await websocket.send_text(json.dumps(message))
+        except Exception as e:
+            logger.warning(f"Failed to send to websocket: {e}")
+
+
+# Global connection manager
+manager = ConnectionManager()
+
+
+@router.websocket("/live")
+async def websocket_live(websocket: WebSocket):
+    """WebSocket endpoint for live updates (events, alerts, status)."""
+    await manager.connect(websocket)
+
+    # Send initial connection confirmation
+    await manager.send_to(
+        websocket,
+        {
+            "type": "connected",
+            "timestamp": datetime.utcnow().isoformat(),
+            "message": "TRITIUM UPLINK ESTABLISHED",
+        },
+    )
+
+    try:
+        while True:
+            # Handle incoming messages from client
+            data = await websocket.receive_text()
+            try:
+                message = json.loads(data)
+                await handle_client_message(websocket, message)
+            except json.JSONDecodeError:
+                await manager.send_to(
+                    websocket, {"type": "error", "message": "Invalid JSON"}
+                )
+    except WebSocketDisconnect:
+        await manager.disconnect(websocket)
+
+
+async def handle_client_message(websocket: WebSocket, message: dict):
+    """Handle messages from WebSocket clients."""
+    msg_type = message.get("type")
+
+    if msg_type == "ping":
+        await manager.send_to(
+            websocket,
+            {"type": "pong", "timestamp": datetime.utcnow().isoformat()},
+        )
+    elif msg_type == "subscribe":
+        # Subscribe to specific channels/events
+        channels = message.get("channels", [])
+        await manager.send_to(
+            websocket,
+            {"type": "subscribed", "channels": channels},
+        )
+    else:
+        await manager.send_to(
+            websocket,
+            {"type": "error", "message": f"Unknown message type: {msg_type}"},
+        )
+
+
+# Utility functions for broadcasting from other parts of the app
+async def broadcast_event(event_data: dict):
+    """Broadcast a detection event to all clients."""
+    await manager.broadcast(
+        {
+            "type": "event",
+            "data": event_data,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+    )
+
+
+async def broadcast_alert(alert_data: dict):
+    """Broadcast an alert to all clients."""
+    await manager.broadcast(
+        {
+            "type": "alert",
+            "data": alert_data,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+    )
+
+
+async def broadcast_camera_status(camera_id: int, status: str):
+    """Broadcast camera status change."""
+    await manager.broadcast(
+        {
+            "type": "camera_status",
+            "camera_id": camera_id,
+            "status": status,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+    )
