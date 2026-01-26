@@ -18,6 +18,7 @@ from app.routers import cameras_router, videos_router, ws_router
 from app.routers.discovery import router as discovery_router
 from app.routers.ai import router as ai_router
 from app.routers.search import router as search_router
+from app.routers.zones import router as zones_router
 
 
 @asynccontextmanager
@@ -101,6 +102,7 @@ app.include_router(ws_router)
 app.include_router(discovery_router)
 app.include_router(ai_router)
 app.include_router(search_router)
+app.include_router(zones_router)
 
 # Static files
 frontend_path = Path(__file__).parent.parent / "frontend"

@@ -1,6 +1,7 @@
 """Video analyzer for content mapping and timeline generation."""
 
 import json
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -67,6 +68,10 @@ class VideoAnalysis:
     active_time: float = 0.0
     inactive_time: float = 0.0
 
+    # Zone events triggered during analysis
+    zone_events_triggered: int = 0
+    zone_events: list = field(default_factory=list)
+
     # Legacy aliases for compatibility
     @property
     def total_people_seen(self) -> int:
@@ -95,6 +100,7 @@ class VideoAnalysis:
             "active_time": self.active_time,
             "inactive_time": self.inactive_time,
             "key_frames": self.key_frames,
+            "zone_events_triggered": self.zone_events_triggered,
         }
 
 
@@ -106,6 +112,7 @@ class VideoAnalyzer:
         detector: Optional[ObjectDetector] = None,
         sample_rate: int = 15,  # Sample every N frames (2 fps for 30fps video)
         activity_gap: float = 5.0,  # Gap in seconds to consider new segment
+        zone_checker=None,  # Optional ZoneChecker for zone event detection
     ):
         """Initialize video analyzer.
 
@@ -113,27 +120,35 @@ class VideoAnalyzer:
             detector: Object detector to use (creates default if None)
             sample_rate: Sample every Nth frame
             activity_gap: Seconds of no activity before starting new segment
+            zone_checker: Optional ZoneChecker for detecting zone events
         """
         self.detector = detector or ObjectDetector()
         self.sample_rate = sample_rate
         self.activity_gap = activity_gap
+        self.zone_checker = zone_checker
 
     def analyze_video(
         self,
         video_path: Path,
         progress_callback=None,
+        camera_id: Optional[int] = None,
     ) -> VideoAnalysis:
         """Fully analyze a video file.
 
         Args:
             video_path: Path to video file
             progress_callback: Optional callback(current, total, message)
+            camera_id: Optional camera ID for zone checking (auto-detected from path if None)
 
         Returns:
             VideoAnalysis with all detected content
         """
         video_path = Path(video_path)
         logger.info(f"Starting analysis: {video_path.name}")
+
+        # Try to extract camera_id from path if not provided (e.g., channel_01/...)
+        if camera_id is None:
+            camera_id = self._extract_camera_id(video_path)
 
         # Get video metadata
         cap = cv2.VideoCapture(str(video_path))
@@ -143,6 +158,9 @@ class VideoAnalyzer:
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         duration = frame_count / fps
         cap.release()
+
+        # Try to extract video start time from filename
+        video_start_time = self._parse_video_timestamp(video_path.name)
 
         # Track objects with ByteTrack for accurate unique counts
         def on_progress(frame, total):
@@ -155,6 +173,27 @@ class VideoAnalyzer:
             sample_rate=self.sample_rate,
             callback=on_progress,
         )
+
+        # Check zones if zone_checker is available and we have camera_id
+        zone_events = []
+        if self.zone_checker and camera_id is not None:
+            logger.info(f"Checking zones for camera {camera_id}")
+            for fd in frame_detections:
+                if fd.detections:
+                    # Calculate actual timestamp for this frame
+                    frame_timestamp = video_start_time + timedelta(seconds=fd.timestamp) if video_start_time else datetime.now()
+
+                    events = self.zone_checker.check_frame_detections(
+                        camera_id=camera_id,
+                        detections=fd.detections,
+                        timestamp=frame_timestamp,
+                        video_path=str(video_path),
+                        frame_number=fd.frame_number,
+                    )
+                    zone_events.extend(events)
+
+            if zone_events:
+                logger.info(f"Triggered {len(zone_events)} zone events")
 
         # Generate activity segments
         segments = self._generate_segments(frame_detections, fps)
@@ -189,13 +228,63 @@ class VideoAnalyzer:
             active_time=active_time,
             inactive_time=inactive_time,
             key_frames=key_frames,
+            zone_events_triggered=len(zone_events),
+            zone_events=zone_events,
         )
 
         logger.info(f"Analysis complete: {len(segments)} activity segments, "
                    f"{unique_people} unique people (max {max_people}), "
-                   f"{unique_vehicles} unique vehicles (max {max_vehicles})")
+                   f"{unique_vehicles} unique vehicles (max {max_vehicles}), "
+                   f"{len(zone_events)} zone events")
 
         return analysis
+
+    def _extract_camera_id(self, video_path: Path) -> Optional[int]:
+        """Extract camera/channel ID from video path.
+
+        Looks for patterns like 'channel_01', 'CH01', 'cam1', etc.
+        """
+        path_str = str(video_path)
+
+        # Try various patterns
+        patterns = [
+            r'channel_(\d+)',
+            r'CH(\d+)',
+            r'cam(\d+)',
+            r'camera_(\d+)',
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, path_str, re.IGNORECASE)
+            if match:
+                return int(match.group(1))
+
+        return None
+
+    def _parse_video_timestamp(self, filename: str) -> Optional[datetime]:
+        """Parse timestamp from video filename.
+
+        Expected formats:
+        - fragment_02_20260125081651.mp4
+        - 20260125_081651.mp4
+        """
+        # Try to find 14-digit timestamp (YYYYMMDDHHmmss)
+        match = re.search(r'(\d{14})', filename)
+        if match:
+            try:
+                return datetime.strptime(match.group(1), "%Y%m%d%H%M%S")
+            except ValueError:
+                pass
+
+        # Try YYYYMMDD_HHMMSS format
+        match = re.search(r'(\d{8})_(\d{6})', filename)
+        if match:
+            try:
+                return datetime.strptime(f"{match.group(1)}{match.group(2)}", "%Y%m%d%H%M%S")
+            except ValueError:
+                pass
+
+        return None
 
     def _generate_segments(
         self,

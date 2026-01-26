@@ -269,6 +269,11 @@ async function selectChannel(channel) {
     } catch (error) {
         showNotification('ERROR', 'Failed to load dates', 'error');
     }
+
+    // If in zones view, initialize zone editor for this channel
+    if (state.currentView === 'zones' && typeof initZoneEditorForCamera !== 'undefined') {
+        initZoneEditorForCamera(channel);
+    }
 }
 
 function renderDateList(dates) {
@@ -403,6 +408,15 @@ function switchView(view) {
     if (view === '3d' && typeof initThreeJS !== 'undefined') {
         initThreeJS();
     }
+
+    // Initialize zones view if needed
+    if (view === 'zones' && typeof initZonesView !== 'undefined') {
+        initZonesView();
+        // If a channel is selected, initialize zone editor for it
+        if (state.selectedChannel && typeof initZoneEditorForCamera !== 'undefined') {
+            initZoneEditorForCamera(state.selectedChannel);
+        }
+    }
 }
 
 function showEmptyState(message) {
@@ -433,10 +447,25 @@ function showNotification(title, message, type = 'info') {
 // Section Toggle
 function toggleSection(section) {
     const toggle = document.getElementById(`${section}-toggle`);
-    toggle.classList.toggle('collapsed');
+    if (toggle) {
+        toggle.classList.toggle('collapsed');
+    }
 
-    const list = document.getElementById(`${section === 'channels' ? 'channel' : section === 'dates' ? 'date' : 'event'}-list`);
-    list.classList.toggle('hidden');
+    // Map section names to list IDs
+    const listIdMap = {
+        'channels': 'channel-list',
+        'dates': 'date-list',
+        'events': 'event-list',
+        'sidebar-zones': 'sidebar-zone-list',
+    };
+
+    const listId = listIdMap[section];
+    if (listId) {
+        const list = document.getElementById(listId);
+        if (list) {
+            list.classList.toggle('hidden');
+        }
+    }
 }
 
 // Command Input
@@ -492,6 +521,9 @@ function initKeyboardShortcuts() {
                 break;
             case 'd':
                 switchView('3d');
+                break;
+            case 'z':
+                switchView('zones');
                 break;
             case '/':
                 e.preventDefault();

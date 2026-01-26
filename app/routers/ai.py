@@ -313,7 +313,7 @@ async def run_analysis(
                                 embedding=[0.0] * 512,  # Placeholder
                                 metadata={
                                     "thumbnail_id": thumb_id,
-                                    "object_type": class_name,
+                                    "target_type": class_name,
                                     "timestamp": timestamp.isoformat(),
                                     "channel": channel,
                                     "video_path": str(video_path),

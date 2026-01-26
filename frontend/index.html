@@ -61,6 +61,17 @@
                     </ul>
                 </div>
 
+                <!-- Zones Section -->
+                <div class="sidebar-section">
+                    <div class="section-header" onclick="toggleSection('sidebar-zones')">
+                        <span class="section-title">ZONES</span>
+                        <span class="section-toggle" id="sidebar-zones-toggle">▼</span>
+                    </div>
+                    <ul class="tree-list" id="sidebar-zone-list">
+                        <!-- Populated by JavaScript -->
+                    </ul>
+                </div>
+
                 <!-- Recent Events Section -->
                 <div class="sidebar-section">
                     <div class="section-header" onclick="toggleSection('events')">
@@ -80,6 +91,7 @@
                     <button class="btn btn-cyber active" onclick="switchView('grid')" id="btn-grid">GRID</button>
                     <button class="btn btn-cyber" onclick="switchView('player')" id="btn-player">PLAYER</button>
                     <button class="btn btn-cyber" onclick="switchView('3d')" id="btn-3d">3D VIEW</button>
+                    <button class="btn btn-cyber" onclick="switchView('zones')" id="btn-zones">ZONES</button>
                     <div style="flex: 1;"></div>
                     <select id="grid-size" class="input" style="width: auto; padding: var(--space-xs) var(--space-md);">
                         <option value="1">1x1</option>
@@ -121,6 +133,49 @@
                     <div class="canvas-overlay" style="position: absolute; top: var(--space-md); left: var(--space-md);">
                         <div class="panel" style="padding: var(--space-sm);">
                             <span class="text-cyan">3D CAMERA GRID</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Zones View -->
+                <div class="view-content hidden" id="view-zones">
+                    <div class="zones-container" style="display: grid; grid-template-columns: 300px 1fr; height: 100%; gap: var(--space-md); padding: var(--space-md);">
+                        <!-- Zone List Panel -->
+                        <div class="panel" style="overflow-y: auto;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-md);">
+                                <span class="text-cyan" style="font-weight: bold;">MONITORING ZONES</span>
+                                <button class="btn btn-cyber" onclick="startZoneDrawing()" id="btn-draw-zone">+ DRAW</button>
+                            </div>
+                            <div id="zone-list" class="tree-list">
+                                <!-- Zones populated by JavaScript -->
+                            </div>
+                        </div>
+
+                        <!-- Zone Canvas / Camera View -->
+                        <div class="panel" style="position: relative; overflow: hidden;">
+                            <div id="zone-editor-container" style="width: 100%; height: 100%; background: #0a0a0f;">
+                                <div class="empty-state" id="zone-empty-state">
+                                    <div class="empty-state-icon">📍</div>
+                                    <div class="empty-state-title">SELECT A CAMERA</div>
+                                    <div class="empty-state-message">
+                                        Select a camera from the sidebar to draw monitoring zones.<br>
+                                        Zones track specific areas: dumpsters, doors, pathways, etc.
+                                    </div>
+                                </div>
+                                <video id="zone-background-video" style="width: 100%; height: 100%; object-fit: contain; display: none;"></video>
+                                <img id="zone-background-image" style="width: 100%; height: 100%; object-fit: contain; display: none;">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Zone Events Timeline -->
+                    <div class="panel" style="margin: 0 var(--space-md) var(--space-md); padding: var(--space-md); max-height: 200px; overflow-y: auto;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-sm);">
+                            <span class="text-magenta" style="font-weight: bold;">ZONE EVENTS</span>
+                            <span id="zone-event-count" class="text-cyan">0 events</span>
+                        </div>
+                        <div id="zone-events-list" class="tree-list">
+                            <div class="text-muted">Select a zone to view events</div>
                         </div>
                     </div>
                 </div>
@@ -182,5 +237,7 @@
     <script src="/static/js/app.js"></script>
     <script src="/static/js/grid.js"></script>
     <script src="/static/js/player.js"></script>
+    <script src="/static/js/zone-editor.js"></script>
+    <script src="/static/js/zones.js"></script>
 </body>
 </html>

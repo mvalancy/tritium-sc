@@ -322,3 +322,119 @@ async def get_thumbnail(channel: int, date: str, filename: str):
         cv2.imwrite(str(cache_path), frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
 
     return FileResponse(cache_path, media_type="image/jpeg")
+
+
+@router.get("/thumbnail")
+async def get_thumbnail_by_path(path: str, frame: int = 0):
+    """Get thumbnail from any video by path.
+
+    Args:
+        path: Relative path to video from recordings root
+        frame: Frame number to capture (default 0 = first frame)
+    """
+    import cv2
+
+    # Sanitize path to prevent directory traversal
+    if ".." in path:
+        raise HTTPException(status_code=400, detail="Invalid path")
+
+    video_path = settings.recordings_path / path
+    if not video_path.exists():
+        raise HTTPException(status_code=404, detail="Video not found")
+
+    if not str(video_path).endswith(".mp4"):
+        raise HTTPException(status_code=400, detail="Invalid file type")
+
+    # Check cache
+    cache_dir = settings.recordings_path / ".cache" / "thumbnails" / "general"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    # Create cache filename from path hash
+    import hashlib
+    path_hash = hashlib.md5(f"{path}_{frame}".encode()).hexdigest()[:16]
+    cache_path = cache_dir / f"{path_hash}.jpg"
+
+    if not cache_path.exists():
+        # Generate thumbnail
+        cap = cv2.VideoCapture(str(video_path))
+
+        if frame > 0:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame)
+
+        ret, img = cap.read()
+        cap.release()
+
+        if not ret:
+            raise HTTPException(status_code=500, detail="Could not read video frame")
+
+        # Resize to reasonable size for zone editor (keep aspect ratio)
+        height, width = img.shape[:2]
+        max_dim = 1280
+        if width > max_dim or height > max_dim:
+            scale = max_dim / max(width, height)
+            img = cv2.resize(img, (int(width * scale), int(height * scale)))
+
+        cv2.imwrite(str(cache_path), img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+
+    return FileResponse(cache_path, media_type="image/jpeg")
+
+
+@router.get("")
+async def list_recent_videos(channel: Optional[int] = None, limit: int = 10):
+    """List recent videos, optionally filtered by channel.
+
+    Args:
+        channel: Optional channel to filter by
+        limit: Max videos to return (default 10)
+    """
+    videos = []
+
+    if channel is not None:
+        channel_dir = find_channel_dir(channel)
+        if channel_dir:
+            date_dirs = get_date_dirs(channel_dir)
+            for date_str, date_path in date_dirs:
+                for video_file in sorted(date_path.glob("*.mp4"), reverse=True):
+                    stat = video_file.stat()
+                    timestamp = parse_video_timestamp(video_file.name)
+                    videos.append(
+                        VideoFile(
+                            channel=channel,
+                            filename=video_file.name,
+                            path=str(video_file.relative_to(settings.recordings_path)),
+                            size=stat.st_size,
+                            timestamp=timestamp,
+                            date=date_str,
+                        )
+                    )
+                    if len(videos) >= limit:
+                        break
+                if len(videos) >= limit:
+                    break
+    else:
+        # Get from all channels
+        for channel_dir in get_channel_dirs():
+            ch_num = parse_channel_number(channel_dir.name)
+            date_dirs = get_date_dirs(channel_dir)
+            for date_str, date_path in date_dirs:
+                for video_file in sorted(date_path.glob("*.mp4"), reverse=True):
+                    stat = video_file.stat()
+                    timestamp = parse_video_timestamp(video_file.name)
+                    videos.append(
+                        VideoFile(
+                            channel=ch_num,
+                            filename=video_file.name,
+                            path=str(video_file.relative_to(settings.recordings_path)),
+                            size=stat.st_size,
+                            timestamp=timestamp,
+                            date=date_str,
+                        )
+                    )
+                if len(videos) >= limit:
+                    break
+            if len(videos) >= limit:
+                break
+
+    # Sort by timestamp (most recent first) and limit
+    videos.sort(key=lambda v: v.timestamp or datetime.min, reverse=True)
+    return videos[:limit]

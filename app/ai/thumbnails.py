@@ -16,7 +16,7 @@ class ObjectThumbnail:
     """A cropped thumbnail of a detected object."""
 
     thumbnail_id: str  # Hash-based unique ID
-    object_type: str  # "person", "car", "truck", etc.
+    target_type: str  # "person", "car", "truck", etc.
     timestamp: datetime
     channel: int
     video_path: str
@@ -29,7 +29,7 @@ class ObjectThumbnail:
     def to_dict(self) -> dict:
         return {
             "thumbnail_id": self.thumbnail_id,
-            "object_type": self.object_type,
+            "target_type": self.target_type,
             "timestamp": self.timestamp.isoformat(),
             "channel": self.channel,
             "video_path": self.video_path,
@@ -132,7 +132,7 @@ class ThumbnailExtractor:
 
             thumbnails.append(ObjectThumbnail(
                 thumbnail_id=thumbnail_id,
-                object_type=det.class_name,
+                target_type=det.class_name,
                 timestamp=timestamp,
                 channel=channel,
                 video_path=video_path,

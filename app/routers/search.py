@@ -75,7 +75,7 @@ async def list_people(
     """List all detected people with thumbnails."""
     store = get_vector_store()
     results = store.get_all(
-        object_type="person",
+        target_type="person",
         date_from=date_from,
         date_to=date_to,
         limit=limit,
@@ -139,7 +139,7 @@ async def list_vehicles(
     results = []
     for vtype in ["car", "truck", "bus", "motorcycle", "bicycle"]:
         results.extend(store.get_all(
-            object_type=vtype,
+            target_type=vtype,
             date_from=date_from,
             date_to=date_to,
             limit=limit * 2,  # Get extra since we'll merge
@@ -378,8 +378,8 @@ async def get_search_stats():
     for obj_type, count in stats.get("by_type", {}).items():
         # Count how many are primary (not merged into others)
         merged = sum(1 for tid, primary in merges.get("merged_into", {}).items()
-                    if any(m.get("object_type") == obj_type
-                          for m in store.get_all(object_type=obj_type)))
+                    if any(m.get("target_type") == obj_type
+                          for m in store.get_all(target_type=obj_type)))
         unique_counts[obj_type] = count - merged
 
     return {

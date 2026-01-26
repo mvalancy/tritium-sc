@@ -184,7 +184,7 @@ class VectorStore:
         self,
         query_embedding: list[float],
         k: int = 10,
-        object_type: Optional[str] = None,
+        target_type: Optional[str] = None,
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
     ) -> list[tuple[dict, float]]:
@@ -193,7 +193,7 @@ class VectorStore:
         Args:
             query_embedding: Query vector
             k: Number of results to return
-            object_type: Filter by type ("person", "vehicle", etc.)
+            target_type: Filter by type ("person", "vehicle", etc.)
             date_from: Filter by start date (YYYY-MM-DD)
             date_to: Filter by end date (YYYY-MM-DD)
 
@@ -217,7 +217,7 @@ class VectorStore:
             meta = self.data["metadata"][idx]
 
             # Apply filters
-            if object_type and meta.get("object_type") != object_type:
+            if target_type and meta.get("target_type") != target_type:
                 continue
 
             if date_from:
@@ -265,7 +265,7 @@ class VectorStore:
 
     def get_all(
         self,
-        object_type: Optional[str] = None,
+        target_type: Optional[str] = None,
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
         limit: int = 100,
@@ -274,7 +274,7 @@ class VectorStore:
         """Get all thumbnails with optional filters.
 
         Args:
-            object_type: Filter by type
+            target_type: Filter by type
             date_from: Start date filter
             date_to: End date filter
             limit: Max results
@@ -286,7 +286,7 @@ class VectorStore:
         results = []
 
         for meta in self.data["metadata"]:
-            if object_type and meta.get("object_type") != object_type:
+            if target_type and meta.get("target_type") != target_type:
                 continue
 
             if date_from:
@@ -315,7 +315,7 @@ class VectorStore:
         """Get statistics about stored embeddings."""
         type_counts = {}
         for meta in self.data["metadata"]:
-            obj_type = meta.get("object_type", "unknown")
+            obj_type = meta.get("target_type", "unknown")
             type_counts[obj_type] = type_counts.get(obj_type, 0) + 1
 
         return {
