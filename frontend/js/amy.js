@@ -56,16 +56,32 @@ function buildAmyHTML() {
             <div class="amy-panel amy-video-panel">
                 <div class="amy-panel-header">
                     <span class="amy-panel-title">PRIMARY OPTICS</span>
+                    <div class="amy-optics-tabs">
+                        <button class="amy-optics-tab active" data-tab="live" onclick="amySwitchOpticsTab('live')">LIVE</button>
+                        <button class="amy-optics-tab" data-tab="gallery" onclick="amySwitchOpticsTab('gallery')">GALLERY</button>
+                    </div>
                     <span class="amy-video-node" id="amy-video-node">--</span>
                 </div>
-                <div class="amy-video-container" id="amy-video-container">
-                    <div class="amy-no-feed" id="amy-no-feed">
-                        <div class="amy-no-feed-icon">&#x25C9;</div>
-                        <div>NO CAMERA CONNECTED</div>
-                        <div class="amy-no-feed-sub">Waiting for sensor node...</div>
+                <div class="amy-video-container" id="amy-video-container" data-active-tab="live">
+                    <div class="amy-optics-live" id="amy-optics-live">
+                        <div class="amy-no-feed" id="amy-no-feed">
+                            <div class="amy-no-feed-icon">&#x25C9;</div>
+                            <div>NO CAMERA CONNECTED</div>
+                            <div class="amy-no-feed-sub">Waiting for sensor node...</div>
+                        </div>
+                        <img id="amy-video-feed" class="amy-video-feed" style="display:none;"
+                             alt="Amy camera feed">
                     </div>
-                    <img id="amy-video-feed" class="amy-video-feed" style="display:none;"
-                         alt="Amy camera feed">
+                    <div class="amy-optics-gallery" id="amy-optics-gallery" style="display:none;">
+                        <div class="amy-gallery-grid" id="amy-gallery-grid">
+                            <div class="amy-gallery-empty">No photos saved yet</div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Lightbox -->
+                <div class="amy-lightbox" id="amy-lightbox" style="display:none;" onclick="amyCloseLightbox()">
+                    <img id="amy-lightbox-img" class="amy-lightbox-img" alt="Photo">
+                    <div class="amy-lightbox-caption" id="amy-lightbox-caption"></div>
                 </div>
             </div>
 
@@ -91,6 +107,14 @@ function buildAmyHTML() {
                     <div class="amy-stat">
                         <div class="amy-stat-label">NODES</div>
                         <div class="amy-stat-value" id="amy-stat-nodes">0</div>
+                    </div>
+                    <div class="amy-stat">
+                        <div class="amy-stat-label">PAN</div>
+                        <div class="amy-stat-value" id="amy-stat-pan">--</div>
+                    </div>
+                    <div class="amy-stat">
+                        <div class="amy-stat-label">TILT</div>
+                        <div class="amy-stat-value" id="amy-stat-tilt">--</div>
                     </div>
                 </div>
 
@@ -158,6 +182,31 @@ function buildAmyHTML() {
                 </div>
             </div>
         </div>
+
+        <!-- Battlespace Panel -->
+        <div class="amy-panel" style="margin-top: 8px;">
+            <div class="amy-panel-header">
+                <span class="amy-panel-title">BATTLESPACE</span>
+                <span class="text-muted" id="amy-bs-summary" style="font-size: 0.7rem;">0 targets tracked</span>
+            </div>
+            <div style="padding: 8px;">
+                <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                    <button class="btn btn-cyber" onclick="spawnSimTarget('hostile')"
+                            style="flex:1; font-size: 0.7rem; color: #ff2a6d; border-color: #ff2a6d;">SPAWN HOSTILE</button>
+                    <button class="btn btn-cyber" onclick="spawnSimTarget('friendly')"
+                            style="flex:1; font-size: 0.7rem; color: #05ffa1; border-color: #05ffa1;">SPAWN FRIENDLY</button>
+                </div>
+                <div id="amy-bs-targets" style="max-height: 180px; overflow-y: auto; font-size: 0.75rem; font-family: 'JetBrains Mono', monospace;">
+                    <span class="text-muted">No simulation targets</span>
+                </div>
+                <div style="margin-top: 8px; border-top: 1px solid rgba(0,240,255,0.15); padding-top: 8px;">
+                    <div style="font-size: 0.7rem; color: var(--cyan); margin-bottom: 4px;">DISPATCH LOG</div>
+                    <div id="amy-dispatch-log" style="max-height: 120px; overflow-y: auto; font-size: 0.7rem; font-family: 'JetBrains Mono', monospace;">
+                        <span class="text-muted">No dispatch events yet</span>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
     `;
 }
@@ -176,6 +225,40 @@ async function fetchAmyStatus() {
     } catch {
         updateAmyOffline();
     }
+
+    // Check for active scenario video first, fall back to node video
+    const scenarioActive = await checkScenarioVideo();
+    if (!scenarioActive) {
+        startAmyVideo(amyState.nodes);
+    }
+}
+
+async function checkScenarioVideo() {
+    try {
+        const resp = await fetch('/api/scenarios/active');
+        if (!resp.ok) return false;
+        const data = await resp.json();
+        if (data.run_id) {
+            const key = `scenario:${data.run_id}`;
+            if (amyState.videoNode === key) return true;
+            amyState.videoNode = key;
+            const feed = document.getElementById('amy-video-feed');
+            const noFeed = document.getElementById('amy-no-feed');
+            const nodeLabel = document.getElementById('amy-video-node');
+            if (feed) {
+                feed.src = `/api/scenarios/run/${data.run_id}/video`;
+                feed.style.display = 'block';
+            }
+            if (noFeed) noFeed.style.display = 'none';
+            if (nodeLabel) nodeLabel.textContent = 'SCENARIO';
+            return true;
+        }
+    } catch { /* ignore - scenarios API may not exist */ }
+    // Scenario ended - clear so node video can take over
+    if (amyState.videoNode && amyState.videoNode.startsWith('scenario:')) {
+        amyState.videoNode = null;
+    }
+    return false;
 }
 
 function updateAmyStatus(data) {
@@ -203,6 +286,24 @@ function updateAmyStatus(data) {
         badgeEl.className = 'amy-state-badge amy-state-' + amyState.state;
     }
 
+    // Update pose (PAN/TILT)
+    const panEl = document.getElementById('amy-stat-pan');
+    const tiltEl = document.getElementById('amy-stat-tilt');
+    if (data.pose && panEl && tiltEl) {
+        if (data.pose.calibrated) {
+            panEl.textContent = data.pose.pan_deg !== null ? `${data.pose.pan_deg}°` : '--';
+            tiltEl.textContent = data.pose.tilt_deg !== null ? `${data.pose.tilt_deg}°` : '--';
+        } else {
+            panEl.textContent = data.pose.pan !== null ? `${Math.round(data.pose.pan * 100)}%` : 'CAL';
+            tiltEl.textContent = data.pose.tilt !== null ? `${Math.round(data.pose.tilt * 100)}%` : 'CAL';
+        }
+        panEl.className = 'amy-stat-value' + (data.pose.pan !== null && (data.pose.pan < 0.05 || data.pose.pan > 0.95) ? ' amy-pose-limit' : '');
+        tiltEl.className = 'amy-stat-value' + (data.pose.tilt !== null && (data.pose.tilt < 0.05 || data.pose.tilt > 0.95) ? ' amy-pose-limit' : '');
+    } else if (panEl && tiltEl) {
+        panEl.textContent = '--';
+        tiltEl.textContent = '--';
+    }
+
     // Update auto-chat button
     const acBtn = document.getElementById('amy-btn-autochat');
     if (acBtn) {
@@ -212,8 +313,6 @@ function updateAmyStatus(data) {
     // Update nodes list
     renderAmyNodes(amyState.nodes);
 
-    // Start video if camera available
-    startAmyVideo(amyState.nodes);
 }
 
 function updateAmyOffline() {
@@ -364,6 +463,14 @@ function handleAmyThought(msg) {
         appendChatMessage(data.speaker || 'user', data.text);
     }
 
+    // Dispatch/alert events -> dispatch log
+    if (type === 'dispatch' || type === 'amy_dispatch') {
+        addDispatchLogEntry('dispatch', data);
+    }
+    if (type === 'alert' || type === 'amy_alert') {
+        addDispatchLogEntry('alert', data);
+    }
+
     // Update sensorium on observations
     if (type === 'observation' || type === 'deep_look') {
         fetchSensorium();
@@ -426,7 +533,9 @@ async function amySendChat() {
     if (!text) return;
 
     input.value = '';
-    appendChatMessage('user', text);
+
+    // Don't appendChatMessage locally — the SSE transcript event
+    // from the backend will add it (single source of truth).
 
     try {
         await fetch('/api/amy/chat', {
@@ -464,6 +573,184 @@ async function amyToggleAutoChat() {
         }
     } catch { /* ignore */ }
 }
+
+// --- Optics Tabs ---
+
+function amySwitchOpticsTab(tab) {
+    const tabs = document.querySelectorAll('.amy-optics-tab');
+    tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+
+    const liveEl = document.getElementById('amy-optics-live');
+    const galleryEl = document.getElementById('amy-optics-gallery');
+    const container = document.getElementById('amy-video-container');
+
+    if (tab === 'live') {
+        if (liveEl) liveEl.style.display = '';
+        if (galleryEl) galleryEl.style.display = 'none';
+    } else {
+        if (liveEl) liveEl.style.display = 'none';
+        if (galleryEl) galleryEl.style.display = '';
+        fetchAmyPhotos();
+    }
+    if (container) container.dataset.activeTab = tab;
+}
+
+async function fetchAmyPhotos() {
+    const grid = document.getElementById('amy-gallery-grid');
+    if (!grid) return;
+    try {
+        const resp = await fetch('/api/amy/photos');
+        if (!resp.ok) return;
+        const data = await resp.json();
+        const photos = data.photos || [];
+        if (photos.length === 0) {
+            grid.innerHTML = '<div class="amy-gallery-empty">No photos saved yet</div>';
+            return;
+        }
+        grid.innerHTML = photos.map(p => `
+            <div class="amy-gallery-item" onclick="amyOpenLightbox('${p.filename}', '${escapeHtml(p.reason)}')">
+                <img src="/api/amy/photos/${p.filename}" alt="${escapeHtml(p.reason)}" loading="lazy">
+                <div class="amy-gallery-meta">
+                    <span class="amy-gallery-time">${p.time || ''}</span>
+                    <span class="amy-gallery-reason">${escapeHtml(p.reason)}</span>
+                </div>
+            </div>
+        `).join('');
+    } catch { /* ignore */ }
+}
+
+function amyOpenLightbox(filename, reason) {
+    const lb = document.getElementById('amy-lightbox');
+    const img = document.getElementById('amy-lightbox-img');
+    const cap = document.getElementById('amy-lightbox-caption');
+    if (!lb || !img) return;
+    img.src = `/api/amy/photos/${filename}`;
+    if (cap) cap.textContent = reason || filename;
+    lb.style.display = 'flex';
+}
+
+function amyCloseLightbox() {
+    const lb = document.getElementById('amy-lightbox');
+    if (lb) lb.style.display = 'none';
+}
+
+// --- Battlespace ---
+
+/**
+ * Refresh the battlespace target list from current simTargets data
+ */
+function updateBattlespacePanel() {
+    const targets = (typeof assetState !== 'undefined') ? assetState.simTargets : {};
+    const entries = Object.entries(targets);
+    const total = entries.length;
+    const friendly = entries.filter(([, t]) => (t.alliance || '').toLowerCase() === 'friendly').length;
+    const hostile = entries.filter(([, t]) => (t.alliance || '').toLowerCase() === 'hostile').length;
+
+    const summaryEl = document.getElementById('amy-bs-summary');
+    if (summaryEl) {
+        summaryEl.textContent = `${total} targets tracked (${friendly} friendly, ${hostile} hostile)`;
+    }
+
+    const listEl = document.getElementById('amy-bs-targets');
+    if (!listEl) return;
+
+    if (total === 0) {
+        listEl.innerHTML = '<span class="text-muted">No simulation targets</span>';
+        return;
+    }
+
+    listEl.innerHTML = entries.map(([tid, t]) => {
+        const alliance = (t.alliance || 'unknown').toLowerCase();
+        const color = alliance === 'friendly' ? '#05ffa1'
+            : alliance === 'hostile' ? '#ff2a6d' : '#fcee0a';
+        const posStr = (t.x !== undefined && t.y !== undefined)
+            ? `(${t.x.toFixed(1)}, ${t.y.toFixed(1)})` : '--';
+        const batteryStr = (t.battery !== undefined) ? `${Math.round(t.battery * 100)}%` : '';
+
+        return `<div style="display: flex; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
+            <span style="color: ${color}; font-weight: bold; min-width: 10px;">&#x25CF;</span>
+            <span style="flex: 1; color: ${color};">${escapeHtml(t.name || tid)}</span>
+            <span class="text-muted">${posStr}</span>
+            ${batteryStr ? `<span style="color: #05ffa1;">${batteryStr}</span>` : ''}
+            <button onclick="removeSimTarget('${tid}')" class="btn btn-cyber"
+                    style="padding: 1px 6px; font-size: 0.65rem; color: #ff2a6d; border-color: rgba(255,42,109,0.3);">X</button>
+        </div>`;
+    }).join('');
+}
+
+/**
+ * Spawn a simulation target
+ */
+async function spawnSimTarget(alliance) {
+    try {
+        const resp = await fetch('/api/amy/simulation/spawn', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ alliance }),
+        });
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            throw new Error(err.detail || `HTTP ${resp.status}`);
+        }
+        const data = await resp.json();
+        showNotification('SPAWN', `${alliance.toUpperCase()} target spawned: ${data.name || data.target_id}`, 'success');
+    } catch (e) {
+        showNotification('ERROR', 'Spawn failed: ' + e.message, 'error');
+    }
+}
+
+/**
+ * Remove a simulation target
+ */
+async function removeSimTarget(targetId) {
+    try {
+        const resp = await fetch(`/api/amy/simulation/targets/${targetId}`, { method: 'DELETE' });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        // Remove locally for immediate feedback
+        if (typeof assetState !== 'undefined') {
+            delete assetState.simTargets[targetId];
+        }
+        updateBattlespacePanel();
+        showNotification('REMOVED', `Target ${targetId} destroyed`, 'info');
+    } catch (e) {
+        showNotification('ERROR', 'Remove failed: ' + e.message, 'error');
+    }
+}
+
+function addDispatchLogEntry(type, data) {
+    const log = document.getElementById('amy-dispatch-log');
+    if (!log) return;
+
+    // Clear placeholder
+    const placeholder = log.querySelector('.text-muted');
+    if (placeholder && placeholder.textContent.includes('No dispatch')) placeholder.remove();
+
+    const el = document.createElement('div');
+    el.style.cssText = 'padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.03);';
+    const time = new Date().toLocaleTimeString('en-US', { hour12: false });
+
+    if (type === 'dispatch') {
+        const name = data.name || data.target_id || '?';
+        const dest = data.destination ? `(${data.destination.x.toFixed(1)}, ${data.destination.y.toFixed(1)})` : '?';
+        el.innerHTML = `<span style="color: var(--text-muted);">${time}</span> <span style="color: #05ffa1;">DISPATCH</span> ${escapeHtml(name)} → ${dest}`;
+    } else if (type === 'alert') {
+        const tid = data.target_id || '?';
+        const msg = data.message || '';
+        el.innerHTML = `<span style="color: var(--text-muted);">${time}</span> <span style="color: #fcee0a;">ALERT</span> ${escapeHtml(tid)}: ${escapeHtml(msg)}`;
+    }
+
+    log.appendChild(el);
+    // Keep last 20
+    while (log.children.length > 20) {
+        log.removeChild(log.firstChild);
+    }
+    log.scrollTop = log.scrollHeight;
+}
+
+window.addDispatchLogEntry = addDispatchLogEntry;
+window.updateBattlespacePanel = updateBattlespacePanel;
+window.spawnSimTarget = spawnSimTarget;
+window.removeSimTarget = removeSimTarget;
 
 // --- Utilities ---
 
