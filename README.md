@@ -13,6 +13,8 @@
 
 **[ NERF WAR BATTLESPACE MANAGEMENT ]**
 
+![Tritium-SC WIP satellite battlefield game view](docs/tritium-sc_war-sat.png)
+
 `▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀`
 
 *A garden of diverse digital life — AI that flourishes, machines that act independently*
@@ -39,8 +41,6 @@ TRITIUM-SC is inspired by Fukuoka's "do nothing farming" philosophy. Instead of 
 **Assets** (Nerf turrets, patrol rovers, observation drones) are independent agents. They receive tasks but decide how to execute them. They report what they see. They act on their own initiative when the situation demands it.
 
 The operator doesn't control this system. The operator **tends** it — like a farmer tending a field of diverse crops that feed each other.
-
-![Tritium-SC WIP satellite battlefield game view](docs/tritium-sc_war-sat.png)
 
 ---
 
