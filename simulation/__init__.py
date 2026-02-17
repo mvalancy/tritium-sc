@@ -1,17 +1,21 @@
-"""Battlespace simulation engine — drives simulated targets at 10 Hz.
+"""Backward-compatible re-export — canonical location is simulation/."""
+from simulation.ambient import AmbientSpawner
+from simulation.behaviors import UnitBehaviors
+from simulation.combat import CombatSystem, Projectile
+from simulation.engine import SimulationEngine
+from simulation.game_mode import GameMode, WaveConfig, WAVE_CONFIGS
+from simulation.loader import load_layout
+from simulation.target import SimulationTarget
 
-Package layout:
-  target.py   — SimulationTarget dataclass (entity model + tick physics)
-  engine.py   — SimulationEngine (10 Hz loop, hostile spawner, lifecycle)
-  ambient.py  — AmbientSpawner (neutral neighborhood activity)
-  loader.py   — TritiumLevelFormat JSON loader (static level -> engine)
-
-See docs/SIMULATION.md for the full architecture diagram and design rationale.
-"""
-
-from .ambient import AmbientSpawner
-from .engine import SimulationEngine
-from .loader import load_layout
-from .target import SimulationTarget
-
-__all__ = ["SimulationEngine", "SimulationTarget", "AmbientSpawner", "load_layout"]
+__all__ = [
+    "AmbientSpawner",
+    "CombatSystem",
+    "GameMode",
+    "Projectile",
+    "SimulationEngine",
+    "SimulationTarget",
+    "UnitBehaviors",
+    "WaveConfig",
+    "WAVE_CONFIGS",
+    "load_layout",
+]
