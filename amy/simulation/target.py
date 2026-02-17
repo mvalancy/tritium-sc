@@ -41,7 +41,12 @@ from dataclasses import dataclass, field
 _DRAIN_RATES: dict[str, float] = {
     "rover": 0.001,
     "drone": 0.002,
+    "scout_drone": 0.0025,
     "turret": 0.0005,
+    "heavy_turret": 0.0004,
+    "missile_turret": 0.0003,
+    "tank": 0.0008,
+    "apc": 0.0010,
     "person": 0.0,
     "vehicle": 0.0,
     "animal": 0.0,
@@ -57,6 +62,16 @@ _COMBAT_PROFILES: dict[str, tuple[float, float, float, float, float, bool]] = {
     "person_neutral":   (50.0,  50.0,   0.0, 0.0,  0.0, False),
     "vehicle":          (300.0, 300.0,  0.0, 0.0,  0.0, False),
     "animal":           (30.0,  30.0,   0.0, 0.0,  0.0, False),
+    # Heavy units
+    "tank":             (400.0, 400.0, 25.0, 3.0, 30.0, True),
+    "apc":              (300.0, 300.0, 15.0, 1.0,  8.0, True),
+    "heavy_turret":     (350.0, 350.0, 30.0, 2.5, 25.0, True),
+    "missile_turret":   (200.0, 200.0, 35.0, 5.0, 50.0, True),
+    # Scout variant
+    "scout_drone":      (40.0,  40.0,   8.0, 1.5,  5.0, True),
+    # Hostile variants
+    "hostile_vehicle":  (200.0, 200.0, 12.0, 2.0, 15.0, True),
+    "hostile_leader":   (150.0, 150.0, 10.0, 2.0, 12.0, True),
 }
 
 

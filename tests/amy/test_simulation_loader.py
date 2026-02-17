@@ -180,7 +180,11 @@ class TestLoadLayoutSpecificTypes:
         ("sentry_turret", "turret", 0.0),
         ("recon_drone", "drone", 5.0),
         ("heavy_drone", "drone", 2.5),
-        ("scout_drone", "drone", 4.0),
+        ("scout_drone", "scout_drone", 4.0),
+        ("tank", "tank", 3.0),
+        ("apc", "apc", 5.0),
+        ("heavy_turret", "heavy_turret", 0.0),
+        ("missile_turret", "missile_turret", 0.0),
     ])
     def test_specific_types(self, tmp_path, obj_type, expected_asset, expected_speed):
         bus = SimpleEventBus()
@@ -286,7 +290,10 @@ class TestSampleLayout:
         asset_types = {t.asset_type for t in targets}
         assert "rover" in asset_types
         assert "turret" in asset_types
-        assert "drone" in asset_types
+        assert "scout_drone" in asset_types
+        assert "tank" in asset_types
+        assert "heavy_turret" in asset_types
+        assert "missile_turret" in asset_types
 
     def test_sample_layout_zones(self):
         """Sample layout should contain zone definitions."""

@@ -256,6 +256,17 @@ def start_amy_event_bridge(amy_commander, loop: asyncio.AbstractEventLoop):
                 data = msg.get("data", {})
                 if event_type == "sim_telemetry":
                     batcher.add(data)
+                elif event_type.startswith("amy_"):
+                    # Already has amy_ prefix (e.g. amy_announcement) —
+                    # broadcast directly to avoid double-prefixing.
+                    asyncio.run_coroutine_threadsafe(
+                        manager.broadcast({
+                            "type": event_type,
+                            "data": data,
+                            "timestamp": datetime.utcnow().isoformat(),
+                        }),
+                        loop,
+                    )
                 else:
                     asyncio.run_coroutine_threadsafe(
                         broadcast_amy_event(event_type, data), loop

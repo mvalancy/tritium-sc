@@ -12,6 +12,7 @@
 | [SIMULATION.md](SIMULATION.md) | Simulation engine: target lifecycle, spawners, tick loop |
 | [CONTROLS.md](CONTROLS.md) | Complete keyboard and gamepad control reference |
 | [GAMEPAD.md](GAMEPAD.md) | Gamepad setup, calibration, and troubleshooting |
+| [UI-VIEWS.md](UI-VIEWS.md) | UI view specifications: design intent for every panel, button, and element |
 | [UI-TESTING.md](UI-TESTING.md) | Visual regression testing with Playwright and OpenCV |
 | [WAR-ROOM-UX-REVIEW.md](WAR-ROOM-UX-REVIEW.md) | War Room frontend UX architecture review |
 

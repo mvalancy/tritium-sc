@@ -155,6 +155,54 @@ const EDITOR_ASSETS = {
         simType: 'heavy_drone', simAlliance: 'friendly',
     },
 
+    // --- HEAVY WEAPONS ---
+    tank: {
+        category: 'heavy', label: 'Tank', icon: 'TNK',
+        color: '#05ffa1',
+        influence: { type: 'radius', radius: 25 },
+        config: {
+            range: { label: 'Range', min: 15, max: 40, step: 5, default: 25 },
+        },
+        simType: 'tank', simAlliance: 'friendly',
+    },
+    apc: {
+        category: 'heavy', label: 'APC', icon: 'APC',
+        color: '#05ffa1',
+        influence: { type: 'radius', radius: 15 },
+        config: {
+            range: { label: 'Range', min: 10, max: 25, step: 5, default: 15 },
+        },
+        simType: 'apc', simAlliance: 'friendly',
+    },
+    heavy_turret: {
+        category: 'heavy', label: 'Heavy Turret', icon: 'HVT',
+        color: '#ff2a6d',
+        influence: { type: 'arc', arc: 270, range: 30 },
+        config: {
+            arc: { label: 'Arc', min: 90, max: 360, step: 30, default: 270 },
+            range: { label: 'Range', min: 15, max: 45, step: 5, default: 30 },
+        },
+        simType: 'heavy_turret', simAlliance: 'friendly',
+    },
+    missile_turret: {
+        category: 'heavy', label: 'Missile Turret', icon: 'MSL',
+        color: '#ff2a6d',
+        influence: { type: 'arc', arc: 360, range: 35 },
+        config: {
+            range: { label: 'Range', min: 20, max: 50, step: 5, default: 35 },
+        },
+        simType: 'missile_turret', simAlliance: 'friendly',
+    },
+    scout_drone: {
+        category: 'robots', label: 'Scout Drone', icon: 'SCT',
+        color: '#05ffa1',
+        influence: { type: 'radius', radius: 8 },
+        config: {
+            altitude: { label: 'Altitude', min: 3, max: 15, step: 1, default: 8 },
+        },
+        simType: 'scout_drone', simAlliance: 'friendly',
+    },
+
     // --- INFRASTRUCTURE ---
     sentry_turret: {
         category: 'infrastructure', label: 'Sentry Turret', icon: 'TRT',
@@ -189,6 +237,7 @@ const EDITOR_ASSETS = {
 const EDITOR_CATEGORIES = [
     { key: 'sensors', label: 'SENSORS', color: '#00f0ff' },
     { key: 'robots', label: 'ROBOTS', color: '#05ffa1' },
+    { key: 'heavy', label: 'HEAVY WEAPONS', color: '#ff9800' },
     { key: 'infrastructure', label: 'INFRASTRUCTURE', color: '#ff2a6d' },
 ];
 
@@ -383,6 +432,17 @@ function _drawGhost(ctx) {
     ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
     ctx.font = `${Math.max(7, 8 * Math.min(zoom, 2))}px "JetBrains Mono", monospace`;
     ctx.fillText(`${rot}\u00B0  [R]otate`, sp.x, sp.y + iconRadius + 14);
+
+    // World coordinates
+    ctx.fillStyle = 'rgba(0, 240, 255, 0.4)';
+    ctx.fillText(`${wp.x.toFixed(1)}, ${wp.y.toFixed(1)}m`, sp.x, sp.y + iconRadius + 26);
+
+    // Lat/lng coordinates (if geo engine is initialized)
+    if (typeof geo !== 'undefined' && geo.getGeoState().initialized) {
+        const ll = geo.gameToLatlng(wp.x, wp.y);
+        ctx.fillStyle = 'rgba(5, 255, 161, 0.4)';
+        ctx.fillText(`${ll.lat.toFixed(6)}, ${ll.lng.toFixed(6)}`, sp.x, sp.y + iconRadius + 38);
+    }
 
     ctx.globalAlpha = 1.0;
 }
@@ -674,7 +734,7 @@ function _buildEditorPalette() {
 
         for (const [type, def] of items) {
             html += `<div class="palette-item" data-editor-type="${type}" onclick="warEditorSelectPalette('${type}')">`;
-            html += `<span class="palette-item-icon" style="color: ${def.color};">${def.icon}</span>`;
+            html += `<canvas class="palette-item-thumb" data-thumb-type="${type}" width="36" height="36"></canvas>`;
             html += `<span class="palette-item-label">${def.label}</span>`;
             if (def.influence) {
                 const desc = _influenceDesc(def);
@@ -693,6 +753,210 @@ function _buildEditorPalette() {
     html += '</div>';
 
     container.innerHTML = html;
+    _drawPaletteThumbnails();
+}
+
+// ============================================================
+// Canvas-drawn palette thumbnails
+// ============================================================
+
+function _drawPaletteThumbnails() {
+    const canvases = document.querySelectorAll('canvas.palette-item-thumb');
+    canvases.forEach(cvs => {
+        const type = cvs.dataset.thumbType;
+        const def = EDITOR_ASSETS[type];
+        if (!def) return;
+        const ctx = cvs.getContext('2d');
+        const w = 36, h = 36;
+        const cx = w / 2, cy = h / 2;
+        const color = def.color || '#00f0ff';
+        ctx.clearRect(0, 0, w, h);
+
+        // Neon glow helper
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 4;
+        ctx.strokeStyle = color;
+        ctx.fillStyle = color;
+        ctx.lineWidth = 1.5;
+
+        switch (type) {
+            case 'camera': {
+                // Cyan rectangle body + triangle lens
+                ctx.strokeRect(cx - 8, cy - 5, 16, 10);
+                ctx.beginPath();
+                ctx.moveTo(cx + 8, cy - 3);
+                ctx.lineTo(cx + 14, cy - 6);
+                ctx.lineTo(cx + 14, cy + 6);
+                ctx.lineTo(cx + 8, cy + 3);
+                ctx.closePath();
+                ctx.stroke();
+                break;
+            }
+            case 'ptz_camera': {
+                // Green circle with rotating dot
+                ctx.beginPath();
+                ctx.arc(cx, cy, 9, 0, Math.PI * 2);
+                ctx.stroke();
+                // Inner dot (represents pan position)
+                ctx.beginPath();
+                ctx.arc(cx + 5, cy - 3, 2.5, 0, Math.PI * 2);
+                ctx.fill();
+                // Crosshair lines
+                ctx.beginPath();
+                ctx.moveTo(cx - 12, cy); ctx.lineTo(cx - 6, cy);
+                ctx.moveTo(cx + 6, cy); ctx.lineTo(cx + 12, cy);
+                ctx.moveTo(cx, cy - 12); ctx.lineTo(cx, cy - 6);
+                ctx.moveTo(cx, cy + 6); ctx.lineTo(cx, cy + 12);
+                ctx.stroke();
+                break;
+            }
+            case 'dome_camera': {
+                // Half-dome arc + base line
+                ctx.beginPath();
+                ctx.arc(cx, cy + 2, 10, Math.PI, 0);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(cx - 12, cy + 2);
+                ctx.lineTo(cx + 12, cy + 2);
+                ctx.stroke();
+                // Small lens dot
+                ctx.beginPath();
+                ctx.arc(cx, cy - 2, 2, 0, Math.PI * 2);
+                ctx.fill();
+                break;
+            }
+            case 'sentry_turret': {
+                // Magenta pentagon with barrel line
+                const sides = 5, r = 9;
+                ctx.beginPath();
+                for (let i = 0; i < sides; i++) {
+                    const a = (i / sides) * Math.PI * 2 - Math.PI / 2;
+                    const px = cx + Math.cos(a) * r;
+                    const py = cy + Math.sin(a) * r;
+                    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+                }
+                ctx.closePath();
+                ctx.stroke();
+                // Barrel line pointing up
+                ctx.beginPath();
+                ctx.moveTo(cx, cy);
+                ctx.lineTo(cx, cy - 16);
+                ctx.stroke();
+                break;
+            }
+            case 'patrol_rover':
+            case 'interceptor_bot': {
+                // Green rounded rectangle body + two wheel circles
+                const bw = 16, bh = 10, br = 3;
+                ctx.beginPath();
+                ctx.roundRect(cx - bw / 2, cy - bh / 2, bw, bh, br);
+                ctx.stroke();
+                // Wheels
+                ctx.beginPath();
+                ctx.arc(cx - 5, cy + bh / 2 + 2, 3, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.arc(cx + 5, cy + bh / 2 + 2, 3, 0, Math.PI * 2);
+                ctx.stroke();
+                break;
+            }
+            case 'recon_drone':
+            case 'heavy_drone': {
+                // Green diamond + propeller lines
+                const dr = 8;
+                ctx.beginPath();
+                ctx.moveTo(cx, cy - dr);
+                ctx.lineTo(cx + dr, cy);
+                ctx.lineTo(cx, cy + dr);
+                ctx.lineTo(cx - dr, cy);
+                ctx.closePath();
+                ctx.stroke();
+                // Propeller lines (four diagonals)
+                const pl = 5;
+                ctx.beginPath();
+                ctx.moveTo(cx - dr - pl, cy - pl); ctx.lineTo(cx - dr + 1, cy + 1);
+                ctx.moveTo(cx + dr + pl, cy - pl); ctx.lineTo(cx + dr - 1, cy + 1);
+                ctx.moveTo(cx - dr - pl, cy + pl); ctx.lineTo(cx - dr + 1, cy - 1);
+                ctx.moveTo(cx + dr + pl, cy + pl); ctx.lineTo(cx + dr - 1, cy - 1);
+                ctx.stroke();
+                break;
+            }
+            case 'floodlight': {
+                // Yellow triangle beam emanating from a point
+                ctx.beginPath();
+                ctx.moveTo(cx - 2, cy + 8);
+                ctx.lineTo(cx + 2, cy + 8);
+                ctx.lineTo(cx + 12, cy - 10);
+                ctx.lineTo(cx - 12, cy - 10);
+                ctx.closePath();
+                ctx.stroke();
+                // Fill with low alpha
+                ctx.globalAlpha = 0.15;
+                ctx.fill();
+                ctx.globalAlpha = 1.0;
+                break;
+            }
+            case 'motion_sensor': {
+                // Yellow arc waves
+                for (let i = 1; i <= 3; i++) {
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, 4 * i, -Math.PI * 0.6, Math.PI * 0.6);
+                    ctx.stroke();
+                }
+                // Center dot
+                ctx.beginPath();
+                ctx.arc(cx, cy, 2, 0, Math.PI * 2);
+                ctx.fill();
+                break;
+            }
+            case 'microphone_sensor': {
+                // Yellow circle (mic head) + stem
+                ctx.beginPath();
+                ctx.arc(cx, cy - 3, 6, 0, Math.PI * 2);
+                ctx.stroke();
+                // Stem
+                ctx.beginPath();
+                ctx.moveTo(cx, cy + 3);
+                ctx.lineTo(cx, cy + 12);
+                ctx.stroke();
+                // Base
+                ctx.beginPath();
+                ctx.moveTo(cx - 5, cy + 12);
+                ctx.lineTo(cx + 5, cy + 12);
+                ctx.stroke();
+                break;
+            }
+            case 'speaker': {
+                // Speaker cone shape
+                ctx.beginPath();
+                ctx.moveTo(cx - 3, cy - 4);
+                ctx.lineTo(cx - 3, cy + 4);
+                ctx.lineTo(cx + 4, cy + 8);
+                ctx.lineTo(cx + 4, cy - 8);
+                ctx.closePath();
+                ctx.stroke();
+                // Sound waves
+                for (let i = 1; i <= 2; i++) {
+                    ctx.beginPath();
+                    ctx.arc(cx + 4, cy, 4 * i, -Math.PI * 0.4, Math.PI * 0.4);
+                    ctx.stroke();
+                }
+                break;
+            }
+            default: {
+                // Fallback: simple circle with 3-letter icon
+                ctx.beginPath();
+                ctx.arc(cx, cy, 10, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.font = 'bold 8px "JetBrains Mono", monospace';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(def.icon || '???', cx, cy);
+                break;
+            }
+        }
+        ctx.shadowBlur = 0;
+    });
 }
 
 function _influenceDesc(def) {

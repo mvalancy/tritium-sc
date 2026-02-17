@@ -70,6 +70,11 @@ function warHudUpdateGameState(data) {
         warHudHideBeginWarButton();
     }
 
+    // Trigger countdown overlay when entering countdown state
+    if (_hudState.gameState === 'countdown') {
+        warHudShowCountdown(data.countdown || 5);
+    }
+
     // Show score panel during active play
     const scoreEl = document.getElementById('war-score');
     if (scoreEl) {
@@ -346,6 +351,22 @@ function warHudPlayAgain() {
     _hudState.killFeed = [];
     _renderKillFeed();
     _updateScoreDisplay();
+
+    // Reset combat effects
+    if (typeof warCombatReset === 'function') warCombatReset();
+
+    // Reset warState selections and effects
+    if (typeof warState !== 'undefined') {
+        warState.selectedTargets = [];
+        warState.effects = [];
+        warState.dispatchArrows = [];
+        warState.stats.kills = 0;
+        warState.stats.breaches = 0;
+        warState.stats.dispatches = 0;
+    }
+
+    // Re-show BEGIN button after short delay (wait for backend reset)
+    setTimeout(() => warHudShowBeginWarButton(), 500);
 }
 
 // ============================================================

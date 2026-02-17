@@ -269,7 +269,7 @@ async def lifespan(app: FastAPI):
 
             # Re-wire simulation engine to Amy's actual event bus and start
             if sim_engine is not None:
-                sim_engine._event_bus = amy_instance.event_bus
+                sim_engine.set_event_bus(amy_instance.event_bus)
                 sim_engine.start()
                 # If initial mode is "live", pause spawners immediately
                 if amy_instance.mode == "live":

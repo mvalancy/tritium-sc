@@ -21,7 +21,7 @@ def _get_engine(request: Request):
     amy = getattr(request.app.state, "amy", None)
     if amy is None:
         raise HTTPException(503, "Amy not initialized")
-    sim = getattr(amy, "sim_engine", None)
+    sim = getattr(amy, "simulation_engine", None)
     if sim is None:
         raise HTTPException(503, "Simulation engine not available")
     return sim
@@ -42,7 +42,7 @@ async def begin_war(request: Request):
     if state != "setup":
         raise HTTPException(400, f"Cannot begin war in state: {state}")
     engine.begin_war()
-    return {"status": "countdown_started", "wave": 1}
+    return {"status": "countdown_started", "wave": 1, "countdown": 5}
 
 
 @router.post("/reset")
@@ -60,7 +60,7 @@ async def place_unit(unit: PlaceUnit, request: Request):
     if engine.game_mode.state != "setup":
         raise HTTPException(400, "Can only place units during setup")
 
-    from simulation.target import SimulationTarget
+    from amy.simulation.target import SimulationTarget
 
     target = SimulationTarget(
         target_id=f"{unit.asset_type}-{uuid.uuid4().hex[:6]}",

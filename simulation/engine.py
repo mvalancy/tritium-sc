@@ -107,6 +107,17 @@ class SimulationEngine:
         # Wire target_eliminated events back to game mode for scoring
         self._combat_sub_thread: threading.Thread | None = None
 
+    def set_event_bus(self, event_bus: EventBus) -> None:
+        """Replace the EventBus on this engine AND all child subsystems.
+
+        Called by app/main.py after Amy is created so GameMode, CombatSystem,
+        and the engine itself all publish to the same bus that the WebSocket
+        bridge subscribes to.
+        """
+        self._event_bus = event_bus
+        self.combat._event_bus = event_bus
+        self.game_mode._event_bus = event_bus
+
     # -- Target management --------------------------------------------------
 
     def add_target(self, target: SimulationTarget) -> None:
