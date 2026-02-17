@@ -40,6 +40,8 @@ TRITIUM-SC is inspired by Fukuoka's "do nothing farming" philosophy. Instead of 
 
 The operator doesn't control this system. The operator **tends** it — like a farmer tending a field of diverse crops that feed each other.
 
+![Tritium-SC WIP satellite battlefield game view](docs/tritium-sc_war-sat.png)
+
 ---
 
 ## QUICK START
