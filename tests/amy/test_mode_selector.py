@@ -292,6 +292,9 @@ class TestThinkingModeContext:
 # ---------------------------------------------------------------------------
 
 
+pydantic_settings = pytest.importorskip("pydantic_settings")
+
+
 class TestConfigDefault:
     """Verify config has simulation_mode field."""
 

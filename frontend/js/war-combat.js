@@ -568,6 +568,16 @@ function _drawRect(ctx, x, y, w, h, heading, color) {
 }
 
 // ============================================================
+// Reset (called on Play Again)
+// ============================================================
+
+function warCombatReset() {
+    _projectiles.length = 0;
+    _particles.length = 0;
+    _screenEffects.length = 0;
+}
+
+// ============================================================
 // Expose globally
 // ============================================================
 
@@ -582,3 +592,4 @@ window.warCombatDrawHealthBar = warCombatDrawHealthBar;
 window.warCombatDrawWeaponRange = warCombatDrawWeaponRange;
 window.warCombatAddKillStreakEffect = warCombatAddKillStreakEffect;
 window.warCombatDrawTargetShape = warCombatDrawTargetShape;
+window.warCombatReset = warCombatReset;

@@ -73,7 +73,7 @@ const W3D_COLORS = {
     cyan:     0x00f0ff,
     magenta:  0xff2a6d,
     grid:     0x00f0ff,
-    ground:   0x0a0a12,
+    ground:   0x0d0d1a,
     building: 0x1a1a2e,
 };
 
@@ -103,10 +103,11 @@ function initWar3D(container) {
     );
     _setCameraTopDown();
 
-    // Renderer — render into the existing war-canvas element or create one
-    let canvas = container.querySelector('canvas');
+    // Renderer — always create a fresh canvas for WebGL.
+    // The existing war-canvas may already have a 2D context (acquired by
+    // war.js as a fallback), and a canvas with a 2D context cannot be used
+    // for WebGL.  Creating our own avoids the context conflict entirely.
     war3d.renderer = new THREE.WebGLRenderer({
-        canvas: canvas || undefined,
         antialias: true,
         alpha: false,
     });
@@ -115,11 +116,10 @@ function initWar3D(container) {
     war3d.renderer.shadowMap.enabled = true;
     war3d.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-    if (!canvas) {
-        war3d.renderer.domElement.id = 'war-3d-canvas';
-        war3d.renderer.domElement.style.cssText = 'width:100%;height:100%;display:block;';
-        container.prepend(war3d.renderer.domElement);
-    }
+    war3d.renderer.domElement.id = 'war-3d-canvas';
+    war3d.renderer.domElement.style.cssText =
+        'position:absolute;inset:0;width:100%;height:100%;display:block;cursor:crosshair;z-index:1;';
+    container.prepend(war3d.renderer.domElement);
 
     // Raycaster
     war3d.raycaster = new THREE.Raycaster();
@@ -265,11 +265,11 @@ function _buildGround() {
 }
 
 function _buildGrid() {
-    // Subtle grid matching warState map range
+    // Tactical grid matching warState map range
     const range = 60; // -30 to 30
     const divisions = 12; // 5-unit spacing
     const grid = new THREE.GridHelper(range, divisions, W3D_COLORS.grid, W3D_COLORS.grid);
-    grid.material.opacity = 0.06;
+    grid.material.opacity = 0.15;
     grid.material.transparent = true;
     grid.material.depthWrite = false;
     war3d.gridHelper = grid;
@@ -959,7 +959,7 @@ function _updatePlacingGhost() {
         if (old.geometry) old.geometry.dispose();
     }
 
-    if (typeof warState === 'undefined' || !warState.placingAsset) return;
+    if (typeof editorState === 'undefined' || !editorState.placing) return;
 
     // Convert canvas-local mouse coords to world position via raycasting
     const wp = _canvasToWorld(warState.lastMouse.x, warState.lastMouse.y);

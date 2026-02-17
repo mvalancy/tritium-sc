@@ -63,10 +63,6 @@ const warState = {
     dispatchArrows: [], // { fromX, fromY, toX, toY, time }
     // Alert log
     alertLog: [], // { text, type, time }
-    // Setup mode
-    setupPalette: null,
-    placingAsset: null,
-    placingGhost: null, // { type, worldX, worldY } when confirming
     // Interaction
     isDragging: false,
     isPanning: false,
@@ -95,38 +91,10 @@ const warState = {
     stats: { kills: 0, breaches: 0, dispatches: 0, sessionStart: Date.now() },
     // Audio context (lazy init on first user interaction)
     audioCtx: null,
+    // Satellite tile images for 2D canvas rendering
+    // Array of { image: HTMLImageElement, bounds: { minX, maxX, minY, maxY } }
+    satTiles: [],
 };
-
-// Setup palette categories
-const SETUP_PALETTE = [
-    {
-        title: 'SENSORS',
-        items: [
-            { type: 'camera', label: 'Camera' },
-            { type: 'ptz_camera', label: 'PTZ Camera' },
-            { type: 'dome_camera', label: 'Dome Camera' },
-            { type: 'motion_sensor', label: 'Motion Sensor' },
-            { type: 'microphone_sensor', label: 'Microphone' },
-        ],
-    },
-    {
-        title: 'ROBOTS',
-        items: [
-            { type: 'patrol_rover', label: 'Patrol Rover' },
-            { type: 'interceptor_bot', label: 'Interceptor Bot' },
-            { type: 'recon_drone', label: 'Recon Drone' },
-            { type: 'heavy_drone', label: 'Heavy Drone' },
-        ],
-    },
-    {
-        title: 'INFRASTRUCTURE',
-        items: [
-            { type: 'sentry_turret', label: 'Sentry Turret' },
-            { type: 'speaker', label: 'Speaker' },
-            { type: 'floodlight', label: 'Floodlight' },
-        ],
-    },
-];
 
 // Alliance colors
 const ALLIANCE_COLORS = {
@@ -252,16 +220,27 @@ function initWarView() {
 
     if (!warState.initialized) {
         warState.canvas = document.getElementById('war-canvas');
-        warState.ctx = warState.canvas ? warState.canvas.getContext('2d') : null;
 
-        // Initialize Three.js 3D renderer (war3d.js)
+        // Try Three.js 3D renderer FIRST (before getting 2D context, which
+        // would lock the canvas and prevent WebGL from being created).
+        warState.use3D = false;
         if (typeof initWar3D === 'function') {
-            initWar3D(container);
-            warState.use3D = true;
-            // Hide the 2D canvas — Three.js creates its own
+            try {
+                initWar3D(container);
+                warState.use3D = war3d && war3d.initialized;
+            } catch (e) {
+                console.warn('[WAR] 3D init failed, falling back to 2D:', e);
+                warState.use3D = false;
+            }
+        }
+
+        if (warState.use3D) {
+            // Three.js created its own canvas — hide the 2D fallback
             if (warState.canvas) warState.canvas.style.display = 'none';
-        } else if (!warState.ctx) {
-            return; // no 3D renderer and no 2D context
+        } else {
+            // Fallback: use the existing canvas for 2D rendering
+            warState.ctx = warState.canvas ? warState.canvas.getContext('2d') : null;
+            if (!warState.ctx) return;
         }
 
         // Bind canvas events
@@ -304,6 +283,16 @@ function initWarView() {
     // This fetches the server-side reference point (real lat/lng from config),
     // initializes the frontend geo engine, and loads satellite tiles + buildings.
     _loadGeoReference();
+
+    // Hide the timeline bar — War Room is a full-screen tactical view
+    const timelineBar = document.getElementById('timeline-bar');
+    if (timelineBar) timelineBar.style.display = 'none';
+
+    // Show BEGIN WAR button immediately (default state before API response)
+    // fetchWarState() will update it if game_state says otherwise.
+    if (typeof warHudShowBeginWarButton === 'function') {
+        warHudShowBeginWarButton();
+    }
 
     // Seed the map with current targets so the user does not see a blank
     // screen while waiting for the next WebSocket tick (100ms at best,
@@ -359,6 +348,17 @@ function fetchWarState() {
                     warState.threats[t.target_id] = t;
                 }
             }
+
+            // Seed game state for HUD (BEGIN WAR button)
+            if (typeof warHudUpdateGameState === 'function') {
+                if (data.game_state) {
+                    warHudUpdateGameState(data.game_state);
+                } else {
+                    // game_state null means GameMode not loaded yet —
+                    // default to setup so BEGIN WAR button is visible.
+                    warHudUpdateGameState({ state: 'setup', wave: 0, total_waves: 10, score: 0, total_kills: 0 });
+                }
+            }
         })
         .catch(() => {});
 }
@@ -370,6 +370,10 @@ function destroyWarView() {
     }
     window.removeEventListener('resize', resizeCanvas);
     document.removeEventListener('keydown', warKeyHandler);
+
+    // Restore the timeline bar when leaving War Room
+    const timelineBar = document.getElementById('timeline-bar');
+    if (timelineBar) timelineBar.style.display = '';
 
     // Destroy 3D renderer
     if (warState.use3D && typeof destroyWar3D === 'function') {
@@ -435,6 +439,7 @@ function render() {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     // Draw layers
+    drawSatelliteTiles(ctx);
     drawGrid(ctx);
     drawMapBoundary(ctx);
     drawZones(ctx);
@@ -484,6 +489,33 @@ function drawGrid(ctx) {
         ctx.lineTo(p2.x, p2.y);
         ctx.stroke();
     }
+}
+
+function drawSatelliteTiles(ctx) {
+    const tiles = warState.satTiles;
+    if (!tiles || tiles.length === 0) return;
+
+    ctx.save();
+    ctx.globalAlpha = 0.7;
+
+    for (const tile of tiles) {
+        const b = tile.bounds;
+        // Convert game-coord corners to screen coords.
+        // bounds: minX=west, maxX=east, minY=south, maxY=north
+        const tl = worldToScreen(b.minX, b.maxY); // NW corner
+        const br = worldToScreen(b.maxX, b.minY); // SE corner
+        const sw = br.x - tl.x;
+        const sh = br.y - tl.y;
+
+        if (sw < 1 || sh < 1) continue;
+        // Cull tiles entirely off-screen
+        if (br.x < 0 || tl.x > ctx.canvas.width) continue;
+        if (br.y < 0 || tl.y > ctx.canvas.height) continue;
+
+        ctx.drawImage(tile.image, tl.x, tl.y, sw, sh);
+    }
+
+    ctx.restore();
 }
 
 function drawMapBoundary(ctx) {
@@ -770,21 +802,7 @@ function drawBoxSelect(ctx) {
 }
 
 function drawPlacingGhost(ctx) {
-    if (!warState.placingAsset) return;
-    const wp = screenToWorld(warState.lastMouse.x, warState.lastMouse.y);
-    const sp = worldToScreen(wp.x, wp.y);
-
-    ctx.globalAlpha = 0.5;
-    ctx.fillStyle = '#fcee0a';
-    ctx.beginPath();
-    ctx.arc(sp.x, sp.y, 10, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.globalAlpha = 1.0;
-
-    ctx.fillStyle = 'rgba(252, 238, 10, 0.7)';
-    ctx.font = '10px "JetBrains Mono", monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText(warState.placingAsset.toUpperCase(), sp.x, sp.y - 14);
+    // Ghost rendering handled by war-editor.js _drawGhost() via warEditorDraw(ctx)
 }
 
 function drawMinimap(ctx) {
@@ -997,6 +1015,18 @@ function hitTestTarget(sx, sy) {
 // Mouse events
 // ============================================================
 
+function unbindCanvasEvents() {
+    const canvas = warState._eventCanvas;
+    if (!canvas) return;
+    canvas.removeEventListener('mousedown', onCanvasMouseDown);
+    canvas.removeEventListener('mousemove', onCanvasMouseMove);
+    canvas.removeEventListener('mouseup', onCanvasMouseUp);
+    canvas.removeEventListener('wheel', onCanvasWheel);
+    canvas.removeEventListener('contextmenu', onCanvasContextMenu);
+    canvas.removeEventListener('dblclick', onCanvasDblClick);
+    warState._eventCanvas = null;
+}
+
 function bindCanvasEvents() {
     // Use 3D renderer canvas if available, otherwise the 2D canvas
     const canvas = (warState.use3D && typeof war3d !== 'undefined' && war3d.renderer)
@@ -1055,15 +1085,6 @@ function onCanvasMouseDown(e) {
         // Editor handles placement and asset selection in setup mode
         if (warState.mode === 'setup' && typeof warEditorMouseDown === 'function') {
             if (warEditorMouseDown(sx, sy, e.button, e.shiftKey)) return;
-        }
-
-        if (warState.mode === 'setup' && warState.placingAsset) {
-            // Place asset (use 3D ground projection or 2D screenToWorld)
-            const wp = (warState.use3D && typeof war3dDispatchTo === 'function')
-                ? war3dDispatchTo(e.clientX, e.clientY)
-                : screenToWorld(sx, sy);
-            if (wp) placeSetupAsset(warState.placingAsset, wp.x, wp.y);
-            return;
         }
 
         // Use 3D raycasting if available, otherwise 2D hit test
@@ -1134,7 +1155,7 @@ function onCanvasMouseMove(e) {
         : hitTestTarget(sx, sy);
     const evCanvas = _getEventCanvas();
     evCanvas.style.cursor = warState.hoveredTarget ? 'pointer' :
-        (warState.placingAsset ? 'cell' : 'crosshair');
+        ((typeof editorState !== 'undefined' && editorState.placing) ? 'cell' : 'crosshair');
 }
 
 function onCanvasMouseUp(e) {
@@ -1284,13 +1305,9 @@ function warKeyHandler(e) {
 
     switch (e.key) {
         case 'Escape':
-            if (warState.placingAsset) {
-                warState.placingAsset = null;
-                updateSetupPalette();
-            } else {
-                warState.selectedTargets = [];
-                updateUnitInfo();
-            }
+            // Editor handles ESC for placement cancel via warEditorKey()
+            warState.selectedTargets = [];
+            updateUnitInfo();
             break;
         case 's':
             if (e.ctrlKey) return; // Don't intercept Ctrl+S
@@ -1329,16 +1346,42 @@ function warKeyHandler(e) {
 function setWarMode(mode) {
     const prevMode = warState.mode;
     warState.mode = mode;
-    warState.placingAsset = null;
     updateModeIndicator();
     updateSetupPalette();
 
     if (mode === 'setup') {
+        // Force 2D mode for editor — 3D renderer doesn't draw editor overlays
+        if (warState.use3D) {
+            warState._was3DBeforeSetup = true;
+            warState.use3D = false;
+            if (typeof war3d !== 'undefined' && war3d.renderer) {
+                war3d.renderer.domElement.style.display = 'none';
+            }
+            if (warState.canvas) {
+                warState.canvas.style.display = '';
+                resizeCanvas();
+            }
+            // Rebind events to 2D canvas
+            unbindCanvasEvents();
+            bindCanvasEvents();
+        }
         showSetupPalette(true);
         if (typeof warEditorEnter === 'function') warEditorEnter();
     } else {
         showSetupPalette(false);
         if (prevMode === 'setup' && typeof warEditorExit === 'function') warEditorExit();
+        // Restore 3D mode if it was active before setup
+        if (warState._was3DBeforeSetup) {
+            warState._was3DBeforeSetup = false;
+            warState.use3D = true;
+            if (warState.canvas) warState.canvas.style.display = 'none';
+            if (typeof war3d !== 'undefined' && war3d.renderer) {
+                war3d.renderer.domElement.style.display = '';
+            }
+            // Rebind events to 3D canvas
+            unbindCanvasEvents();
+            bindCanvasEvents();
+        }
     }
 
     warAddAlert(`Mode: ${mode.toUpperCase()}`, 'info');
@@ -1422,34 +1465,6 @@ function dispatchSelectedTargets(worldX, worldY) {
 // ============================================================
 // Setup mode
 // ============================================================
-
-function placeSetupAsset(assetType, worldX, worldY) {
-    const name = `${assetType}-${Date.now().toString(36).slice(-4)}`;
-
-    fetch('/api/amy/simulation/spawn', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            name: name,
-            asset_type: assetType,
-            alliance: 'friendly',
-            position: { x: worldX, y: worldY },
-        }),
-    }).then(res => {
-        if (res.ok) {
-            warAddAlert(`Placed ${assetType} at (${worldX.toFixed(1)}, ${worldY.toFixed(1)})`, 'info');
-            warPlaySound('place');
-            if (typeof showNotification === 'function') {
-                showNotification('PLACED', `${assetType} deployed`, 'success');
-            }
-        } else {
-            warAddAlert(`Failed to place ${assetType}`, 'hostile');
-        }
-    }).catch(err => {
-        console.error('[WAR] Spawn failed:', err);
-        warAddAlert('Spawn failed', 'hostile');
-    });
-}
 
 function removeSelectedSetup() {
     for (const tid of warState.selectedTargets) {
@@ -1631,33 +1646,11 @@ function updateUnitInfo() {
 // ============================================================
 
 function buildSetupPalette() {
-    const el = document.getElementById('war-setup-palette');
-    if (!el) return;
-
-    let html = '<div style="font-size: 0.65rem; letter-spacing: 2px; color: #fcee0a; margin-bottom: 8px; font-weight: 600;">DEPLOY ASSETS</div>';
-
-    for (const cat of SETUP_PALETTE) {
-        html += `<div class="palette-category">
-            <div class="palette-category-title">${cat.title}</div>`;
-        for (const item of cat.items) {
-            html += `<div class="palette-item" data-type="${item.type}" onclick="selectPaletteItem('${item.type}')">${item.label}</div>`;
-        }
-        html += '</div>';
-    }
-
-    el.innerHTML = html;
-}
-
-function selectPaletteItem(type) {
-    warState.placingAsset = type;
-    updateSetupPalette();
+    // Rich palette built by war-editor.js _buildEditorPalette() on first setup entry
 }
 
 function updateSetupPalette() {
-    const items = document.querySelectorAll('#war-setup-palette .palette-item');
-    items.forEach(item => {
-        item.classList.toggle('selected', item.dataset.type === warState.placingAsset);
-    });
+    // Palette selection managed by war-editor.js _updatePaletteSelection()
 }
 
 function showSetupPalette(show) {
@@ -2157,27 +2150,58 @@ function _loadGeoReference() {
     fetch('/api/geo/reference')
         .then(r => r.ok ? r.json() : null)
         .then(data => {
-            if (!data || !data.initialized) return;
-
-            // Initialize frontend geo engine with the server's reference
-            geo.initGeo(data.lat, data.lng);
-
-            // Update address bar to show the reference
-            const input = document.getElementById('war-address-input');
-            const statusEl = document.getElementById('war-address-status');
-            if (input && !input.value.trim()) {
-                input.value = `${data.lat.toFixed(6)}, ${data.lng.toFixed(6)}`;
+            if (data && data.initialized) {
+                // Server has a configured reference — use it
+                _applyGeoReference(data.lat, data.lng, 'config');
+                return;
             }
-            if (statusEl) statusEl.textContent = `Reference: ${data.lat.toFixed(6)}, ${data.lng.toFixed(6)}`;
 
-            warAddAlert(`Geo reference loaded: ${data.lat.toFixed(4)}, ${data.lng.toFixed(4)}`, 'info');
+            // No server reference — try browser geolocation as fallback
+            if (typeof geo.initGeoFromBrowser === 'function') {
+                geo.initGeoFromBrowser()
+                    .then(result => {
+                        // Set the browser location as server reference so
+                        // simulation targets get real lat/lng
+                        fetch('/api/geo/reference', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ lat: result.lat, lng: result.lng }),
+                        }).catch(() => {});
 
-            // Load satellite tiles and buildings
-            _loadMapData(data.lat, data.lng);
+                        _applyGeoReference(result.lat, result.lng, 'browser');
+                    })
+                    .catch(err => {
+                        console.warn('[WAR] Browser geolocation denied:', err.message);
+                    });
+            }
         })
         .catch(err => {
             console.warn('[WAR] Geo reference fetch failed:', err);
         });
+}
+
+/**
+ * Apply a geo reference: init frontend geo engine, update HUD, load map data.
+ * @param {number} lat
+ * @param {number} lng
+ * @param {string} source - 'config', 'browser', or 'address'
+ */
+function _applyGeoReference(lat, lng, source) {
+    geo.initGeo(lat, lng);
+
+    // Update address bar to show the reference
+    const input = document.getElementById('war-address-input');
+    const statusEl = document.getElementById('war-address-status');
+    const label = source === 'browser' ? 'Browser location' : 'Reference';
+    if (input && !input.value.trim()) {
+        input.value = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+    }
+    if (statusEl) statusEl.textContent = `${label}: ${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+
+    warAddAlert(`Geo ${source}: ${lat.toFixed(4)}, ${lng.toFixed(4)}`, 'info');
+
+    // Load satellite tiles and buildings
+    _loadMapData(lat, lng);
 }
 
 // Load satellite tiles + building footprints for the given center.
@@ -2189,6 +2213,9 @@ function _loadMapData(lat, lng) {
     geo.loadSatelliteTiles(lat, lng, radiusMeters, zoom)
         .then(tiles => {
             if (tiles.length === 0) return;
+            // Store raw tiles for 2D canvas renderer
+            warState.satTiles = tiles;
+            // Composite for 3D renderer ground texture
             const canvas = _compositeTiles(tiles, radiusMeters);
             if (canvas && typeof war3dSetGroundTexture === 'function') {
                 war3dSetGroundTexture(canvas);
@@ -2225,7 +2252,6 @@ window.warHandleAmySpeech = warHandleAmySpeech;
 window.warHandleAmyThought = warHandleAmyThought;
 window.warHandleSimTelemetry = warHandleSimTelemetry;
 window.warHandleTargetNeutralized = warHandleTargetNeutralized;
-window.selectPaletteItem = selectPaletteItem;
 // Game combat event handlers
 window.warHandleProjectileFired = warHandleProjectileFired;
 window.warHandleProjectileHit = warHandleProjectileHit;

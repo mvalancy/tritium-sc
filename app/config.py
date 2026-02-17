@@ -57,7 +57,7 @@ class Settings(BaseSettings):
 
     # Simulation engine
     simulation_enabled: bool = True
-    simulation_layout: str = ""
+    simulation_layout: str = "scenarios/neighborhood_default.json"
     simulation_mode: str = "sim"  # "sim" or "live" — controls Amy's tactical data source
 
     # Amy AI Commander

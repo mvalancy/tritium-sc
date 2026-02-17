@@ -370,7 +370,17 @@ async def sim_spawn(request: Request, body: SpawnRequest):
     else:
         from .simulation.target import SimulationTarget
         import uuid
-        _SPEEDS = {"rover": 2.0, "drone": 4.0, "turret": 0.0, "person": 1.5}
+        _SPEEDS = {
+            "rover": 2.0, "drone": 4.0, "turret": 0.0, "person": 1.5,
+            "tank": 1.5, "apc": 2.5, "heavy_turret": 0.0,
+            "missile_turret": 0.0, "scout_drone": 5.0,
+            "camera": 0.0, "ptz_camera": 0.0, "dome_camera": 0.0,
+            "motion_sensor": 0.0, "microphone_sensor": 0.0,
+            "speaker": 0.0, "floodlight": 0.0,
+            "patrol_rover": 2.0, "interceptor_bot": 3.0,
+            "recon_drone": 4.0, "heavy_drone": 3.0,
+            "sentry_turret": 0.0,
+        }
         target = SimulationTarget(
             target_id=str(uuid.uuid4()),
             name=body.name or f"Unit-{len(engine.get_targets()) + 1}",
@@ -378,7 +388,9 @@ async def sim_spawn(request: Request, body: SpawnRequest):
             asset_type=body.asset_type,
             position=pos or (0.0, 0.0),
             speed=_SPEEDS.get(body.asset_type, 2.0),
+            status="stationary" if _SPEEDS.get(body.asset_type, 2.0) == 0.0 else "idle",
         )
+        target.apply_combat_profile()
         engine.add_target(target)
 
     return {"status": "ok", "target": target.to_dict()}
@@ -615,6 +627,14 @@ async def war_state(request: Request):
     # Thoughts
     recent_thoughts = amy.sensorium.recent_thoughts[-5:] if amy.sensorium else []
 
+    # Game state from game mode (wave controller, score, etc.)
+    game_state = None
+    engine = getattr(amy, "simulation_engine", None)
+    if engine is not None:
+        game_mode = getattr(engine, "game_mode", None)
+        if game_mode is not None:
+            game_state = game_mode.get_state()
+
     return {
         "targets": targets,
         "threats": threats,
@@ -622,4 +642,5 @@ async def war_state(request: Request):
         "dispatches": dispatches,
         "amy": amy_state,
         "thoughts": recent_thoughts,
+        "game_state": game_state,
     }

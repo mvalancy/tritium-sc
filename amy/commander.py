@@ -1593,11 +1593,12 @@ class Commander:
 
         self.curiosity_timer.start()
 
+        self._running = True
+
         # Start target tracker bridge (feeds sim telemetry + YOLO detections)
+        # NOTE: _running must be True BEFORE thread starts — thread loop checks it
         self._sim_bridge_thread.start()
         print("  Target tracker bridge: running")
-
-        self._running = True
 
         # Greeting — BEFORE audio thread starts, so the ALSA device is free
         # for aplay (BCC950 mic and speaker share one USB card).

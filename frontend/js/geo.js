@@ -249,6 +249,36 @@ function _estimateBuildingHeight(tags) {
 }
 
 // ---------------------------------------------------------------------------
+// Browser geolocation
+// ---------------------------------------------------------------------------
+
+/**
+ * Initialize geo from the browser's Geolocation API.
+ * Falls back to the server-side reference point if the browser denies access.
+ * @returns {Promise<{lat: number, lng: number, source: string}>}
+ */
+function initGeoFromBrowser() {
+    return new Promise((resolve, reject) => {
+        if (!navigator.geolocation) {
+            reject(new Error('Geolocation API not available'));
+            return;
+        }
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                const lat = position.coords.latitude;
+                const lng = position.coords.longitude;
+                initGeo(lat, lng);
+                resolve({ lat, lng, source: 'browser' });
+            },
+            (err) => {
+                reject(new Error(`Browser geolocation denied: ${err.message}`));
+            },
+            { enableHighAccuracy: true, timeout: 8000, maximumAge: 300000 }
+        );
+    });
+}
+
+// ---------------------------------------------------------------------------
 // Utility
 // ---------------------------------------------------------------------------
 
@@ -279,6 +309,7 @@ window.geo = {
     TILE_SIZE,
     initGeo,
     initGeoFromAddress,
+    initGeoFromBrowser,
     latlngToGame,
     gameToLatlng,
     tileForLatlng,

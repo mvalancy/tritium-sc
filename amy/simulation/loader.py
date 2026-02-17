@@ -54,7 +54,15 @@ _SPECIFIC_TYPES: dict[str, tuple[str, str, float]] = {
     "sentry_turret": ("friendly", "turret", 0.0),
     "recon_drone": ("friendly", "drone", 5.0),
     "heavy_drone": ("friendly", "drone", 2.5),
-    "scout_drone": ("friendly", "drone", 4.0),
+    "scout_drone": ("friendly", "scout_drone", 4.0),
+    # Heavy units
+    "tank": ("friendly", "tank", 3.0),
+    "apc": ("friendly", "apc", 5.0),
+    "heavy_turret": ("friendly", "heavy_turret", 0.0),
+    "missile_turret": ("friendly", "missile_turret", 0.0),
+    # Hostile variants
+    "hostile_vehicle": ("hostile", "hostile_vehicle", 6.0),
+    "hostile_leader": ("hostile", "hostile_leader", 1.8),
 }
 
 

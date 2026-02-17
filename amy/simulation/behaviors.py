@@ -58,9 +58,15 @@ class UnitBehaviors:
         for tid, t in friendlies.items():
             if t.asset_type == "turret":
                 self._turret_behavior(t, hostiles)
+            elif t.asset_type in ("heavy_turret", "missile_turret"):
+                self._turret_behavior(t, hostiles)
             elif t.asset_type == "drone":
                 self._drone_behavior(t, hostiles)
+            elif t.asset_type in ("scout_drone",):
+                self._drone_behavior(t, hostiles)
             elif t.asset_type == "rover":
+                self._rover_behavior(t, hostiles)
+            elif t.asset_type in ("tank", "apc"):
                 self._rover_behavior(t, hostiles)
 
         for tid, t in hostiles.items():

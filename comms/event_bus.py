@@ -19,7 +19,12 @@ class EventBus:
         self._lock = threading.Lock()
         self._subscribers: list[queue.Queue] = []
 
-    def subscribe(self) -> queue.Queue:
+    def subscribe(self, _filter: str | None = None) -> queue.Queue:
+        """Subscribe to events. Returns a Queue that receives all events.
+
+        The optional ``_filter`` parameter is accepted for API compatibility
+        but is currently ignored — the caller must filter events itself.
+        """
         q: queue.Queue = queue.Queue(maxsize=100)
         with self._lock:
             self._subscribers.append(q)
@@ -41,4 +46,14 @@ class EventBus:
                 try:
                     q.put_nowait(msg)
                 except queue.Full:
-                    pass
+                    # Drop oldest message to make room — ensures fresh events
+                    # (game state changes, wave starts) are never silently lost
+                    # when high-frequency telemetry fills the queue.
+                    try:
+                        q.get_nowait()
+                    except queue.Empty:
+                        pass
+                    try:
+                        q.put_nowait(msg)
+                    except queue.Full:
+                        pass
