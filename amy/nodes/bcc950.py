@@ -7,7 +7,9 @@ Uses the bcc950 Python package and optional native C++ backend.
 
 from __future__ import annotations
 
+import glob
 import os
+import subprocess
 import threading
 import time
 
@@ -15,6 +17,24 @@ import cv2
 import numpy as np
 
 from .base import SensorNode, Position
+
+
+def _find_bcc950_device() -> str | None:
+    """Scan /dev/video* for the BCC950 by V4L2 device name.
+
+    Device numbers shift after USB replug, so we can't assume /dev/video0.
+    """
+    for dev in sorted(glob.glob("/dev/video*")):
+        try:
+            r = subprocess.run(
+                ["v4l2-ctl", "-d", dev, "--info"],
+                capture_output=True, text=True, timeout=2,
+            )
+            if "BCC950" in r.stdout:
+                return dev
+        except Exception:
+            continue
+    return None
 
 
 class FrameBuffer:
@@ -122,25 +142,32 @@ class BCC950Node(SensorNode):
 
     def start(self) -> None:
         from bcc950 import BCC950Controller, MotionVerifier
+        import sys
+
+        # Auto-detect device if not specified
+        device = self._device
+        if device is None:
+            device = _find_bcc950_device()
+            if device is None:
+                raise RuntimeError("BCC950 camera not found")
+        print(f"        [bcc950] device: {device}", flush=True)
 
         # Init controller with optional native backend
         try:
             from bcc950.native_backend import NativeV4L2Backend, is_available
             if is_available():
                 backend = NativeV4L2Backend()
-                self._controller = BCC950Controller(device=self._device, backend=backend)
+                self._controller = BCC950Controller(device=device, backend=backend)
+                print("        [bcc950] native backend", flush=True)
             else:
-                self._controller = BCC950Controller(device=self._device)
+                self._controller = BCC950Controller(device=device)
+                print("        [bcc950] v4l2-ctl backend", flush=True)
         except ImportError:
-            self._controller = BCC950Controller(device=self._device)
+            self._controller = BCC950Controller(device=device)
+            print("        [bcc950] v4l2-ctl backend (fallback)", flush=True)
 
-        if self._device is None:
-            found = self._controller.find_camera()
-            if not found:
-                raise RuntimeError("BCC950 camera not found")
-
-        self._controller.reset_position()
-        time.sleep(0.5)
+        # Skip reset_position on boot — v4l2-ctl can block in uvicorn
+        print("        [bcc950] position: using current", flush=True)
 
         # Open video capture
         self._cap = cv2.VideoCapture(self._controller.device)
@@ -174,7 +201,10 @@ class BCC950Node(SensorNode):
 
     def _setup_audio(self) -> None:
         """Detect BCC950 mic and determine native sample rate."""
-        import sounddevice as sd
+        try:
+            import sounddevice as sd
+        except ImportError:
+            return
 
         if self._audio_device is None:
             for i, dev in enumerate(sd.query_devices()):

@@ -114,7 +114,11 @@ def search_scan(node: SensorNode) -> MotorProgram:
 
 
 def track_person(target_fn) -> MotorProgram:
-    """Track a person detected by YOLO — keeps camera centered."""
+    """Track a person detected by YOLO — keeps camera centered.
+
+    Uses adaptive motor speed: gentle corrections when nearly centered,
+    aggressive when far off-center.
+    """
     while True:
         target = target_fn()
         if target is None:
@@ -136,16 +140,106 @@ def track_person(target_fn) -> MotorProgram:
 
         if pan != 0 or tilt != 0:
             offset = max(abs(cx - 0.5), abs(cy - 0.5))
-            duration = 0.05 + offset * 0.2
-            yield MotorCommand(pan_dir=pan, tilt_dir=tilt, duration=duration, pause_after=0.15)
+            # Adaptive speed: gentle near center, aggressive at edges
+            duration = 0.03 + offset * 0.35
+            pause = 0.08 + (1.0 - offset) * 0.12
+            yield MotorCommand(pan_dir=pan, tilt_dir=tilt, duration=duration, pause_after=pause)
         else:
             yield MotorCommand(pause_after=0.3)
 
 
-def auto_track(node: SensorNode, target_fn) -> MotorProgram:
-    """Track person when visible, scan when not. Default behavior."""
+def head_shake(node: SensorNode) -> MotorProgram:
+    """Two pan left-right cycles — disagreement or disbelief."""
+    for _ in range(2):
+        pos = node.get_position()
+        if pos.can_pan_left:
+            yield MotorCommand(pan_dir=-1, duration=0.25, pause_after=0.1)
+        if pos.can_pan_right:
+            yield MotorCommand(pan_dir=1, duration=0.5, pause_after=0.1)
+        if pos.can_pan_left:
+            yield MotorCommand(pan_dir=-1, duration=0.25, pause_after=0.15)
+
+
+def double_take(node: SensorNode) -> MotorProgram:
+    """Quick pan right, slow pan left, slight tilt up — surprise."""
+    pos = node.get_position()
+    if pos.can_pan_right:
+        yield MotorCommand(pan_dir=1, duration=0.3, pause_after=0.1)
+    if pos.can_pan_left:
+        yield MotorCommand(pan_dir=-1, duration=0.6, pause_after=0.2)
+    if pos.can_tilt_up:
+        yield MotorCommand(tilt_dir=1, duration=0.1, pause_after=0.3)
+
+
+def curious_tilt() -> MotorProgram:
+    """Slow tilt up, pause, small tilt down — curiosity."""
+    yield MotorCommand(tilt_dir=1, duration=0.2, pause_after=0.8)
+    yield MotorCommand(tilt_dir=-1, duration=0.1, pause_after=0.3)
+
+
+def emphasis_look(node: SensorNode, direction: int = 1) -> MotorProgram:
+    """Sharp pan in direction, return — drawing attention to something."""
+    yield MotorCommand(pan_dir=direction, duration=0.4, pause_after=0.5)
+    yield MotorCommand(pan_dir=-direction, duration=0.3, pause_after=0.2)
+
+
+def survey_room(node: SensorNode) -> MotorProgram:
+    """Systematic pan sweep for room zone discovery.
+
+    Sweeps left to right in steps, pausing at each position
+    for observation. Finite program — ends after one full sweep.
+    """
+    # Reset to left limit
+    yield MotorCommand(pan_dir=-1, duration=2.0, pause_after=0.5)
+
+    # Sweep right in 8 steps
+    for _ in range(8):
+        pos = node.get_position()
+        if not pos.can_pan_right:
+            break
+        yield MotorCommand(pan_dir=1, duration=0.6, pause_after=2.0)
+
+    # Sweep back to center
+    yield MotorCommand(pan_dir=-1, duration=1.5, pause_after=0.5)
+
+    # Tilt up, sweep, tilt down
+    yield MotorCommand(tilt_dir=1, duration=0.4, pause_after=1.5)
+    yield MotorCommand(tilt_dir=-1, duration=0.8, pause_after=1.5)
+
+
+_MOOD_SPEED: dict[str, float] = {
+    "calm": 0.7,
+    "content": 0.7,
+    "melancholy": 0.7,
+    "neutral": 1.0,
+    "attentive": 1.0,
+    "contemplative": 0.8,
+    "engaged": 1.2,
+    "curious": 1.3,
+    "excited": 1.5,
+    "uneasy": 1.3,
+}
+
+
+def auto_track(
+    node: SensorNode,
+    target_fn,
+    mood: str = "neutral",
+    complexity_fn=None,
+) -> MotorProgram:
+    """Track person when visible, scan when not. Default behavior.
+
+    The mood parameter scales movement speed — calm moods are slower,
+    excited moods are faster.
+
+    The complexity_fn callback returns the current frame complexity
+    (0.0-1.0). When scanning (no person target), the motor dwells
+    longer on complex/interesting views and passes quickly over
+    blank walls.
+    """
     pan_dir = random.choice([-1, 1])
     scan_hold = 0
+    speed = _MOOD_SPEED.get(mood, 1.0)
 
     while True:
         target = target_fn()
@@ -165,7 +259,7 @@ def auto_track(node: SensorNode, target_fn) -> MotorProgram:
 
             if pan != 0 or tilt != 0:
                 offset = max(abs(cx - 0.5), abs(cy - 0.5))
-                duration = 0.05 + offset * 0.15
+                duration = (0.05 + offset * 0.15) * speed
                 yield MotorCommand(pan_dir=pan, tilt_dir=tilt,
                                    duration=duration, pause_after=0.1)
             else:
@@ -179,15 +273,28 @@ def auto_track(node: SensorNode, target_fn) -> MotorProgram:
 
             if scan_hold > 0:
                 scan_hold -= 1
-                yield MotorCommand(pause_after=0.5)
+                yield MotorCommand(pause_after=1.0)
             else:
+                # Complexity-aware pause: dwell on interesting views,
+                # pass quickly over blank walls.
+                c = complexity_fn() if complexity_fn else 0.05
+                if c < 0.03:
+                    # Blank wall — short pause, keep moving
+                    pause = random.uniform(0.3, 0.6)
+                elif c > 0.10:
+                    # Interesting view — dwell to observe
+                    pause = random.uniform(2.0, 4.0)
+                else:
+                    # Default behavior
+                    pause = random.uniform(1.0, 2.0)
+
                 yield MotorCommand(
                     pan_dir=pan_dir,
-                    duration=random.uniform(0.3, 0.6),
-                    pause_after=random.uniform(0.2, 0.4),
+                    duration=random.uniform(0.15, 0.35) * speed,
+                    pause_after=pause,
                 )
-                if random.random() < 0.15:
-                    scan_hold = random.randint(2, 5)
+                if random.random() < 0.30:
+                    scan_hold = random.randint(3, 6)
                 if random.random() < 0.2:
                     pan_dir = -pan_dir
 

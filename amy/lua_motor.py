@@ -29,21 +29,38 @@ from typing import Any
 # ---------------------------------------------------------------------------
 
 VALID_ACTIONS: dict[str, tuple[int, int, list[type]]] = {
-    "say":       (1, 1, [str]),
-    "think":     (1, 1, [str]),
-    "look_at":   (1, 1, [str]),
-    "scan":      (0, 0, []),
-    "nod":       (0, 0, []),
-    "observe":   (0, 0, []),
-    "remember":  (2, 2, [str, str]),
-    "wait":      (1, 1, [float]),
-    "attend":    (0, 0, []),
+    "say":            (1, 1, [str]),
+    "think":          (1, 1, [str]),
+    "look_at":        (1, 1, [str]),
+    "scan":           (0, 0, []),
+    "nod":            (0, 0, []),
+    "observe":        (0, 0, []),
+    "remember":       (2, 2, [str, str]),
+    "wait":           (1, 1, [float]),
+    "attend":         (0, 0, []),
+    "map_room":       (0, 0, []),
+    "goal":           (1, 2, [str, int]),
+    "complete_goal":  (0, 1, [str]),
+    "note_about_self": (1, 1, [str]),
+    "recall":          (1, 1, [str]),
+    "progress_goal":   (1, 2, [float, str]),
+    "head_shake":      (0, 0, []),
+    "double_take":     (0, 0, []),
+    "curious_tilt":    (0, 0, []),
+    "save_photo":      (1, 1, [str]),
+    "recall_transcript": (1, 1, [str]),
+    "save_observation": (1, 1, [str]),
+    "dispatch":          (3, 3, [str, float, float]),
+    "alert":             (2, 2, [str, str]),
+    "patrol":            (2, 2, [str, str]),
+    "escalate":          (2, 2, [str, str]),
+    "clear_threat":      (1, 1, [str]),
 }
 
 VALID_DIRECTIONS = {
     "person", "left", "right", "up", "down",
     "desk", "door", "window", "screen", "center",
-    "far_left", "far_right",
+    "far_left", "far_right", "recall",
 }
 
 _ACTION_NAMES = "|".join(VALID_ACTIONS.keys())
@@ -276,9 +293,14 @@ def validate_action(action: str, params: list[Any]) -> str | None:
             }
             if direction in direction_map:
                 params[0] = direction_map[direction]
-            elif " " in direction and direction not in direction_map:
-                valid = ", ".join(sorted(VALID_DIRECTIONS))
-                return f"Unknown direction '{direction}'. Valid: {valid}"
+            elif " " in direction:
+                # Multi-word direction — try to extract a known direction keyword
+                matched = None
+                for valid_dir in VALID_DIRECTIONS:
+                    if valid_dir in direction:
+                        matched = valid_dir
+                        break
+                params[0] = matched or "center"
 
     if action == "wait" and params:
         if not isinstance(params[0], (int, float)) or params[0] <= 0:
@@ -289,6 +311,97 @@ def validate_action(action: str, params: list[Any]) -> str | None:
     if action == "remember" and params:
         if not isinstance(params[0], str) or not isinstance(params[1], str):
             return "remember() requires two strings (key, value)"
+
+    if action == "goal" and params:
+        if not isinstance(params[0], str):
+            return "goal() requires a string description"
+        if len(params) > 1:
+            if isinstance(params[1], (int, float)):
+                params[1] = max(1, min(5, int(params[1])))
+            elif isinstance(params[1], str):
+                # LLMs sometimes output "high", "low", etc. — convert gracefully
+                priority_map = {"high": 5, "medium": 3, "low": 1, "urgent": 5, "normal": 3}
+                params[1] = priority_map.get(params[1].lower(), 3)
+            else:
+                params[1] = 3  # Default priority
+
+    if action == "complete_goal" and params:
+        if not isinstance(params[0], str):
+            return "complete_goal() description must be a string"
+
+    if action == "note_about_self" and params:
+        if not isinstance(params[0], str):
+            return "note_about_self() requires a string"
+
+    if action == "recall" and params:
+        if not isinstance(params[0], str):
+            return "recall() requires a string query"
+
+    if action == "save_photo" and params:
+        if not isinstance(params[0], str):
+            return "save_photo() requires a string reason"
+
+    if action == "recall_transcript" and params:
+        if not isinstance(params[0], str):
+            return "recall_transcript() requires a string query"
+
+    if action == "save_observation" and params:
+        if not isinstance(params[0], str):
+            return "save_observation() requires a string description"
+
+    if action == "progress_goal" and params:
+        if not isinstance(params[0], (int, float)):
+            return "progress_goal() requires a number (0.0-1.0)"
+        params[0] = max(0.0, min(1.0, float(params[0])))
+        if len(params) > 1 and not isinstance(params[1], str):
+            return "progress_goal() note must be a string"
+
+    if action == "dispatch" and params:
+        if not isinstance(params[0], str):
+            return "dispatch() requires a string target_id"
+        if not isinstance(params[1], (int, float)):
+            return "dispatch() x must be a number"
+        if not isinstance(params[2], (int, float)):
+            return "dispatch() y must be a number"
+        params[1] = max(-30.0, min(30.0, float(params[1])))
+        params[2] = max(-30.0, min(30.0, float(params[2])))
+
+    if action == "alert" and params:
+        if not isinstance(params[0], str):
+            return "alert() requires a string target_id"
+        if not isinstance(params[1], str):
+            return "alert() requires a string message"
+
+    if action == "patrol" and params:
+        if not isinstance(params[0], str):
+            return "patrol() requires a string target_id"
+        if not isinstance(params[1], str):
+            return "patrol() requires a JSON waypoints string"
+        import json as _json
+        try:
+            wps = _json.loads(params[1])
+            if not isinstance(wps, list) or len(wps) < 1:
+                return "patrol() waypoints must be a non-empty JSON array"
+            for i, wp in enumerate(wps):
+                if not isinstance(wp, (list, tuple)) or len(wp) != 2:
+                    return f"patrol() waypoint {i} must be [x, y]"
+                if not isinstance(wp[0], (int, float)) or not isinstance(wp[1], (int, float)):
+                    return f"patrol() waypoint {i} must contain numbers"
+        except (ValueError, TypeError):
+            return "patrol() waypoints must be valid JSON"
+
+    if action == "escalate" and params:
+        if not isinstance(params[0], str):
+            return "escalate() requires a string target_id"
+        if not isinstance(params[1], str):
+            return "escalate() requires a string level"
+        valid_levels = ("unknown", "suspicious", "hostile")
+        if params[1] not in valid_levels:
+            return f"escalate() level must be one of: {', '.join(valid_levels)}"
+
+    if action == "clear_threat" and params:
+        if not isinstance(params[0], str):
+            return "clear_threat() requires a string target_id"
 
     return None
 

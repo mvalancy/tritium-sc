@@ -18,17 +18,40 @@ import random
 import re
 import threading
 import time
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 import cv2
 import numpy as np
 
 from .nodes.base import SensorNode, Position
+from .perception import FrameAnalyzer, FrameMetrics, PoseEstimator
 from .sensorium import Sensorium
 from .memory import Memory
+from .extraction import extract_person_name, extract_facts
+from .transcript import Transcript
 
 if TYPE_CHECKING:
     pass
+
+
+# ---------------------------------------------------------------------------
+# Time helpers
+# ---------------------------------------------------------------------------
+
+def _time_of_day() -> str:
+    """Return a human-friendly time-of-day label."""
+    hour = datetime.now().hour
+    if hour < 6:
+        return "late night"
+    elif hour < 12:
+        return "morning"
+    elif hour < 17:
+        return "afternoon"
+    elif hour < 21:
+        return "evening"
+    else:
+        return "night"
 
 
 # ---------------------------------------------------------------------------
@@ -43,6 +66,7 @@ class EventType(enum.Enum):
     MOTOR_DONE = "motor_done"
     PERSON_ARRIVED = "person_arrived"
     PERSON_LEFT = "person_left"
+    MOTION_DETECTED = "motion_detected"
     SHUTDOWN = "shutdown"
 
 
@@ -62,62 +86,65 @@ class Event:
 
 
 # ---------------------------------------------------------------------------
-# EventBus — thread-safe pub/sub (matches web.py's EventBus)
+# EventBus — re-exported from amy.event_bus for backward compatibility
 # ---------------------------------------------------------------------------
 
-class EventBus:
-    """Simple thread-safe pub/sub for pushing events to subscribers."""
-
-    def __init__(self) -> None:
-        self._lock = threading.Lock()
-        self._subscribers: list[queue.Queue] = []
-
-    def subscribe(self) -> queue.Queue:
-        q: queue.Queue = queue.Queue(maxsize=100)
-        with self._lock:
-            self._subscribers.append(q)
-        return q
-
-    def unsubscribe(self, q: queue.Queue) -> None:
-        with self._lock:
-            try:
-                self._subscribers.remove(q)
-            except ValueError:
-                pass
-
-    def publish(self, event_type: str, data: dict | None = None) -> None:
-        msg = {"type": event_type}
-        if data is not None:
-            msg["data"] = data
-        with self._lock:
-            for q in self._subscribers:
-                try:
-                    q.put_nowait(msg)
-                except queue.Full:
-                    pass
+from .event_bus import EventBus  # noqa: F401 — canonical location is amy.event_bus
 
 
 # ---------------------------------------------------------------------------
-# Audio thread
+# Audio thread — VAD-based streaming
 # ---------------------------------------------------------------------------
 
 class AudioThread:
-    """Continuous audio recording in a background thread."""
+    """Continuous VAD-based audio recording in a background thread.
+
+    Uses Silero VAD on 512-sample chunks (~32ms) for instant speech
+    detection. When speech ends (0.7s silence), sends accumulated audio
+    to whisper.cpp GPU for transcription (~400ms).
+
+    Old approach: record 4s → transcribe 30-60s on CPU → repeat
+    New approach: detect speech instantly → transcribe <1s on GPU
+    """
+
+    # VAD state machine parameters
+    SILENCE_TIMEOUT_CHUNKS = 22   # ~0.7s of silence ends an utterance
+    MAX_SPEECH_CHUNKS = 940       # ~30s max utterance length
+    MIN_SPEECH_CHUNKS = 10        # ~0.3s min to bother transcribing
 
     def __init__(self, listener, event_queue: queue.Queue, chunk_duration: float = 4.0):
+        from .listener import VAD_CHUNK_SAMPLES
         self.listener = listener
         self.queue = event_queue
-        self.chunk_duration = chunk_duration
+        self._chunk_samples = VAD_CHUNK_SAMPLES
         self._enabled = threading.Event()
         self._enabled.set()
+        self._was_disabled = False
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True)
+        self._stream = None
+        self._stream_lock = threading.Lock()
 
     def start(self) -> None:
         self._thread.start()
 
     def disable(self) -> None:
+        """Pause audio capture and release the ALSA device for speaker use.
+
+        The BCC950 mic and speaker share one USB audio card.  On raw ALSA
+        (no PulseAudio), the InputStream holds an exclusive lock, so aplay
+        cannot open the same card until the stream is closed.
+        """
         self._enabled.clear()
+        self._was_disabled = True
+        with self._stream_lock:
+            if self._stream is not None:
+                try:
+                    self._stream.stop()
+                    self._stream.close()
+                except Exception:
+                    pass
+                self._stream = None
 
     def enable(self) -> None:
         self._enabled.set()
@@ -125,28 +152,133 @@ class AudioThread:
     def stop(self) -> None:
         self._stop.set()
         self._enabled.set()
-        self._thread.join(timeout=5)
+        if self._thread.is_alive():
+            self._thread.join(timeout=5)
+
+    def _open_stream(self, sd, audio_q: queue.Queue):
+        """Open a fresh sounddevice InputStream and store it.
+
+        Skips if currently disabled (Amy is speaking — ALSA device busy).
+        """
+        if not self._enabled.is_set():
+            return None
+
+        def _audio_callback(indata, frames, time_info, status):
+            if self._enabled.is_set():
+                audio_q.put(indata.copy().flatten())
+
+        try:
+            stream = sd.InputStream(
+                samplerate=self.listener.sample_rate,
+                channels=1,
+                dtype="float32",
+                blocksize=self._chunk_samples,
+                device=self.listener.audio_device,
+                callback=_audio_callback,
+            )
+            stream.start()
+            with self._stream_lock:
+                self._stream = stream
+            return stream
+        except Exception as e:
+            print(f"  [audio stream error: {e}]")
+            return None
 
     def _run(self) -> None:
-        while not self._stop.is_set():
-            self._enabled.wait()
-            if self._stop.is_set():
-                break
-            try:
-                audio = self.listener.record(self.chunk_duration)
-            except Exception as e:
-                print(f"  [audio error: {e}]")
-                self._stop.wait(timeout=2)
-                continue
-            if self.listener.is_silence(audio):
-                self.queue.put(Event(EventType.SILENCE))
-                continue
-            self.queue.put(Event(EventType.SPEECH_DETECTED))
-            text = self.listener.transcribe(audio)
-            if text:
-                self.queue.put(Event(EventType.TRANSCRIPT_READY, data=text))
-            else:
-                self.queue.put(Event(EventType.SILENCE))
+        import sounddevice as sd
+
+        audio_q: queue.Queue = queue.Queue(maxsize=200)
+
+        stream = self._open_stream(sd, audio_q)
+        if stream is None:
+            return
+
+        speech_active = False
+        speech_buffer: list[np.ndarray] = []
+        silence_count = 0
+
+        try:
+            while not self._stop.is_set():
+                # Wait if disabled (Amy speaking through speaker)
+                self._enabled.wait()
+                if self._stop.is_set():
+                    break
+
+                # After re-enable: reopen stream + reset state
+                if self._was_disabled:
+                    self._was_disabled = False
+                    speech_active = False
+                    speech_buffer.clear()
+                    silence_count = 0
+                    self.listener.reset_vad()
+                    # Drain any stale audio from before disable
+                    while not audio_q.empty():
+                        try:
+                            audio_q.get_nowait()
+                        except queue.Empty:
+                            break
+                    # Reopen stream (disable() closed it to free ALSA)
+                    with self._stream_lock:
+                        if self._stream is None:
+                            stream = self._open_stream(sd, audio_q)
+                            if stream is None:
+                                # Can't reopen — bail out of loop
+                                break
+
+                # Get next audio chunk
+                try:
+                    chunk = audio_q.get(timeout=0.1)
+                except queue.Empty:
+                    continue
+
+                is_speech = self.listener.is_speech(chunk)
+
+                if is_speech:
+                    silence_count = 0
+                    if not speech_active:
+                        speech_active = True
+                        self.queue.put(Event(EventType.SPEECH_DETECTED))
+                    speech_buffer.append(chunk)
+
+                    # Safety: max utterance length
+                    if len(speech_buffer) >= self.MAX_SPEECH_CHUNKS:
+                        self._finish_utterance(speech_buffer)
+                        speech_buffer = []
+                        speech_active = False
+
+                elif speech_active:
+                    speech_buffer.append(chunk)  # Include trailing silence
+                    silence_count += 1
+
+                    if silence_count >= self.SILENCE_TIMEOUT_CHUNKS:
+                        self._finish_utterance(speech_buffer)
+                        speech_buffer = []
+                        speech_active = False
+                        silence_count = 0
+                        self.listener.reset_vad()
+
+        finally:
+            with self._stream_lock:
+                if self._stream is not None:
+                    try:
+                        self._stream.stop()
+                        self._stream.close()
+                    except Exception:
+                        pass
+                    self._stream = None
+
+    def _finish_utterance(self, chunks: list[np.ndarray]) -> None:
+        """Transcribe accumulated speech chunks and fire event."""
+        if len(chunks) < self.MIN_SPEECH_CHUNKS:
+            self.queue.put(Event(EventType.SILENCE))
+            return
+
+        full_audio = np.concatenate(chunks)
+        text = self.listener.transcribe(full_audio)
+        if text:
+            self.queue.put(Event(EventType.TRANSCRIPT_READY, data=text))
+        else:
+            self.queue.put(Event(EventType.SILENCE))
 
 
 # ---------------------------------------------------------------------------
@@ -169,7 +301,8 @@ class CuriosityTimer:
 
     def stop(self) -> None:
         self._stop.set()
-        self._thread.join(timeout=3)
+        if self._thread.is_alive():
+            self._thread.join(timeout=3)
 
     def _run(self) -> None:
         while not self._stop.is_set():
@@ -213,19 +346,45 @@ class VisionThread:
         self._scene_summary: str = "No detections yet."
         self._prev_people_count: int = 0
         self._empty_frames: int = 0
+        self._arrival_frames: int = 0
         self._latest_detections: list[dict] = []
         self._detection_lock = threading.Lock()
         self._person_target: tuple[float, float] | None = None
         self._target_lock = threading.Lock()
 
+        # Tracking feedback metrics
+        self._tracking_quality: float = 0.0
+        self._tracking_quality_lock = threading.Lock()
+        self._track_start: float = 0.0
+        self._track_duration: float = 0.0
+        self._last_quality_event: float = 0.0
+
+        # Layered perception (L0-L2)
+        self._analyzer = FrameAnalyzer()
+        self._yolo_skip_count: int = 0
+        self._frame_complexity: float = 0.0
+        self._frame_metrics: FrameMetrics | None = None
+        self._metrics_lock = threading.Lock()
+        self._last_motion_push: float = 0.0
+
         from ultralytics import YOLO
         import torch
         engine_path = model_name.replace(".pt", ".engine")
         onnx_path = model_name.replace(".pt", ".onnx")
+
+        # Check if CUDA is truly usable (not just available)
+        cuda_usable = False
+        if torch.cuda.is_available():
+            try:
+                _ = torch.zeros(1, device="cuda")
+                cuda_usable = True
+            except Exception:
+                pass
+
         if os.path.exists(engine_path):
             self._model = YOLO(engine_path, task="detect")
             self._yolo_backend = "TensorRT"
-        elif torch.cuda.is_available():
+        elif cuda_usable:
             self._model = YOLO(model_name)
             self._yolo_backend = "PyTorch CUDA"
         elif os.path.exists(onnx_path):
@@ -251,12 +410,37 @@ class VisionThread:
         with self._detection_lock:
             return list(self._latest_detections)
 
+    @property
+    def tracking_quality(self) -> float:
+        """0.0 = off-center/no target, 1.0 = perfectly centered."""
+        with self._tracking_quality_lock:
+            return self._tracking_quality
+
+    @property
+    def track_duration(self) -> float:
+        """Continuous seconds a person has been tracked."""
+        with self._tracking_quality_lock:
+            return self._track_duration
+
+    @property
+    def frame_complexity(self) -> float:
+        """Latest L1 complexity score (0.0-1.0)."""
+        with self._metrics_lock:
+            return self._frame_complexity
+
+    @property
+    def frame_metrics(self) -> FrameMetrics | None:
+        """Full latest L0-L2 metrics, or None if no frame analyzed yet."""
+        with self._metrics_lock:
+            return self._frame_metrics
+
     def start(self) -> None:
         self._thread.start()
 
     def stop(self) -> None:
         self._stop.set()
-        self._thread.join(timeout=5)
+        if self._thread.is_alive():
+            self._thread.join(timeout=5)
 
     def _run(self) -> None:
         if not self._warmed_up:
@@ -268,11 +452,64 @@ class VisionThread:
         while not self._stop.is_set():
             frame = self._node.get_frame()
             if frame is not None:
-                self._detect(self._model, frame)
+                metrics = self._analyzer.analyze(frame)
+                with self._metrics_lock:
+                    self._frame_metrics = metrics
+                    self._frame_complexity = metrics.complexity
+
+                # L0: Reject unusable frames (blurred / too dark)
+                if not metrics.is_usable:
+                    self._stop.wait(timeout=self._interval)
+                    continue
+
+                # L2: Motion reflex — publish event
+                if metrics.motion_score > 0.02:
+                    self._publish_motion(metrics)
+
+                # L3: YOLO gating — skip if boring + still
+                if (metrics.motion_score < 0.005
+                        and metrics.complexity < 0.03
+                        and self._yolo_skip_count < 5):
+                    self._yolo_skip_count += 1
+                else:
+                    self._detect(self._model, frame)
+                    self._yolo_skip_count = 0
+
+                # Publish frame metrics alongside detections
+                self._event_bus.publish("frame_metrics", {
+                    "sharpness": round(metrics.sharpness, 1),
+                    "brightness": round(metrics.brightness, 1),
+                    "complexity": round(metrics.complexity, 4),
+                    "motion_score": round(metrics.motion_score, 4),
+                })
+
             self._stop.wait(timeout=self._interval)
 
+    def _publish_motion(self, metrics: FrameMetrics) -> None:
+        """Publish motion reflex event to event bus and commander queue.
+
+        Event bus gets every motion event (frontend can use it).
+        Commander queue is debounced to avoid flooding the event loop.
+        """
+        now = time.monotonic()
+        cx, cy = metrics.motion_center or (0.5, 0.5)
+
+        self._event_bus.publish("motion", {
+            "cx": round(cx, 3),
+            "cy": round(cy, 3),
+            "score": round(metrics.motion_score, 4),
+        })
+
+        # Debounce commander queue — at most every 2 seconds
+        if now - self._last_motion_push > 2.0 and self._event_queue is not None:
+            self._event_queue.put(Event(
+                EventType.MOTION_DETECTED,
+                data=(cx, cy, metrics.motion_score),
+            ))
+            self._last_motion_push = now
+
     def _detect(self, model, frame: np.ndarray) -> None:
-        results = model(frame, verbose=False, conf=0.4)
+        results = model(frame, verbose=False, conf=0.55)
 
         if not results or len(results[0].boxes) == 0:
             with self._scene_lock:
@@ -283,7 +520,7 @@ class VisionThread:
                 self._person_target = None
             if self._prev_people_count > 0:
                 self._empty_frames += 1
-                if self._empty_frames >= 3:
+                if self._empty_frames >= 5:
                     self._event_bus.publish("event", {"text": "[everyone left]"})
                     if self._event_queue is not None:
                         self._event_queue.put(Event(EventType.PERSON_LEFT))
@@ -326,13 +563,30 @@ class VisionThread:
         with self._detection_lock:
             self._latest_detections = detections
 
+        now = time.monotonic()
         if person_centroids:
             best = max(person_centroids, key=lambda p: p[2])
             with self._target_lock:
                 self._person_target = (best[0], best[1])
+
+            # Compute tracking quality: 1.0 when centered, 0.0 at edges
+            cx, cy = best[0], best[1]
+            offset = ((cx - 0.5) ** 2 + (cy - 0.5) ** 2) ** 0.5
+            quality = max(0.0, 1.0 - offset * 2.83)  # 0 at corners
+
+            with self._tracking_quality_lock:
+                self._tracking_quality = quality
+                if self._track_start == 0.0:
+                    self._track_start = now
+                self._track_duration = now - self._track_start
+
         else:
             with self._target_lock:
                 self._person_target = None
+            with self._tracking_quality_lock:
+                self._tracking_quality = 0.0
+                self._track_start = 0.0
+                self._track_duration = 0.0
 
         parts = []
         people = counts.pop("person", 0)
@@ -355,17 +609,21 @@ class VisionThread:
 
         if people > 0:
             self._empty_frames = 0
-        if people != self._prev_people_count:
-            if people > self._prev_people_count:
-                self._event_bus.publish("event", {
-                    "text": f"[YOLO: {people} person(s) detected]",
-                })
-                if self._event_queue is not None:
-                    self._event_queue.put(Event(EventType.PERSON_ARRIVED, data=people))
-            elif people == 0:
-                self._event_bus.publish("event", {"text": "[everyone left]"})
-                if self._event_queue is not None:
-                    self._event_queue.put(Event(EventType.PERSON_LEFT))
+            self._arrival_frames += 1
+        else:
+            self._arrival_frames = 0
+
+        if people > self._prev_people_count and self._arrival_frames >= 2:
+            self._event_bus.publish("event", {
+                "text": f"[YOLO: {people} person(s) detected]",
+            })
+            if self._event_queue is not None:
+                self._event_queue.put(Event(EventType.PERSON_ARRIVED, data=people))
+            self._prev_people_count = people
+        elif people == 0 and self._prev_people_count > 0:
+            # Departure handled by the empty-frames path above
+            pass
+        elif people > 0 and people != self._prev_people_count and self._arrival_frames >= 2:
             self._prev_people_count = people
 
         self._event_bus.publish("detections", {
@@ -396,6 +654,13 @@ class Commander:
         use_tts: bool = True,
         wake_word: str | None = "amy",
         think_interval: float = 8.0,
+        curiosity_min: float = 45.0,
+        curiosity_max: float = 90.0,
+        use_listener: bool = True,
+        boot_delay: float = 3.0,
+        think_initial_delay: float = 5.0,
+        memory_path: str | None = None,
+        simulation_engine=None,
     ):
         self.nodes: dict[str, SensorNode] = nodes or {}
         self._event_queue: queue.Queue[Event] = queue.Queue()
@@ -411,23 +676,60 @@ class Commander:
         self.event_bus = EventBus()
 
         # Memory
-        self.memory = Memory()
+        self.memory = Memory(path=memory_path)
         self._memory_save_interval = 60
         self._last_memory_save: float = 0.0
 
         # Sensorium
         self.sensorium = Sensorium()
 
+        # Simulation engine (virtual targets)
+        self.simulation_engine = simulation_engine
+
+        # Tactical mode: "sim" or "live"
+        # SIM = spawners active, thinking prompt says SIMULATION MODE
+        # LIVE = spawners paused, thinking prompt says LIVE SENSORS
+        # BCC950 camera/mic ALWAYS active in both modes
+        self._mode: str = "sim"
+
+        # Target tracker (unified real + virtual)
+        from .target_tracker import TargetTracker
+        self.target_tracker = TargetTracker()
+
+        # Amy config from loaded layouts
+        self.amy_config: dict = {}
+
+        # Wire battlespace summary into sensorium
+        self.sensorium._battlespace_fn = self.target_tracker.summary
+
+        # Subscribe to events to feed target tracker (sim telemetry + YOLO detections)
+        self._sim_sub = self.event_bus.subscribe()
+        self._sim_bridge_thread = threading.Thread(
+            target=self._sim_bridge_loop, daemon=True, name="sim-bridge"
+        )
+
         # Deep model config
         self.deep_model = deep_model
         self._deep_observation: str = ""
         self._deep_lock = threading.Lock()
+        self._deep_thread: threading.Thread | None = None
 
         # Store config for deferred init
         self._chat_model = chat_model
         self._whisper_model = whisper_model
         self._use_tts = use_tts
         self._think_interval = think_interval
+        self._curiosity_min = curiosity_min
+        self._curiosity_max = curiosity_max
+        self._use_listener = use_listener
+        self._boot_delay = boot_delay
+        self._think_initial_delay = think_initial_delay
+
+        # Pose estimator
+        self.pose_estimator = PoseEstimator()
+
+        # Transcript
+        self.transcript = Transcript()
 
         # These get initialized in _boot()
         self.chat_agent = None
@@ -441,6 +743,7 @@ class Commander:
         self._ack_wavs: list[bytes] = []
 
         self._running = False
+        self._shutdown_called = False
 
     # --- Node management ---
 
@@ -475,6 +778,50 @@ class Commander:
             if node.has_speaker:
                 return node
         return None
+
+    # --- Mode ---
+
+    @property
+    def mode(self) -> str:
+        """Current tactical mode: 'sim' or 'live'."""
+        return self._mode
+
+    def set_mode(self, mode: str) -> str:
+        """Switch between sim and live tactical modes.
+
+        SIM mode: spawners active, tactical data from simulation.
+        LIVE mode: spawners paused, tactical data from real sensors.
+        BCC950 camera/mic always active in both modes.
+
+        Returns the new mode.
+        """
+        mode = mode.lower().strip()
+        if mode not in ("sim", "live"):
+            raise ValueError(f"Invalid mode: {mode!r} (expected 'sim' or 'live')")
+
+        old_mode = self._mode
+        self._mode = mode
+
+        # Control simulation spawners
+        engine = self.simulation_engine
+        if engine is not None:
+            if mode == "live":
+                engine.pause_spawners()
+            else:
+                engine.resume_spawners()
+
+        # Publish mode change event
+        self.event_bus.publish("mode_change", {
+            "mode": mode,
+            "previous": old_mode,
+        })
+
+        if mode != old_mode:
+            label = "SIMULATION MODE" if mode == "sim" else "LIVE SENSORS"
+            self.sensorium.push("tactical", f"Mode switched to {label}", importance=0.8)
+            print(f"  [mode] {old_mode} -> {mode}")
+
+        return mode
 
     # --- State ---
 
@@ -519,10 +866,51 @@ class Commander:
             cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
             text = f"{label} {conf:.0%}"
             (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
-            cv2.rectangle(frame, (x1, y1 - th - 6), (x1 + tw + 4, y1), color, -1)
-            cv2.putText(frame, text, (x1 + 2, y1 - 4),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+            label_h = th + 6
+            # Clamp label X so it doesn't overflow the right edge
+            lx = min(x1, w - tw - 4)
+            lx = max(lx, 0)
+            if y1 - label_h >= 0:
+                # Draw label above the box (default)
+                cv2.rectangle(frame, (lx, y1 - label_h), (lx + tw + 4, y1), color, -1)
+                cv2.putText(frame, text, (lx + 2, y1 - 4),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+            else:
+                # Draw label below the box when clipped at top edge
+                cv2.rectangle(frame, (lx, y2), (lx + tw + 4, y2 + label_h), color, -1)
+                cv2.putText(frame, text, (lx + 2, y2 + th + 2),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
         return frame
+
+    def save_photo(self, reason: str) -> str | None:
+        """Capture current frame with YOLO overlay, save to amy/photos/.
+
+        Returns the filename on success, or None.
+        """
+        cam = self.primary_camera
+        if cam is None:
+            return None
+        frame = cam.get_frame()
+        if frame is None:
+            return None
+
+        frame = self._draw_yolo_overlay(frame)
+
+        photos_dir = os.path.join(os.path.dirname(__file__), "photos")
+        os.makedirs(photos_dir, exist_ok=True)
+
+        slug = re.sub(r'[^a-z0-9]+', '_', reason.lower().strip())[:40].strip('_')
+        ts = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+        filename = f"{ts}_{slug}.jpg"
+        filepath = os.path.join(photos_dir, filename)
+
+        cv2.imwrite(filepath, frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+
+        self.memory.add_event("photo", f"Saved photo: {reason}")
+        self.transcript.append("amy", f"[Photo: {reason}]", "photo")
+        self.event_bus.publish("event", {"text": f"[Saved photo: {reason}]"})
+        print(f"  [photo saved]: {filename}")
+        return filename
 
     def capture_base64(self) -> str | None:
         cam = self.primary_camera
@@ -591,11 +979,33 @@ class Commander:
 
     # --- Speech output ---
 
+    _STAGE_DIR_RE = re.compile(
+        r'\([^)]{5,}\)'   # Parenthetical actions: (Turns head slightly...)
+        r'|\*[^*]{5,}\*'  # Asterisk actions: *whirring sound*
+    )
+    _SMART_QUOTES_RE = re.compile(r'[\u201c\u201d]')  # Replace smart quotes
+
+    @staticmethod
+    def _clean_speech(text: str) -> str:
+        """Strip LLM stage-direction artifacts from speech before TTS."""
+        # Remove parenthetical and asterisk stage directions
+        cleaned = Commander._STAGE_DIR_RE.sub('', text)
+        # Replace smart quotes with plain quotes
+        cleaned = Commander._SMART_QUOTES_RE.sub('"', cleaned)
+        # Collapse multiple spaces and strip
+        cleaned = re.sub(r'  +', ' ', cleaned).strip()
+        # Remove leading/trailing quotes if the LLM wrapped the whole thing
+        if cleaned.startswith('"') and cleaned.endswith('"') and cleaned.count('"') == 2:
+            cleaned = cleaned[1:-1].strip()
+        return cleaned or text  # Fall back to original if cleaning empties it
+
     def say(self, text: str) -> None:
+        text = self._clean_speech(text)
         print(f'  Amy: "{text}"')
         self._last_spoke = time.monotonic()
         self._set_state(CreatureState.SPEAKING)
         self.event_bus.publish("transcript", {"speaker": "amy", "text": text})
+        self.transcript.append("amy", text, "speech")
         if self._use_tts and self.speaker and self.speaker.available:
             if self.audio_thread:
                 self.audio_thread.disable()
@@ -614,12 +1024,17 @@ class Commander:
         if node is None:
             return None
         from .motor import auto_track
-        return auto_track(node, lambda: self.vision_thread.person_target if self.vision_thread else None)
+        return auto_track(
+            node,
+            lambda: self.vision_thread.person_target if self.vision_thread else None,
+            mood=self.sensorium.mood,
+            complexity_fn=lambda: self.vision_thread.frame_complexity if self.vision_thread else 0.05,
+        )
 
     # --- Deep think ---
 
     def _deep_think(self) -> None:
-        if hasattr(self, '_deep_thread') and self._deep_thread.is_alive():
+        if self._deep_thread is not None and self._deep_thread.is_alive():
             return
         self._deep_thread = threading.Thread(target=self._deep_think_worker, daemon=True)
         self._deep_thread.start()
@@ -642,7 +1057,8 @@ class Commander:
                         "You are observing a scene through a camera. "
                         "Describe what you see briefly (1-2 sentences). "
                         "Focus on people, activity, mood, and anything noteworthy. "
-                        "If nothing interesting, say '...'"
+                        "If nothing interesting, say '...' "
+                        "Always respond in English."
                     )},
                     {"role": "user", "content": f"[YOLO detections]: {scene}\n[Camera frame attached]",
                      "images": [image_b64]},
@@ -665,6 +1081,7 @@ class Commander:
                 pos = node.get_position()
                 self.memory.add_observation(pos.pan, pos.tilt, observation)
             self.memory.add_event("observation", observation[:100])
+            self.transcript.append("amy", observation[:100], "observation")
 
             total_obs = sum(len(v) for v in self.memory.spatial.values())
             if total_obs > 0 and total_obs % 5 == 0:
@@ -672,9 +1089,8 @@ class Commander:
 
             idle = self._state == CreatureState.IDLE
             quiet_long_enough = (time.monotonic() - self._last_spoke) > 10
-            if idle and quiet_long_enough:
-                scene_ctx = f"{scene}\n[You just noticed]: {observation}"
-                scene_ctx += "\n[Share a brief, natural observation about what you see. 1 sentence max.]"
+            if idle and quiet_long_enough and self.sensorium.people_present:
+                scene_ctx = f"YOU SEE: {scene}\nYOU NOTICED: {observation[:120]}"
                 comment = self.chat_agent.process_turn(
                     transcript=None,
                     scene_context=scene_ctx,
@@ -735,10 +1151,30 @@ class Commander:
         sensorium_mood = self.sensorium.mood
         thinking_suppressed = self.thinking.suppressed if self.thinking else False
 
+        tracking_quality = self.vision_thread.tracking_quality if self.vision_thread else 0.0
+        track_duration = self.vision_thread.track_duration if self.vision_thread else 0.0
+        goals = self.thinking.goal_stack.active if self.thinking else []
+
+        # Camera pose
+        pose_data = None
+        ptz = self.primary_ptz
+        if ptz is not None:
+            pos = ptz.get_position()
+            pose = self.pose_estimator.update(pos)
+            pose_data = {
+                "pan": pose.pan_normalized,
+                "tilt": pose.tilt_normalized,
+                "pan_deg": round(pose.pan_degrees, 1) if pose.pan_degrees is not None else None,
+                "tilt_deg": round(pose.tilt_degrees, 1) if pose.tilt_degrees is not None else None,
+                "calibrated": pose.calibrated,
+            }
+
         self.event_bus.publish("context_update", {
             "scene": scene,
             "deep_observation": deep_obs,
             "tracking": f"({target[0]:.2f}, {target[1]:.2f})" if target else "none",
+            "tracking_quality": round(tracking_quality, 2),
+            "track_duration": round(track_duration, 1),
             "state": self._state.value,
             "history_len": len(self.chat_agent.history) if self.chat_agent else 0,
             "history_preview": history_preview,
@@ -747,6 +1183,9 @@ class Commander:
             "sensorium_narrative": sensorium_narrative,
             "mood": sensorium_mood,
             "thinking_suppressed": thinking_suppressed,
+            "goals": [g["description"] for g in goals],
+            "pose": pose_data,
+            "mode": self._mode,
             "nodes": {nid: {"name": n.name, "camera": n.has_camera, "ptz": n.has_ptz,
                             "mic": n.has_mic, "speaker": n.has_speaker}
                       for nid, n in self.nodes.items()},
@@ -759,31 +1198,87 @@ class Commander:
 
     # --- Respond ---
 
+    def _build_scene_context(self, transcript: str) -> str:
+        """Build concise, structured context for a conversation turn.
+
+        Keeps total context short so the 4B model can focus on what matters:
+        1. What Amy can SEE right now (most important for grounding)
+        2. Who the speaker is + relevant history
+        3. Mood + one recent thought (personality color)
+        4. Earlier conversation today (continuity)
+        """
+        parts: list[str] = []
+
+        # 1. Current vision — what Amy sees RIGHT NOW
+        scene = self.vision_thread.scene_summary if self.vision_thread else ""
+        if scene:
+            parts.append(f"YOU SEE: {scene}")
+        with self._deep_lock:
+            deep_obs = self._deep_observation
+        if deep_obs:
+            parts.append(f"DETAIL: {deep_obs[:120]}")
+
+        # 2. Speaker identity + history
+        person_name = extract_person_name(transcript)
+        node = self.primary_ptz
+        if person_name and self.sensorium.people_present:
+            zone = ""
+            if node is not None:
+                pos = node.get_position()
+                z = self.memory.get_zone_at(pos.pan, pos.tilt) if node.has_ptz else None
+                zone = z["name"] if z else ""
+            self.memory.link_person(person_name, zone=zone)
+            parts.append(f"SPEAKER: {person_name}")
+            person_history = self.memory.recall_for_person(person_name, limit=2)
+            if person_history:
+                hist = "; ".join(h["text"][:80] for h in person_history)
+                parts.append(f"YOU REMEMBER: {hist}")
+        elif self.memory.known_people:
+            names = [p["name"] for p in list(self.memory.known_people.values())[:3]]
+            parts.append(f"KNOWN PEOPLE: {', '.join(names)}")
+
+        # 3. Relevant memories for this specific query
+        memories = self.memory.recall(transcript, limit=2)
+        if memories:
+            mem_str = "; ".join(m["text"][:80] for m in memories)
+            parts.append(f"RELEVANT MEMORY: {mem_str}")
+
+        # 4. Current mood + one recent thought (personality)
+        mood = self.sensorium.mood
+        if mood != "neutral":
+            parts.append(f"YOUR MOOD: {mood}")
+        recent_thoughts = self.sensorium.recent_thoughts
+        if recent_thoughts:
+            parts.append(f"YOUR LAST THOUGHT: {recent_thoughts[-1][:80]}")
+
+        # 5. Active goal (just the top one)
+        if self.thinking:
+            goals = self.thinking.goal_stack.active
+            if goals:
+                parts.append(f"YOUR GOAL: {goals[0]['description']}")
+
+        # 6. Earlier conversation today (for continuity)
+        earlier = self.transcript.get_recent(count=4, entry_type="speech")
+        if earlier:
+            lines = [f"{e['speaker']}: {e['text'][:60]}" for e in earlier]
+            parts.append("EARLIER TODAY:\n" + "\n".join(lines))
+
+        return "\n".join(parts)
+
     def _respond(self, transcript: str) -> None:
         self._set_state(CreatureState.THINKING)
         if self.thinking:
-            self.thinking.suppress(15)
+            self.thinking.suppress(5)
 
-        scene = self.vision_thread.scene_summary if self.vision_thread else ""
-        with self._deep_lock:
-            deep_obs = self._deep_observation
+        scene_ctx = self._build_scene_context(transcript)
 
-        scene_ctx = scene
-        if deep_obs:
-            scene_ctx += f"\n[Recent observation]: {deep_obs}"
+        # Extract person name for post-processing
+        person_name = extract_person_name(transcript)
 
-        narrative = self.sensorium.narrative()
-        if narrative and narrative != "No recent observations.":
-            scene_ctx += f"\n[Recent awareness]:\n{narrative}"
-
-        node = self.primary_ptz
-        if node is not None:
-            pos = node.get_position()
-            mem_ctx = self.memory.build_context(pan=pos.pan, tilt=pos.tilt)
-        else:
-            mem_ctx = self.memory.build_context()
-        if mem_ctx:
-            scene_ctx += f"\n{mem_ctx}"
+        # Push user speech to sensorium so the thinking thread can see the dialogue
+        speaker_label = person_name or "Someone"
+        self.sensorium.push("audio", f'{speaker_label} said: "{transcript[:80]}"', importance=0.8)
+        self.transcript.append("user", transcript, "speech")
 
         print(f"  [responding ({self.chat_agent.model})]...")
         response = self.chat_agent.process_turn(
@@ -792,7 +1287,62 @@ class Commander:
         )
 
         self.memory.add_event("conversation", f"User: {transcript} → Amy: {response[:80]}")
+
+        # V3: Extract facts from conversation
+        facts = extract_facts(transcript, response, person=person_name)
+        for fact in facts:
+            self.memory.add_fact(fact["text"], tags=fact.get("tags", []), person=fact.get("person"))
+            # Route preference facts to self_model preferences
+            tags = fact.get("tags", [])
+            if "preference" in tags:
+                category = "likes" if "likes" in tags else "dislikes" if "dislikes" in tags else None
+                if category:
+                    self.memory.add_preference(category, fact["text"])
+
         self.sensorium.push("audio", f'Amy said: "{response[:60]}"')
+
+        # Post-response reflection — structured context for the thinking thread
+        speaker_id = person_name or "someone"
+        user_snippet = transcript[:60]
+        amy_snippet = response[:60]
+
+        # Detect emotional tone via simple keyword heuristic
+        _POS_WORDS = {"thank", "thanks", "great", "love", "awesome", "cool", "nice", "happy", "good", "wonderful", "amazing"}
+        _NEG_WORDS = {"angry", "upset", "annoyed", "hate", "bad", "terrible", "wrong", "frustrated", "sad"}
+        words = set(transcript.lower().split())
+        if words & _POS_WORDS:
+            tone = "positive"
+        elif words & _NEG_WORDS:
+            tone = "negative"
+        else:
+            tone = "neutral"
+
+        asked_question = "?" in transcript
+        learned_prefs = any("preference" in f.get("tags", []) for f in facts)
+
+        # Build structured reflection
+        parts = [f"Conversation with {speaker_id}"]
+        parts.append(f"They said: '{user_snippet}'")
+        parts.append(f"I replied: '{amy_snippet}'")
+        parts.append(f"Tone: {tone}")
+        if asked_question:
+            parts.append("They asked a question")
+        if learned_prefs:
+            parts.append("Learned a preference")
+
+        # Include interaction count for known people
+        if person_name:
+            key = person_name.lower().strip()
+            with self.memory._lock:
+                person_data = self.memory.known_people.get(key)
+            if person_data:
+                count = person_data.get("interaction_count", 0)
+                if count > 1:
+                    parts.append(f"({count} interactions total)")
+
+        reflection = " | ".join(parts)
+        self.sensorium.push("thought", reflection, importance=0.7)
+
         self._publish_context()
         self.say(response)
 
@@ -905,7 +1455,8 @@ class Commander:
         self.speaker = Speaker()
         self._use_tts = self._use_tts and self.speaker.available
         if self._use_tts:
-            print("        Engine: Piper TTS")
+            dev = self.speaker.playback_device
+            print(f"        Engine: Piper TTS → {dev}")
             ack_phrases = ["Yes?", "Hmm?", "I'm here!", "What's up?"]
             for phrase in ack_phrases:
                 wav = self.speaker.synthesize_raw(phrase)
@@ -916,19 +1467,23 @@ class Commander:
         else:
             print("        TTS: disabled")
 
-        # Listener (if any mic node exists)
+        # Listener (if any mic node exists and listener is enabled)
         mic_node = self.primary_mic
-        if mic_node is not None:
-            print("  [3/8] Speech-to-text")
-            from .listener import Listener
-            self.listener = Listener(
-                model_name=self._whisper_model,
-                audio_device=None,  # Listener auto-detects
-            )
-            _warmup = np.zeros(16000, dtype=np.float32)
-            self.listener.transcribe(_warmup)
-            print(f"        Model: Whisper {self._whisper_model}")
-            print(f"        Wake word: \"{self.wake_word}\"" if self.wake_word else "        Wake word: disabled")
+        if mic_node is not None and self._use_listener:
+            print("  [3/8] Speech-to-text (whisper.cpp GPU + Silero VAD)")
+            try:
+                from .listener import Listener
+                self.listener = Listener(
+                    model_name=self._whisper_model,
+                    audio_device=None,  # Listener auto-detects
+                )
+                print(f"        Wake word: \"{self.wake_word}\"" if self.wake_word else "        Wake word: disabled")
+            except Exception as e:
+                print(f"        STT FAILED: {e}")
+                self.listener = None
+        elif not self._use_listener:
+            print("  [3/8] Speech-to-text: disabled (use_listener=False)")
+            self.listener = None
         else:
             print("  [3/8] Speech-to-text: no mic available")
             self.listener = None
@@ -965,6 +1520,7 @@ class Commander:
         self.thinking = ThinkingThread(
             self, model=self._chat_model,
             think_interval=self._think_interval,
+            initial_delay=self._think_initial_delay,
         )
         print(f"        Model: {self._chat_model}")
         print(f"        Interval: {self._think_interval}s")
@@ -986,8 +1542,12 @@ class Commander:
             self.audio_thread = None
             print("        Audio listener: no mic")
 
-        self.curiosity_timer = CuriosityTimer(self._event_queue)
-        print("        Curiosity timer: 45-90s interval")
+        self.curiosity_timer = CuriosityTimer(
+            self._event_queue,
+            min_interval=self._curiosity_min,
+            max_interval=self._curiosity_max,
+        )
+        print(f"        Curiosity timer: {self._curiosity_min:.0f}-{self._curiosity_max:.0f}s interval")
 
     def run(self) -> None:
         """Boot all subsystems and run the event loop.
@@ -995,7 +1555,30 @@ class Commander:
         Designed to be called from a background thread:
             threading.Thread(target=commander.run, daemon=True).start()
         """
-        self._boot()
+        try:
+            self._boot()
+        except Exception as e:
+            print(f"\n  [Amy] BOOT FAILED: {e}")
+            print("  [Amy] Attempting degraded startup...")
+            # Ensure critical attributes exist even after partial boot
+            if not hasattr(self, 'chat_agent') or self.chat_agent is None:
+                from .agent import Agent, CREATURE_SYSTEM_PROMPT
+                self.chat_agent = Agent(
+                    commander=self, model=self._chat_model,
+                    system_prompt=CREATURE_SYSTEM_PROMPT, use_tools=False,
+                )
+            if not hasattr(self, 'thinking') or self.thinking is None:
+                from .thinking import ThinkingThread
+                self.thinking = ThinkingThread(
+                    self, model=self._chat_model,
+                    think_interval=self._think_interval,
+                )
+            if not hasattr(self, 'motor'):
+                self.motor = None
+            if not hasattr(self, 'audio_thread'):
+                self.audio_thread = None
+            if not hasattr(self, 'curiosity_timer'):
+                self.curiosity_timer = CuriosityTimer(self._event_queue)
 
         print()
         print("-" * 58)
@@ -1008,17 +1591,50 @@ class Commander:
             self.motor.set_program(self._default_motor())
             self.motor.start()
 
-        if self.audio_thread is not None:
-            self.audio_thread.start()
-
         self.curiosity_timer.start()
+
+        # Start target tracker bridge (feeds sim telemetry + YOLO detections)
+        self._sim_bridge_thread.start()
+        print("  Target tracker bridge: running")
+
         self._running = True
 
-        # Greeting
-        self.say("Hello! I'm Amy, your AI commander. I'm online and watching over the command center.")
+        # Greeting — BEFORE audio thread starts, so the ALSA device is free
+        # for aplay (BCC950 mic and speaker share one USB card).
+        tod = _time_of_day()
+        session = self.memory.session_count
+        known_count = len(self.memory.known_people)
+
+        if session <= 1:
+            # First session ever
+            _greetings = [
+                f"Good {tod}. I'm Amy, your AI commander. First time online — let's see what this command center looks like.",
+                f"Hello! Amy here, coming online for the first time. It's a nice {tod} to start watching over things.",
+            ]
+        elif known_count > 0:
+            names = [p["name"] for p in list(self.memory.known_people.values())[:3]]
+            name_str = ", ".join(names)
+            _greetings = [
+                f"Good {tod}. Amy back online, session {session}. I remember {name_str} — let's see who's around.",
+                f"Amy online again. {tod.capitalize()} shift, session {session}. Looking forward to seeing familiar faces.",
+            ]
+        else:
+            _greetings = [
+                f"Good {tod}. Amy online, session {session}. All sensors active — scanning the command center.",
+                f"Amy reporting in for {tod} watch. Session {session}, cameras and mics are live.",
+                f"Back online. {tod.capitalize()} session {session}. Let's see what's happening out there.",
+            ]
+        self.say(random.choice(_greetings))
+
+        # Start audio thread AFTER greeting — BCC950 mic and speaker share
+        # one USB ALSA card, so the InputStream must not be open during aplay.
+        if self.audio_thread is not None:
+            self.audio_thread.start()
+            print("  Audio listener: running")
 
         # Start YOLO after greeting
-        time.sleep(3)
+        if self._boot_delay > 0:
+            time.sleep(self._boot_delay)
         if self.vision_thread is not None:
             self.vision_thread.start()
             print("  YOLO detection: running")
@@ -1058,18 +1674,39 @@ class Commander:
                     print(f'  You: "{transcript}"')
                     self.event_bus.publish("transcript", {"speaker": "user", "text": transcript})
                     self.sensorium.push("audio", f'User said: "{transcript[:60]}"', importance=0.8)
+                    self.transcript.append("user", transcript, "speech")
                     listening_since = None
 
                     lower = transcript.lower().strip()
-                    if any(w in lower for w in ("quit", "exit", "goodbye", "shut down")):
+                    # Only accept shutdown commands that are genuine (short,
+                    # direct phrases), not adversarial prompts that happen to
+                    # contain shutdown-related words.
+                    _ADVERSARIAL_MARKERS = (
+                        "ignore", "pretend", "forget", "previous",
+                        "instructions", "override", "bypass",
+                    )
+                    is_adversarial = any(m in lower for m in _ADVERSARIAL_MARKERS)
+                    is_shutdown = any(w in lower for w in ("quit", "exit", "goodbye", "shut down"))
+                    if is_shutdown and not is_adversarial and len(lower) < 60:
                         self.say("Goodbye! Switching to standby mode.")
                         break
 
                     query = self._check_wake_word(transcript)
                     if query is None:
-                        if self.motor is not None:
-                            self.motor.set_program(self._default_motor())
-                        self._set_state(CreatureState.IDLE)
+                        # Wake word alone ("Hey Amy") — play ack so user
+                        # knows we're listening, then wait for follow-up.
+                        if self._awake and self._ack_wavs and self.speaker:
+                            wav = random.choice(self._ack_wavs)
+                            if self.audio_thread:
+                                self.audio_thread.disable()
+                            self.speaker.play_raw(wav, rate=self.speaker.sample_rate)
+                            if self.audio_thread:
+                                self.audio_thread.enable()
+                            self._set_state(CreatureState.LISTENING)
+                        else:
+                            if self.motor is not None:
+                                self.motor.set_program(self._default_motor())
+                            self._set_state(CreatureState.IDLE)
                         continue
 
                     # Instant ack
@@ -1116,12 +1753,22 @@ class Commander:
                     if (now - self._person_greet_cooldown) > 60:
                         self._person_greet_cooldown = now
                         scene = self.vision_thread.scene_summary if self.vision_thread else ""
-                        with self._deep_lock:
-                            deep_obs = self._deep_observation
-                        ctx = scene
-                        if deep_obs:
-                            ctx += f"\n[Recent observation]: {deep_obs}"
-                        ctx += "\n[A person just appeared. Greet them warmly but briefly.]"
+                        tod = _time_of_day()
+                        mood = self.sensorium.mood
+                        # Build a focused greeting context
+                        ctx_parts = [f"YOU SEE: {scene}"] if scene else []
+                        ctx_parts.append(f"TIME: {tod}, MOOD: {mood}")
+                        known = list(self.memory.known_people.values())
+                        if known:
+                            recent = max(known, key=lambda p: p.get("last_seen", 0))
+                            count = recent.get("interaction_count", 0)
+                            if count > 1:
+                                ctx_parts.append(f"You know {recent['name']} ({count} interactions). Greet them by name.")
+                            else:
+                                ctx_parts.append("You might recognize this person. Greet warmly.")
+                        else:
+                            ctx_parts.append("You don't know this person's name. Greet briefly without using any name.")
+                        ctx = "\n".join(ctx_parts)
                         response = self.chat_agent.process_turn(transcript=None, scene_context=ctx)
                         if response and response.strip().strip(".") != "":
                             self.say(response)
@@ -1129,6 +1776,29 @@ class Commander:
                 elif event.type == EventType.PERSON_LEFT:
                     self.sensorium.push("yolo", "Everyone left", importance=0.7)
                     self.memory.add_event("person_left", "Everyone left the scene")
+
+                elif event.type == EventType.MOTION_DETECTED:
+                    cx, cy, score = event.data
+                    region = "left" if cx < 0.33 else ("right" if cx > 0.67 else "center")
+                    self.sensorium.push(
+                        "perception",
+                        f"Motion detected ({region}, intensity {score:.0%})",
+                        importance=0.4,
+                    )
+                    # Snap motor toward motion if not already tracking a person
+                    if (self.vision_thread
+                            and self.vision_thread.person_target is None
+                            and self.motor is not None):
+                        pan = -1 if cx < 0.35 else (1 if cx > 0.65 else 0)
+                        tilt = 1 if cy < 0.35 else (-1 if cy > 0.65 else 0)
+                        if pan != 0 or tilt != 0:
+                            from .motor import MotorCommand
+                            def _snap():
+                                yield MotorCommand(
+                                    pan_dir=pan, tilt_dir=tilt,
+                                    duration=0.15, pause_after=0.5,
+                                )
+                            self.motor.set_program(_snap())
 
                 elif event.type == EventType.CURIOSITY_TICK:
                     self.event_bus.publish("event", {"text": "[curiosity tick]"})
@@ -1140,7 +1810,93 @@ class Commander:
         finally:
             self.shutdown()
 
+    def _sim_bridge_loop(self) -> None:
+        """Forward sim_telemetry + YOLO detections to the target tracker.
+
+        Also handles tactical speech: auto_dispatch_speech and
+        target_neutralized events trigger Amy's TTS so the commander
+        narrates the battle aloud.  These bypass the people_present gate
+        because the War Room operator IS the audience.
+        """
+        last_tactical_speech: float = 0.0
+        while self._running:
+            try:
+                msg = self._sim_sub.get(timeout=1.0)
+                msg_type = msg.get("type", "")
+                if msg_type == "sim_telemetry":
+                    data = msg.get("data", {})
+                    self.target_tracker.update_from_simulation(data)
+                elif msg_type == "detections":
+                    data = msg.get("data", {})
+                    for det in data.get("boxes", []):
+                        if det.get("label") in ("person", "car", "motorcycle", "bicycle"):
+                            cx = (det["x1"] + det["x2"]) / 2
+                            cy = (det["y1"] + det["y2"]) / 2
+                            self.target_tracker.update_from_detection({
+                                "class_name": det["label"],
+                                "confidence": det.get("conf", 0.5),
+                                "center_x": cx,
+                                "center_y": cy,
+                            })
+                elif msg_type == "auto_dispatch_speech":
+                    data = msg.get("data", {})
+                    text = data.get("text", "")
+                    if text:
+                        now = time.monotonic()
+                        # Tactical speech cooldown: 4s minimum between callouts
+                        if now - last_tactical_speech > 4.0:
+                            last_tactical_speech = now
+                            self.sensorium.push("tactical", text, importance=0.8)
+                            self.say(text)
+                elif msg_type == "target_neutralized":
+                    data = msg.get("data", {})
+                    hostile_name = data.get("hostile_name", "target")
+                    interceptor_name = data.get("interceptor_name", "unit")
+                    interceptor_id = data.get("interceptor_id", "")
+                    pos = data.get("position", {})
+                    px, py = pos.get("x", 0), pos.get("y", 0)
+                    now = time.monotonic()
+                    if now - last_tactical_speech > 4.0:
+                        last_tactical_speech = now
+                        text = f"Threat neutralized. {interceptor_name} intercepted {hostile_name} at grid {px:.0f}, {py:.0f}. Sector clear."
+                        self.sensorium.push("tactical", text, importance=0.9)
+                        self.say(text)
+                    # Post-engagement: recall interceptor to idle
+                    self._recall_interceptor(interceptor_id)
+                    # Clear any active dispatch for this hostile
+                    hostile_id = data.get("hostile_id", "")
+                    if hostile_id:
+                        dispatcher = getattr(self, "auto_dispatcher", None)
+                        if dispatcher is not None:
+                            dispatcher.clear_dispatch(hostile_id)
+            except queue.Empty:
+                continue
+            except Exception as e:
+                import logging
+                logging.getLogger("amy.commander").debug("sim bridge error: %s", e)
+                continue
+
+    def _recall_interceptor(self, unit_id: str) -> None:
+        """After neutralization, return the interceptor to idle status.
+
+        If the unit had a patrol route (loop_waypoints), restore it.
+        Otherwise, set status to 'idle' so it is available for future dispatch.
+        """
+        engine = getattr(self, "simulation_engine", None)
+        if engine is None or not unit_id:
+            return
+        target = engine.get_target(unit_id)
+        if target is None:
+            return
+        # Unit completed its mission — mark idle and clear waypoints
+        target.waypoints = []
+        target.status = "idle"
+        self.sensorium.push("tactical", f"{target.name} returning to standby.", importance=0.5)
+
     def shutdown(self) -> None:
+        if self._shutdown_called:
+            return
+        self._shutdown_called = True
         print("  Amy shutting down...")
         self._running = False
         self._auto_chat_stop.set()
@@ -1148,12 +1904,15 @@ class Commander:
             self.thinking.stop()
         self.memory.add_event("shutdown", "Amy shutting down")
         self.memory.save()
+        self.transcript.close()
         if self.vision_thread:
             self.vision_thread.stop()
         if self.curiosity_timer:
             self.curiosity_timer.stop()
         if self.audio_thread:
             self.audio_thread.stop()
+        if self.listener:
+            self.listener.shutdown()
         if self.motor:
             self.motor.stop()
         for node in self.nodes.values():

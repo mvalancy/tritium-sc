@@ -9,7 +9,7 @@ from __future__ import annotations
 __version__ = "0.1.0"
 
 
-def create_amy(settings=None) -> "Commander":
+def create_amy(settings=None, simulation_engine=None) -> "Commander":
     """Create and configure an Amy Commander instance.
 
     Auto-detects available hardware:
@@ -18,6 +18,7 @@ def create_amy(settings=None) -> "Commander":
 
     Args:
         settings: Pydantic settings object (from app.config) or None for defaults.
+        simulation_engine: Optional SimulationEngine for virtual targets.
 
     Returns:
         A Commander instance ready to be started with .run()
@@ -76,6 +77,12 @@ def create_amy(settings=None) -> "Commander":
         use_tts=tts_enabled,
         wake_word=wake_word,
         think_interval=think_interval,
+        simulation_engine=simulation_engine,
     )
+
+    # Set initial tactical mode from config
+    initial_mode = getattr(settings, "simulation_mode", "sim") if settings else "sim"
+    if initial_mode in ("sim", "live"):
+        commander._mode = initial_mode
 
     return commander
