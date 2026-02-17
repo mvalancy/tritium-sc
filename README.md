@@ -17,7 +17,7 @@
 
 *A garden of diverse digital life — AI that flourishes, machines that act independently*
 
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-00f0ff?style=flat-square&logo=python&logoColor=white)](https://python.org)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-00f0ff?style=flat-square&logo=python&logoColor=white)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.109+-ff2a6d?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![YOLO](https://img.shields.io/badge/YOLO-v8-05ffa1?style=flat-square)](https://ultralytics.com)
 [![License](https://img.shields.io/badge/license-MIT-fcee0a?style=flat-square)](LICENSE)
@@ -39,6 +39,28 @@ TRITIUM-SC is inspired by Fukuoka's "do nothing farming" philosophy. Instead of 
 **Assets** (Nerf turrets, patrol rovers, observation drones) are independent agents. They receive tasks but decide how to execute them. They report what they see. They act on their own initiative when the situation demands it.
 
 The operator doesn't control this system. The operator **tends** it — like a farmer tending a field of diverse crops that feed each other.
+
+---
+
+## QUICK START
+
+```bash
+# 1. Clone and install
+git clone git@github.com:mvalancy/tritium-sc.git
+cd tritium-sc
+./setup.sh install
+
+# 2. Start the server
+./start.sh
+
+# 3. Open http://localhost:8000
+
+# 4. Press W to enter the War Room
+
+# 5. Watch, select units, right-click to dispatch
+```
+
+The simulation engine starts automatically. Friendly units patrol, hostile intruders spawn, and Amy begins thinking. See [docs/HOW-TO-PLAY.md](docs/HOW-TO-PLAY.md) for the full player guide.
 
 ---
 
@@ -425,6 +447,7 @@ TRITIUM-SC supports full keyboard and gamepad navigation for hands-free operatio
 | `A` | Assets |
 | `N` | Analytics |
 | `Y` | Amy |
+| `W` | War Room |
 | `?` | Controls Help |
 | `/` | Focus Search |
 
@@ -505,8 +528,24 @@ Connect any Xbox, 8BitDo (xinput mode), or standard controller:
 │  ├── POST /api/amy/command         Lua action (scan, look_at)      │
 │  └── POST /api/amy/auto-chat       Toggle autonomous conversation  │
 │                                                                    │
+│  SIMULATION + TARGETS                                              │
+│  ├── GET  /api/amy/simulation/targets  List simulation targets     │
+│  ├── POST /api/amy/simulation/spawn    Spawn hostile target        │
+│  ├── DELETE /api/amy/simulation/targets/{id}  Remove target        │
+│  ├── GET  /api/targets                 All tracked targets         │
+│  ├── GET  /api/targets/hostiles        Hostile targets only        │
+│  └── GET  /api/targets/friendlies      Friendly targets only       │
+│                                                                    │
 │  WEBSOCKET                                                         │
 │  └── WS   /ws/live                  Real-time events + Amy events  │
+│                                      + sim telemetry batches       │
+│                                                                    │
+│  MQTT (distributed devices)                                        │
+│  ├── tritium/{site}/robots/{id}/telemetry   Robot position/battery │
+│  ├── tritium/{site}/robots/{id}/command     Dispatch/patrol/recall  │
+│  ├── tritium/{site}/cameras/{id}/detections Camera YOLO boxes      │
+│  ├── tritium/{site}/amy/alerts              Threat notifications   │
+│  └── tritium/{site}/escalation/change       Threat level changes   │
 │                                                                    │
 └────────────────────────────────────────────────────────────────────┘
 ```
@@ -518,18 +557,29 @@ Connect any Xbox, 8BitDo (xinput mode), or standard controller:
 ```
 tritium-sc/
 ├── amy/                         # AMY — AI Commander (autonomous consciousness)
-│   ├── commander.py             # Main orchestrator, event loop, sensor management
+│   ├── commander.py             # Main orchestrator, event loop, VisionThread, AudioThread
+│   ├── event_bus.py             # EventBus — thread-safe pub/sub for all internal events
 │   ├── sensorium.py             # L3 awareness: temporal sensor fusion
 │   ├── thinking.py              # L4 deliberation: continuous inner monologue
+│   ├── target_tracker.py        # Unified registry of real (YOLO) + virtual (sim) targets
+│   ├── escalation.py            # ThreatClassifier (2Hz) + AutoDispatcher
+│   ├── mqtt_bridge.py           # MQTT broker bridge for distributed devices
+│   ├── perception.py            # Layered perception: quality, complexity, motion
 │   ├── lua_motor.py             # Action parser (Lua-structured LLM output)
 │   ├── memory.py                # Persistent spatial + event memory
 │   ├── motor.py                 # Motor programs (scan, track, breathe, nod)
-│   ├── listener.py              # Whisper STT (wake word, continuous listening)
-│   ├── speaker.py               # Piper TTS (aplay playback)
+│   ├── listener.py              # Silero VAD + whisper.cpp GPU STT
+│   ├── speaker.py               # Piper TTS (BCC950 ALSA output)
 │   ├── vision.py                # Ollama deep vision API
 │   ├── agent.py                 # LLM chat agent with tool use
 │   ├── tools.py                 # Tool dispatch to Commander
+│   ├── extraction.py            # Fact extraction from conversation
 │   ├── router.py                # FastAPI: /api/amy/* endpoints + SSE
+│   ├── simulation/              # Battlespace simulation engine
+│   │   ├── engine.py            # 10Hz tick loop, hostile spawner
+│   │   ├── target.py            # SimulationTarget dataclass
+│   │   ├── ambient.py           # AmbientSpawner (neutral neighborhood activity)
+│   │   └── loader.py            # TritiumLevelFormat JSON parser
 │   └── nodes/                   # Distributed sensor architecture
 │       ├── base.py              # Abstract SensorNode (camera, mic, PTZ, speaker)
 │       ├── bcc950.py            # Logitech BCC950 PTZ camera + mic + speaker
@@ -560,19 +610,21 @@ tritium-sc/
 │   ├── database.py              # Async SQLite + FTS5
 │   └── models.py                # SQLAlchemy models
 ├── frontend/
-│   ├── index.html               # Main SPA (8 views incl. AMY)
+│   ├── index.html               # Main SPA (9 views incl. AMY + War Room)
 │   ├── css/
 │   │   ├── cybercore.css        # Cyberpunk base theme
 │   │   └── tritium.css          # App + Amy panel styles
 │   └── js/
 │       ├── app.js               # Main app, WebSocket, keyboard shortcuts
 │       ├── amy.js               # Amy dashboard (thoughts, video, chat)
+│       ├── war.js               # War Room — Canvas 2D RTS tactical map
 │       ├── grid.js              # Three.js 3D property view
 │       ├── player.js            # Video player
 │       ├── zones.js             # Zone management
 │       ├── targets.js           # People/vehicle gallery
-│       ├── assets.js            # Asset control panel
-│       └── analytics.js         # Detection statistics
+│       ├── assets.js            # Asset state + tactical map rendering
+│       ├── analytics.js         # Detection statistics
+│       └── input.js             # Unified keyboard + gamepad input
 └── tests/
 ```
 
@@ -585,7 +637,7 @@ tritium-sc/
 ║                                                                  ║
 ║   BACKEND                          FRONTEND                      ║
 ║   ════════                         ════════                      ║
-║   ▪ Python 3.11+                   ▪ Vanilla JS (no framework)   ║
+║   ▪ Python 3.12+                   ▪ Vanilla JS (no framework)   ║
 ║   ▪ FastAPI                        ▪ Three.js (3D rendering)     ║
 ║   ▪ SQLAlchemy + aiosqlite         ▪ CYBERCORE CSS               ║
 ║   ▪ Pydantic                       ▪ JetBrains Mono font         ║
@@ -597,10 +649,10 @@ tritium-sc/
 ║   ▪ OpenCV                         ▪ Piper TTS (Amy voice)       ║
 ║   ▪ PyTorch + CUDA                 ▪ BCC950 PTZ camera node      ║
 ║                                                                  ║
-║   INTEGRATIONS                                                   ║
-║   ════════════                                                   ║
-║   ▪ Reolink NVR API                ▪ RTSP streams                ║
-║   ▪ MQTT (planned)                 ▪ Home Assistant (planned)    ║
+║   COMMUNICATIONS                                                 ║
+║   ═══════════════                                                ║
+║   ▪ MQTT (paho-mqtt)               ▪ Reolink NVR API            ║
+║   ▪ Distributed device mesh        ▪ RTSP streams               ║
 ║                                                                  ║
 ╚══════════════════════════════════════════════════════════════════╝
 ```
@@ -610,39 +662,56 @@ tritium-sc/
 ## ROADMAP
 
 ```
-PHASE 1 ████████████████████ COMPLETE
-├── Cyberpunk UI shell
+PHASE 0 ████████████████████ COMPLETE — FOUNDATION
+├── Cyberpunk UI shell (CYBERCORE CSS)
 ├── Video browsing by channel/date
-├── YOLO object detection
-├── ByteTrack unique counting
-└── Thumbnail extraction
+├── YOLO v8 detection + ByteTrack tracking
+├── Zone system with polygon editor
+├── Asset management + 3D tactical map
+└── Keyboard + gamepad navigation (8 views)
 
-PHASE 2 ████████████████████ COMPLETE
-├── Person/vehicle target gallery
-├── Manual merge & labeling
-├── Zone monitoring & alerts
-├── 3D property visualization
-└── Asset management system
+PHASE 1 ████████████████████ COMPLETE — AMY CONSCIOUSNESS
+├── Amy AI Commander (4 cognitive layers)
+├── BCC950 PTZ sensor node (camera + mic + speaker)
+├── Sensorium temporal fusion + inner monologue
+├── Silero VAD + whisper.cpp GPU STT
+├── Piper TTS, Memory v3, Lua actions, Goal stack
+├── Layered perception (quality, complexity, motion)
+└── 33 behavioral scenarios, 208 scored runs
 
-PHASE 3 ████████████████░░░░ IN PROGRESS
-├── Amy AI Commander (autonomous consciousness)
-├── Distributed sensor nodes (BCC950 + IP cameras)
-├── Live RTSP stream analysis
-├── Real-time WebSocket alerts + Amy event bridge
-└── Cyberpunk Amy dashboard (thoughts, video, chat)
+PHASE 2 ████████████████████ COMPLETE — SIMULATION ENGINE
+├── SimulationTarget + 10Hz tick loop
+├── Hostile spawner + AmbientSpawner
+├── TargetTracker (unified real + virtual)
+├── TritiumLevelFormat JSON loader
+└── Battery drain, lifecycle state machine
 
-PHASE 4 ░░░░░░░░░░░░░░░░░░░░ GROWING NATURALLY
-├── Independent Nerf asset agents (turrets, rovers)
-├── Amy ↔ asset communication (task autonomously)
-├── Multi-camera sensorium (Amy sees through all eyes)
-├── Cross-camera person re-identification
-└── Amy learns the property over days/weeks
+PHASE 3 ████████████████████ COMPLETE — DISPATCH + ESCALATION
+├── ThreatClassifier (2Hz zone-based ladder)
+├── AutoDispatcher (nearest-unit on escalation)
+├── MQTT bridge (distributed device mesh)
+├── Robot template (examples/robot-template/)
+├── Amy speech on dispatch events
+└── TelemetryBatcher for WebSocket efficiency
 
-PHASE 5 ░░░░░░░░░░░░░░░░░░░░ THE GARDEN MATURES
-├── Assets make independent tactical decisions
-├── Amy develops long-term spatial memory of the AO
-├── Natural language: "Amy, what happened last night?"
-├── Multi-agent coordination without central planning
+PHASE 4 ████████████████░░░░ IN PROGRESS — WAR ROOM RTS
+├── War Room view: full-screen Canvas 2D tactical map
+├── Three modes: OBSERVE, TACTICAL, SETUP
+├── Target rendering with alliance colors + headings
+├── Camera pan/zoom, box select, dispatch via click
+└── TODO: fog of war, engagement viz, minimap
+
+PHASE 5 ░░░░░░░░░░░░░░░░░░░░ FUTURE — HARDWARE INTEGRATION
+├── N real cameras on mesh network
+├── Real Nerf turret servo control
+├── Real rover with motor control + onboard camera
+└── Battery and health monitoring for real assets
+
+PHASE 6 ░░░░░░░░░░░░░░░░░░░░ THE GARDEN MATURES
+├── Behavioral memory in threat classification
+├── Pursuit intercept (track moving targets)
+├── Force reserve + unit type awareness
+├── Historical replay on tactical map
 └── The system tends itself — the operator just watches
 ```
 
