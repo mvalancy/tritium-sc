@@ -24,11 +24,16 @@ waypoint-following this is simpler.
 Threat classification is NOT a property of the target — it is computed
 by ThreatClassifier in ``amy/escalation.py`` from zone membership and
 dwell time.  SimulationTarget carries only *intrinsic* state.
+
+Combat fields (health, weapon_range, etc.) support the projectile-based
+combat system.  Unit type stat profiles are applied via
+``apply_combat_profile()`` or set explicitly by factories/spawners.
 """
 
 from __future__ import annotations
 
 import math
+import time as _time
 from dataclasses import dataclass, field
 
 
@@ -42,14 +47,35 @@ _DRAIN_RATES: dict[str, float] = {
     "animal": 0.0,
 }
 
+# Combat stat profiles by (asset_type, alliance).
+# Format: (health, max_health, weapon_range, weapon_cooldown, weapon_damage, is_combatant)
+_COMBAT_PROFILES: dict[str, tuple[float, float, float, float, float, bool]] = {
+    "turret":           (200.0, 200.0, 20.0, 1.5, 15.0, True),
+    "drone":            (60.0,  60.0,  12.0, 1.0,  8.0, True),
+    "rover":            (150.0, 150.0, 10.0, 2.0, 12.0, True),
+    "person_hostile":   (80.0,  80.0,   8.0, 2.5, 10.0, True),
+    "person_neutral":   (50.0,  50.0,   0.0, 0.0,  0.0, False),
+    "vehicle":          (300.0, 300.0,  0.0, 0.0,  0.0, False),
+    "animal":           (30.0,  30.0,   0.0, 0.0,  0.0, False),
+}
+
+
+def _profile_key(asset_type: str, alliance: str) -> str:
+    """Return the combat profile lookup key for a target."""
+    if asset_type == "person":
+        if alliance == "hostile":
+            return "person_hostile"
+        return "person_neutral"
+    return asset_type
+
 
 @dataclass
 class SimulationTarget:
     """A single simulated entity (rover, drone, turret, person, etc.).
 
     Lifecycle:
-      active -> idle/stationary/arrived/escaped/neutralized/despawned/low_battery -> destroyed
-      Hostiles: active -> escaped (reached exit edge) or neutralized (intercepted)
+      active -> idle/stationary/arrived/escaped/neutralized/eliminated/despawned/low_battery -> destroyed
+      Hostiles: active -> escaped (reached exit edge) or neutralized/eliminated (intercepted/killed)
       Friendlies: active -> arrived (dispatch) or loops patrol (loop_waypoints=True)
       Neutrals: active -> despawned (reached destination)
     """
@@ -64,12 +90,52 @@ class SimulationTarget:
     battery: float = 1.0  # 0.0-1.0 (persons/animals drain at 0.0)
     waypoints: list[tuple[float, float]] = field(default_factory=list)
     _waypoint_index: int = 0
-    status: str = "active"  # "active", "idle", "stationary", "arrived", "escaped", "neutralized", "despawned", "low_battery", "destroyed"
+    status: str = "active"  # "active", "idle", "stationary", "arrived", "escaped", "neutralized", "eliminated", "despawned", "low_battery", "destroyed"
     loop_waypoints: bool = False  # True for friendly patrol routes, False for one-shot paths
+
+    # Combat fields
+    health: float = 100.0
+    max_health: float = 100.0
+    weapon_range: float = 15.0    # meters — how far this unit can shoot
+    weapon_cooldown: float = 2.0  # seconds between shots
+    weapon_damage: float = 10.0   # damage per hit
+    last_fired: float = 0.0       # timestamp of last shot
+    kills: int = 0
+    is_combatant: bool = True     # False for civilians/animals
+
+    def apply_combat_profile(self) -> None:
+        """Apply combat stats from _COMBAT_PROFILES based on asset_type and alliance."""
+        key = _profile_key(self.asset_type, self.alliance)
+        profile = _COMBAT_PROFILES.get(key)
+        if profile is None:
+            return
+        (self.health, self.max_health, self.weapon_range,
+         self.weapon_cooldown, self.weapon_damage, self.is_combatant) = profile
+
+    def apply_damage(self, amount: float) -> bool:
+        """Apply *amount* damage. Returns True if this target is eliminated (health <= 0)."""
+        if self.status in ("destroyed", "eliminated", "neutralized"):
+            return True
+        self.health = max(0.0, self.health - amount)
+        if self.health <= 0:
+            self.status = "eliminated"
+            return True
+        return False
+
+    def can_fire(self) -> bool:
+        """Check if this target can fire right now (cooldown elapsed, has weapon, alive)."""
+        if self.status not in ("active", "idle", "stationary"):
+            return False
+        if self.weapon_range <= 0 or self.weapon_damage <= 0:
+            return False
+        if not self.is_combatant:
+            return False
+        now = _time.time()
+        return (now - self.last_fired) >= self.weapon_cooldown
 
     def tick(self, dt: float) -> None:
         """Advance simulation by *dt* seconds."""
-        if self.status in ("destroyed", "low_battery", "neutralized", "escaped"):
+        if self.status in ("destroyed", "low_battery", "neutralized", "escaped", "eliminated"):
             return
 
         # Battery drain
@@ -133,7 +199,7 @@ class SimulationTarget:
         Note: threat_level is NOT included — it is computed externally by
         ThreatClassifier and lives in ThreatRecord, not on the target.
         """
-        from geo.reference import local_to_latlng
+        from amy.geo import local_to_latlng
         geo = local_to_latlng(self.position[0], self.position[1])
         return {
             "target_id": self.target_id,
@@ -149,4 +215,8 @@ class SimulationTarget:
             "battery": round(self.battery, 4),
             "status": self.status,
             "waypoints": [{"x": w[0], "y": w[1]} for w in self.waypoints],
+            "health": round(self.health, 1),
+            "max_health": round(self.max_health, 1),
+            "kills": self.kills,
+            "is_combatant": self.is_combatant,
         }

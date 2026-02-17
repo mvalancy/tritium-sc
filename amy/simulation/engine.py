@@ -14,9 +14,17 @@ It runs three daemon threads:
      slows as hostile count increases (back-pressure) and hard-caps at
      MAX_HOSTILES=10.  This is part of the engine (not a separate spawner
      class) because hostile pressure is the engine's core tactical output.
+     Disabled during game mode (wave controller handles spawning instead).
 
   3. ambient-spawner — delegated to AmbientSpawner (separate class) for
-     neutral neighborhood activity.
+     neutral neighborhood activity.  Continues during game mode for
+     atmosphere and "don't shoot civilians" tension.
+
+Combat integration:
+  When game_mode.state == "active", the tick loop also runs:
+    - game_mode.tick(dt) — state transitions, wave management
+    - combat.tick(dt, targets) — projectile flight + damage
+    - behaviors.tick(dt, targets) — unit AI decisions
 
 Data flow:
   Engine --(sim_telemetry)--> EventBus --(bridge loop)--> TargetTracker
@@ -49,6 +57,9 @@ import uuid
 from typing import TYPE_CHECKING
 
 from .ambient import AmbientSpawner
+from .behaviors import UnitBehaviors
+from .combat import CombatSystem
+from .game_mode import GameMode
 from .target import SimulationTarget
 
 if TYPE_CHECKING:
@@ -88,6 +99,14 @@ class SimulationEngine:
         self._ambient_spawner: AmbientSpawner | None = None
         self._spawners_paused = threading.Event()  # clear = running, set = paused
 
+        # Combat subsystems
+        self.combat = CombatSystem(event_bus)
+        self.game_mode = GameMode(event_bus, self, self.combat)
+        self.behaviors = UnitBehaviors(self.combat)
+
+        # Wire target_eliminated events back to game mode for scoring
+        self._combat_sub_thread: threading.Thread | None = None
+
     # -- Target management --------------------------------------------------
 
     def add_target(self, target: SimulationTarget) -> None:
@@ -122,6 +141,33 @@ class SimulationEngine:
         """Resume hostile and ambient spawners."""
         self._spawners_paused.clear()
 
+    # -- Game mode interface ------------------------------------------------
+
+    def begin_war(self) -> None:
+        """Start a new game (delegates to GameMode)."""
+        self.game_mode.begin_war()
+
+    def reset_game(self) -> None:
+        """Reset game state. Clear all hostiles, reset combat."""
+        self.game_mode.reset()
+        self.combat.clear()
+        self.combat.reset_streaks()
+        self.behaviors.clear_dodge_state()
+        # Remove all hostile targets
+        with self._lock:
+            to_remove = [
+                tid for tid, t in self._targets.items()
+                if t.alliance == "hostile"
+            ]
+            for tid in to_remove:
+                removed = self._targets.pop(tid, None)
+                if removed is not None:
+                    self._used_names.discard(removed.name)
+
+    def get_game_state(self) -> dict:
+        """Return current game state dict."""
+        return self.game_mode.get_state()
+
     # -- Lifecycle ----------------------------------------------------------
 
     def start(self) -> None:
@@ -139,6 +185,12 @@ class SimulationEngine:
         self._ambient_spawner = AmbientSpawner(self)
         self._ambient_spawner.start()
 
+        # Start combat event listener
+        self._combat_sub_thread = threading.Thread(
+            target=self._combat_event_listener, name="combat-events", daemon=True
+        )
+        self._combat_sub_thread.start()
+
     def stop(self) -> None:
         self._running = False
         if self._ambient_spawner is not None:
@@ -150,6 +202,9 @@ class SimulationEngine:
         if self._spawner_thread is not None:
             self._spawner_thread.join(timeout=2.0)
             self._spawner_thread = None
+        if self._combat_sub_thread is not None:
+            self._combat_sub_thread.join(timeout=2.0)
+            self._combat_sub_thread = None
 
     # Engagement range — a friendly within this distance of a hostile
     # neutralizes the hostile on the next tick.
@@ -162,12 +217,22 @@ class SimulationEngine:
             time.sleep(0.1)
             with self._lock:
                 targets = list(self._targets.values())
+                targets_dict = dict(self._targets)
             for target in targets:
                 target.tick(0.1)
                 self._event_bus.publish("sim_telemetry", target.to_dict())
 
-            # Interception check — friendly within range neutralizes hostile
-            self._check_interceptions(targets)
+            # Game mode active — run combat subsystems
+            game_active = self.game_mode.state == "active"
+            if self.game_mode.state in ("countdown", "active", "wave_complete"):
+                self.game_mode.tick(0.1)
+            if game_active:
+                self.combat.tick(0.1, targets_dict)
+                self.behaviors.tick(0.1, targets_dict)
+            else:
+                # Legacy interception check (non-game-mode)
+                if self.game_mode.state == "setup":
+                    self._check_interceptions(targets)
 
             # Lifecycle cleanup
             now = time.time()
@@ -197,6 +262,12 @@ class SimulationEngine:
                         to_remove.append(target.target_id)
                 # Neutralized targets — remove after 30s (visible on map briefly)
                 if target.status == "neutralized":
+                    if target.target_id not in self._despawned_at:
+                        self._despawned_at[target.target_id] = now
+                    elif now - self._despawned_at[target.target_id] > 30:
+                        to_remove.append(target.target_id)
+                # Eliminated targets — remove after 30s
+                if target.status == "eliminated":
                     if target.target_id not in self._despawned_at:
                         self._despawned_at[target.target_id] = now
                     elif now - self._despawned_at[target.target_id] > 30:
@@ -231,6 +302,16 @@ class SimulationEngine:
                         "position": {"x": hostile.position[0], "y": hostile.position[1]},
                     })
                     break
+
+    def _combat_event_listener(self) -> None:
+        """Listen for target_eliminated events and forward to game mode."""
+        sub = self._event_bus.subscribe("target_eliminated")
+        while self._running:
+            try:
+                data = sub.get(timeout=0.5)
+                self.game_mode.on_target_eliminated(data["target_id"])
+            except Exception:
+                pass  # timeout or shutdown
 
     # -- Hostile spawning ---------------------------------------------------
 
@@ -276,6 +357,8 @@ class SimulationEngine:
             speed=1.5,
             waypoints=waypoints,
         )
+        # Apply combat profile for hostile person
+        target.apply_combat_profile()
         self.add_target(target)
         return target
 
@@ -306,6 +389,7 @@ class SimulationEngine:
         Hostile spawn rate is modulated by time of day: more intrusions at
         night, fewer during daylight hours.  See ambient._hour_activity().
         Respects _spawners_paused — when set, skips spawning entirely.
+        Disabled during game mode (wave controller handles spawning).
         """
         from .ambient import _hour_activity
 
@@ -330,5 +414,8 @@ class SimulationEngine:
                 elapsed += 0.5
 
             if self._running and not self._spawners_paused.is_set():
+                # Skip auto-spawning during game mode (wave controller spawns)
+                if self.game_mode.state != "setup":
+                    continue
                 if self._count_active_hostiles() < self.MAX_HOSTILES:
                     self.spawn_hostile()
