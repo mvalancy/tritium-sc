@@ -70,6 +70,39 @@ The test script captures N frames, records metrics, and asserts:
 Fails with a clear message identifying which metric drifted and by how
 much.
 
+## Panel Overlap Detection
+
+```mermaid
+flowchart TD
+    INJ[Inject Solid<br/>CSS Colors] --> SS[Take<br/>Screenshot]
+    SS --> CV[OpenCV<br/>Color Detection]
+    CV --> MASK[Generate<br/>Panel Masks]
+    MASK --> OVL{Check<br/>Overlap?}
+    OVL -->|None| PASS[PASS]
+    OVL -->|Found| ANN[Annotate<br/>Overlap Region]
+    ANN --> FAIL[FAIL + Report]
+
+    style INJ fill:#1a1a2e,stroke:#00f0ff,color:#00f0ff
+    style SS fill:#1a1a2e,stroke:#00f0ff,color:#00f0ff
+    style CV fill:#1a1a2e,stroke:#05ffa1,color:#05ffa1
+    style MASK fill:#1a1a2e,stroke:#05ffa1,color:#05ffa1
+    style OVL fill:#1a1a2e,stroke:#fcee0a,color:#fcee0a
+    style PASS fill:#1a1a2e,stroke:#05ffa1,color:#05ffa1
+    style ANN fill:#1a1a2e,stroke:#ff2a6d,color:#ff2a6d
+    style FAIL fill:#1a1a2e,stroke:#ff2a6d,color:#ff2a6d
+```
+
+The overlap diagnostic uses solid-color panels injected via CSS to verify that no panels collide:
+
+![Overlap Diagnostic](screenshots/overlap-diagnostic.png)
+*Step 1: Inject solid colors — red, green, blue, yellow, magenta*
+
+![Overlap Annotated](screenshots/overlap-annotated.png)
+*Step 2: OpenCV detects overlap regions and outlines them in white*
+
+![Panels Annotated](screenshots/panels-annotated.png)
+*Step 3: All 5 panels open with OpenCV-generated labels*
+
 ## Common CSS Pitfalls
 
 ### Flex children with no height constraint

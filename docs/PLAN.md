@@ -72,14 +72,16 @@ same YOLO detection pipeline, same zone alerts.
 ## Scale Progression
 
 ```
-COMPLETE (Phase 0-3)      PHASE 4 (Active)         FUTURE (Phase 5+)
-1 real cam                RTS War Room view         N real cameras
-+ Amy consciousness       with Canvas 2D            + real hardware
-+ simulation engine       + unit selection           + mesh network
-+ threat escalation       + fog of war              + historical replay
-+ auto dispatch           + engagement viz           + synthetic cameras
-+ MQTT distributed bus    + operator override
-+ ambient activity
+COMPLETE (Phase 0-4)      PHASE 5 (Active)          FUTURE (Phase 6+)
+1 real cam                ROS2 mini robot            Isaac Lab sim-to-real
++ Amy consciousness       + Robot LLM thinker        + synthetic camera imagery
++ simulation engine       + Vision bridge (YOLO→LLM) + target re-identification
++ threat escalation       + Nav planner (GPS↔game)   + pattern recognition
++ auto dispatch           + Extended telemetry        + multi-agent coordination
++ MQTT distributed bus    + Model router + fleet      + historical replay
++ ambient activity        + Lua registry + multi-act  + pursuit intercept
++ War Room RTS + combat   + any Tailscale host        + force reserve
++ 10-wave game mode       + synthetic video/audio     + mesh radio network
 ```
 
 ---
@@ -144,7 +146,7 @@ COMPLETE (Phase 0-3)      PHASE 4 (Active)         FUTURE (Phase 5+)
 - [x] Amy speech announcements on dispatch events
 - [x] TelemetryBatcher: 100ms batching for WebSocket efficiency
 
-### Phase 4: War Room RTS Frontend [IN PROGRESS]
+### Phase 4: War Room RTS + Extensible Framework [COMPLETE]
 - [x] War Room view: full-screen Canvas 2D tactical map (keyboard: W)
 - [x] Three modes: OBSERVE (read-only), TACTICAL (select + dispatch), SETUP (place/remove)
 - [x] Target rendering: alliance colors (green/red/yellow), heading indicators
@@ -153,8 +155,8 @@ COMPLETE (Phase 0-3)      PHASE 4 (Active)         FUTURE (Phase 5+)
 - [x] Dispatch via click-to-move in TACTICAL mode
 - [x] HUD panels: mode indicator, Amy speech toast, alert log, unit info
 - [x] WebSocket integration: live target updates from sim_telemetry_batch
-- [ ] Fog of war: areas outside sensor coverage dimmed
-- [ ] Minimap with alert markers
+- [x] Fog of war: areas outside sensor coverage dimmed
+- [x] Minimap with alert markers
 - [ ] Operator can suggest, Amy can override (One-Straw philosophy)
 - [x] Combat system: projectiles, damage, health, weapon stats per unit type
 - [x] Game mode: setup → countdown → 10 waves → victory/defeat
@@ -164,23 +166,90 @@ COMPLETE (Phase 0-3)      PHASE 4 (Active)         FUTURE (Phase 5+)
 - [x] BEGIN WAR button, countdown sequence, game over screens
 - [x] Non-combatants: civilians walk through battle (don't shoot them!)
 - [x] Health bars, projectile trails, explosion effects, particle system
+- [x] Synthetic video pipeline: 4 procedural scene renderers (OpenCV, no GPU)
+- [x] Synthetic audio pipeline: 19 procedural effects (numpy, 16kHz WAV)
+- [x] Audio effects API: /api/audio/effects/* with WAV streaming
+- [x] War Room audio: Web Audio API, event-to-sound mapping, volume controls
+- [x] Synthetic camera PIP: MJPEG feed in War Room (V to toggle, M to mute)
+- [x] Synthetic feed manager: MJPEG streaming, snapshot, CRUD API
+- [x] ModelRouter: task-aware model selection with two-stage failover (`src/amy/inference/model_router.py`)
+- [x] OllamaFleet: multi-host discovery from conf/env/Tailscale (`src/amy/inference/fleet.py`)
+- [x] LuaActionRegistry: dynamic action registration for robots/plugins (`src/amy/actions/lua_registry.py`)
+- [x] Multi-action Lua: compound behavior parsing + sequence validation (`src/amy/actions/lua_multi.py`)
+- [x] RobotThinker (server-side): LLM-powered robot thinking with registry (`src/amy/inference/robot_thinker.py`)
 
-### Phase 5: Hardware Integration + ROS2 [FUTURE]
-- [ ] **ROS2 integration**: Nav2 navigation stack for real rovers/drones
-- [ ] ROS2 ↔ MQTT bridge (ros2_mqtt_bridge or custom node)
-- [ ] ROS2 robot template: `examples/ros2-robot/` with Nav2, SLAM, AMCL
-- [ ] Robot description (URDF) for Nerf-equipped rover and drone
-- [ ] Gazebo simulation for hardware-in-the-loop testing
-- [ ] N real cameras on mesh network
+### Phase 5: Hardware Integration + Sim-to-Real [IN PROGRESS]
+
+#### 5a: Robot Intelligence + Extended Telemetry
+- [x] Robot LLM thinker — standalone (`examples/robot-template/brain/thinker.py`)
+  with built-in Lua parser, action handlers, thought history, MQTT publishing
+- [x] Vision bridge — YOLO fast-path (10fps) to LLM slow-path (5s) bridge
+  with thread-safe detection accumulation (`brain/vision_bridge.py`)
+- [x] Nav planner — GPS↔game coordinate transforms, PathPlanner interface,
+  StraightLine/Waypoint/Nav2/SLAM stubs (`brain/nav_planner.py`)
+- [x] Extended hardware interface — BatteryState (voltage, current, temperature),
+  ImuState (roll, pitch, yaw, acceleration), odometry, motor temps, GPS,
+  elevation (`hardware/base.py`)
+- [x] Simulated hardware — LiPo 3S voltage curve, current draw model,
+  differential drive physics, thermal simulation (`hardware/simulated.py`)
+- [x] MQTTSensorNode — wraps MQTT-connected robots as SensorNodes in Amy's
+  node system (`src/amy/nodes/mqtt_robot.py`)
+- [x] SyntheticCameraNode — renders simulation state as MJPEG camera feed,
+  implements SensorNode interface (`src/amy/nodes/synthetic_camera.py`)
+- [x] Robot thought MQTT topic — `tritium/{site}/robots/{id}/thoughts`
+
+#### 5b: ROS2 Mini Robot (Config-Driven, Any Tailscale Host)
+- [x] ROS2 ↔ MQTT bridge node (`examples/ros2-robot/`) — translates dispatch/patrol commands
+- [x] Nav2 waypoint action client — sends goals to Nav2 NavigateToPose / FollowWaypoints
+- [x] Telemetry publisher — /odom + /battery_state → MQTT `tritium/{site}/robots/{id}/telemetry`
+- [x] Simulated odometry node — fake /odom for testing without hardware
+- [x] Config-driven: all hosts/ports via ROS2 parameters + env vars (NO hardcoded IPs)
+- [x] Unit tests work without ROS2 installed (mock rclpy)
+- [x] Launch file with simulated mode flag
+- [x] Synthetic camera node — renders scenes, publishes JPEG frames + detections via MQTT
+- [x] Server-side synthetic feed manager — MJPEG streaming, snapshot, CRUD API
+- [ ] Gazebo simulation world for hardware-in-the-loop testing
+- [ ] URDF robot description for Nerf-equipped rover
+
+#### 5c: Multi-Camera Mesh
+- [ ] N real cameras on mesh network (Wi-Fi or mesh radio)
+- [ ] go2rtc multi-source aggregation
+- [ ] Camera auto-discovery via mDNS/ONVIF
+- [ ] Bandwidth-aware quality adaptation
+
+#### 5d: Real Hardware Control
 - [ ] Real Nerf turret servo control (pan/tilt/fire via ROS2 joint controllers)
 - [ ] Real rover with motor control + onboard camera (ROS2 + Nav2)
 - [ ] Drone integration (PX4/MAVLink via MAVROS2)
-- [ ] Mesh radio for field communication
 - [ ] Battery and health monitoring for real assets
 
-### Phase 6: Advanced Features [FUTURE]
-- [ ] Virtual sensor nodes (simulated cameras with FOV)
-- [ ] Synthetic MJPEG feeds from simulated cameras
+#### 5e: Simulation-to-Real Pipeline
+- [ ] Isaac Lab integration for high-fidelity physics (motor dynamics, terrain,
+  sensor noise). TRITIUM-SC provides tactical layer; Isaac Lab provides physics.
+- [ ] Synthetic camera imagery from AI models (DALL-E/SDXL) for testing YOLO
+  detection without real cameras
+- [ ] Global target tracking with cross-camera re-identification
+- [ ] Multi-robot fleet coordination via MQTT mesh
+
+#### Design Principles for Phase 5
+- **Config over code**: Every host, port, topic prefix is a parameter. No hardcoded IPs.
+- **Simulated by default**: `use_sim_odom: true` lets any computer run the robot stack.
+- **Tailscale-friendly**: Robots discover MQTT broker via hostname, not IP. Works across
+  Tailscale VPN seamlessly — robot on GB10-02 talks to server on GB10-01 by name.
+- **MQTT is the lingua franca**: ROS2 nodes talk to TRITIUM-SC via MQTT, not ROS2 topics.
+  This keeps the server ROS2-free. The bridge is on the robot side only.
+- **Same protocol**: The ROS2 robot publishes the same MQTT messages as the Python
+  `robot-template/`. From TRITIUM-SC's perspective, a ROS2 robot and a Python robot
+  are identical.
+
+### Phase 6: Advanced Intelligence [FUTURE]
+- [x] Synthetic MJPEG feeds from simulated cameras (moved to Phase 4/5, complete)
+- [ ] Synthetic security camera imagery for testing (DALL-E/SDXL prompt templates)
+- [ ] Target identification and re-identification across cameras (embedding-based ReID)
+- [ ] Pattern recognition: repeated approach vectors, time-of-day correlations,
+  behavioral anomalies (loitering, perimeter probing)
+- [ ] Multi-agent coordination: Amy commands, robots execute, feedback loop
+  (fleet coordinator decomposes tactics into robot-level tasks)
 - [ ] Historical replay: load past sessions and replay on tactical map
 - [ ] Collision detection with zone boundaries
 - [ ] Behavioral memory in ThreatClassifier (suspicion score, hysteresis)
@@ -208,6 +277,14 @@ graph TB
             SENSE[Sensorium]
             VISION[Vision + YOLO]
             LISTEN[Listener VAD+STT]
+            ROUTER[ModelRouter]
+        end
+
+        subgraph "Extensible Framework"
+            FLEET[OllamaFleet]
+            REGISTRY[LuaActionRegistry]
+            RTHINKER[RobotThinker]
+            MULTI[MultiAction Lua]
         end
 
         subgraph "Battlespace"
@@ -225,7 +302,8 @@ graph TB
 
     subgraph "External"
         CAM[BCC950 PTZ]
-        ROBOT[MQTT Robots]
+        ROBOT["MQTT Robots (Python + Thinker)"]
+        ROS2[ROS2 Robot Nav2+MQTT]
     end
 
     WAR & AMY_UI & VIEWS -->|WebSocket| WS
@@ -233,8 +311,13 @@ graph TB
     SIM --> BUS --> TRACK
     CLASS --> TRACK
     DISP --> SIM & MQTT
-    MQTT --> ROBOT
+    MQTT --> ROBOT & ROS2
+    ROBOT -->|thoughts| MQTT
     CAM --> VISION --> BUS
+    ROUTER --> FLEET
+    THINK --> ROUTER
+    RTHINKER --> FLEET
+    REGISTRY --> THINK & RTHINKER
 ```
 
 ### Component Summary
@@ -250,6 +333,10 @@ Commander (event loop)
   |-- Sensorium (sensor fusion, narrative, battlespace)
   |-- Memory (v3: people, facts, self-model)
   |-- LuaMotor (action execution)
+  |-- LuaActionRegistry (dynamic action registration)
+  |-- ModelRouter (task-aware model selection + fleet fallback)
+  |-- OllamaFleet (multi-host LLM inference discovery)
+  |-- RobotThinker (LLM-powered robot autonomous thinking)
   |-- Agent (chat, tool use)
   |-- Perception (frame analysis: quality, complexity, motion)
   |-- TargetTracker (unified real+virtual registry)
@@ -278,9 +365,21 @@ Backend (FastAPI)
   |-- /api/amy/* (status, thoughts SSE, chat, commands, video)
   |-- /api/amy/simulation/* (targets, spawn, remove)
   |-- /api/targets/* (unified tracker, hostiles, friendlies)
+  |-- /api/game/* (begin, state, reset, place)
   |-- /api/ai/analyze (YOLO pipeline)
   |-- /ws/live (WebSocket event bus + TelemetryBatcher)
   |-- SQLite + FTS5 (events, zones, assets, targets)
+
+Robot Templates (examples/)
+  |-- robot-template/ (Python + MQTT, any hardware)
+  |     |-- brain/ (thinker LLM, vision_bridge YOLO→LLM, nav_planner GPS↔game, MQTT client)
+  |     |-- hardware/ (base interface, simulated LiPo+thermal+IMU, GPIO stub)
+  |     `-- tests/ (protocol compat, thinker, hardware)
+  |-- ros2-robot/ (ROS2 Humble + MQTT, Nav2 navigation)
+        |-- ros2_robot/ (MQTT bridge, Nav2 client, telemetry, sim odom, camera node)
+        |-- config/ (robot_params.yaml — all configurable)
+        |-- launch/ (robot.launch.py)
+        `-- tests/
 ```
 
 ---

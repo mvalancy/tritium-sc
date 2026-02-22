@@ -243,21 +243,21 @@ Amy runs multiple daemon threads coordinated through the EventBus:
 
 | File | Purpose |
 |------|---------|
-| `app/main.py` | FastAPI lifespan, boot sequence |
-| `amy/commander.py` | Commander, VisionThread, AudioThread |
-| `comms/event_bus.py` | EventBus — thread-safe pub/sub for all internal events |
-| `amy/thinking.py` | ThinkingThread, GoalStack |
-| `amy/sensorium.py` | Temporal sensor fusion, narrative |
-| `tracking/tracker.py` | Unified real+virtual target registry |
-| `tracking/escalation.py` | ThreatClassifier, AutoDispatcher |
-| `comms/mqtt_bridge.py` | MQTT broker bridge |
-| `simulation/engine.py` | SimulationEngine (10Hz tick loop) |
-| `simulation/target.py` | SimulationTarget dataclass |
-| `simulation/ambient.py` | AmbientSpawner (neutral targets) |
-| `simulation/loader.py` | TritiumLevelFormat parser |
-| `geo/reference.py` | WGS84 coordinate reference + transforms |
-| `sensors/perception.py` | Layered frame analysis (L0-L2) |
-| `app/routers/ws.py` | WebSocket bridge + TelemetryBatcher |
+| `src/app/main.py` | FastAPI lifespan, boot sequence |
+| `src/amy/commander.py` | Commander, VisionThread, AudioThread |
+| `src/amy/comms/event_bus.py` | EventBus — thread-safe pub/sub for all internal events |
+| `src/amy/brain/thinking.py` | ThinkingThread, GoalStack |
+| `src/amy/brain/sensorium.py` | Temporal sensor fusion, narrative |
+| `src/amy/tactical/target_tracker.py` | Unified real+virtual target registry |
+| `src/amy/tactical/escalation.py` | ThreatClassifier, AutoDispatcher |
+| `src/amy/comms/mqtt_bridge.py` | MQTT broker bridge |
+| `src/amy/simulation/engine.py` | SimulationEngine (10Hz tick loop) |
+| `src/amy/simulation/target.py` | SimulationTarget dataclass |
+| `src/amy/simulation/ambient.py` | AmbientSpawner (neutral targets) |
+| `src/amy/simulation/loader.py` | TritiumLevelFormat parser |
+| `src/amy/tactical/geo.py` | WGS84 coordinate reference + transforms |
+| `src/amy/brain/perception.py` | Layered frame analysis (L0-L2) |
+| `src/app/routers/ws.py` | WebSocket bridge + TelemetryBatcher |
 | `frontend/js/war.js` | War Room canvas renderer |
 
 ## Related Documentation

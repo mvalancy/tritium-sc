@@ -1,19 +1,49 @@
 # TRITIUM-SC Documentation
 
-## Documentation Index
+## For Users
 
 | Document | Description |
 |----------|-------------|
+| [USER-STORIES.md](USER-STORIES.md) | Player experience stories and UI intent |
 | [HOW-TO-PLAY.md](HOW-TO-PLAY.md) | Player guide: setup, gameplay, controls, strategy tips |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | System architecture: layers, boot sequence, event flow, thread model |
-| [PLAN.md](PLAN.md) | Development roadmap: phases, progress, technical architecture |
-| [ESCALATION.md](ESCALATION.md) | Threat escalation: state machine, zones, dispatch decision tree |
-| [MQTT.md](MQTT.md) | MQTT communication: topic hierarchy, payloads, device integration |
-| [SIMULATION.md](SIMULATION.md) | Simulation engine: target lifecycle, spawners, tick loop |
 | [CONTROLS.md](CONTROLS.md) | Complete keyboard and gamepad control reference |
 | [GAMEPAD.md](GAMEPAD.md) | Gamepad setup, calibration, and troubleshooting |
-| [UI-VIEWS.md](UI-VIEWS.md) | UI view specifications: design intent for every panel, button, and element |
+
+## Architecture
+
+| Document | Description |
+|----------|-------------|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | System architecture: layers, boot sequence, event flow, thread model |
+| [PLAN.md](PLAN.md) | Development roadmap: phases, progress, technical architecture |
+| [SIMULATION.md](SIMULATION.md) | Simulation engine: target lifecycle, spawners, tick loop |
+| [SIMULATION-ARCHITECTURE.md](SIMULATION-ARCHITECTURE.md) | Simulation pipeline and data flow |
+| [ESCALATION.md](ESCALATION.md) | Threat escalation: state machine, zones, dispatch decision tree |
+| [MQTT.md](MQTT.md) | MQTT communication: topic hierarchy, payloads, device integration |
+| [COORDINATE-SYSTEM.md](COORDINATE-SYSTEM.md) | Local coordinate transforms and geo-reference |
+| [UNIFIED-SPEC.md](UNIFIED-SPEC.md) | Command Center data flow, render pipeline, API list |
+| [UI-REDESIGN.md](UI-REDESIGN.md) | Command Center plugin architecture and layout |
+| [WINDOW-MANAGER.md](WINDOW-MANAGER.md) | dockview-core window manager integration plan |
+| [MODEL-ROUTING.md](MODEL-ROUTING.md) | Task-aware model selection and fleet discovery |
+| [INFRASTRUCTURE.md](INFRASTRUCTURE.md) | MTIG monitoring stack (Mosquitto, Telegraf, InfluxDB, Grafana) |
+| [MESHTASTIC.md](MESHTASTIC.md) | Mesh radio integration for outdoor operations |
+| [LANDSCAPE-SURVEY.md](LANDSCAPE-SURVEY.md) | ML model evaluation and alternatives survey |
+| [VISION.md](VISION.md) | Perception philosophy, dual-use design, privacy tiers, roadmap |
+
+## Testing
+
+| Document | Description |
+|----------|-------------|
+| [TESTING-PHILOSOPHY.md](TESTING-PHILOSOPHY.md) | TDD principles and testing tiers |
+| [TEST-AUTOMATION.md](TEST-AUTOMATION.md) | E2E automation patterns and visual regression |
 | [UI-TESTING.md](UI-TESTING.md) | Visual regression testing with Playwright and OpenCV |
+| [ITERATE-PROMPT.md](ITERATE-PROMPT.md) | Agent iteration prompt template |
+
+## Operations
+
+| Document | Description |
+|----------|-------------|
+| [AUDIT-GAPS.md](AUDIT-GAPS.md) | Infrastructure security audit findings |
+| [UI-VIEWS.md](UI-VIEWS.md) | UI view specifications: design intent for every panel, button, and element |
 | [WAR-ROOM-UX-REVIEW.md](WAR-ROOM-UX-REVIEW.md) | War Room frontend UX architecture review |
 
 ## Quick Links

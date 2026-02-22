@@ -23,15 +23,15 @@ frontend/js/editor/TritiumEditorPlugin.js.
 ### What exists (read before changing)
 
 Backend simulation:
-- amy/simulation/target.py — SimulationTarget dataclass with tick(), waypoints, battery
-- amy/simulation/engine.py — 10Hz tick loop, hostile spawner, EventBus telemetry
-- amy/simulation/loader.py — reads TritiumLevelFormat JSON into simulation targets
-- amy/target_tracker.py — unified TargetTracker merging sim + YOLO detections
-- amy/commander.py — _sim_bridge_loop feeds EventBus events into TargetTracker
-- amy/thinking.py — battlespace context in thinking prompt, dispatch/alert/patrol actions
-- amy/lua_motor.py — dispatch(), alert(), patrol() Lua actions
-- amy/sensorium.py — battlespace summary in rich_narrative()
-- amy/router.py — /api/amy/simulation/* endpoints (list, spawn, remove)
+- src/amy/simulation/target.py — SimulationTarget dataclass with tick(), waypoints, battery
+- src/amy/simulation/engine.py — 10Hz tick loop, hostile spawner, EventBus telemetry
+- src/amy/simulation/loader.py — reads TritiumLevelFormat JSON into simulation targets
+- src/amy/tactical/target_tracker.py — unified TargetTracker merging sim + YOLO detections
+- src/amy/commander.py — _sim_bridge_loop feeds EventBus events into TargetTracker
+- src/amy/brain/thinking.py — battlespace context in thinking prompt, dispatch/alert/patrol actions
+- src/amy/actions/lua_motor.py — dispatch(), alert(), patrol() Lua actions
+- src/amy/brain/sensorium.py — battlespace summary in rich_narrative()
+- src/amy/router.py — /api/amy/simulation/* endpoints (list, spawn, remove)
 - app/routers/targets_unified.py — /api/targets endpoint
 - app/main.py — creates SimulationEngine at startup, wires to Amy EventBus
 

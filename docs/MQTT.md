@@ -100,9 +100,10 @@ graph TD
     B --> B1["/detections — YOLO bounding boxes"]
     B --> B2["/status — online/offline/fps"]
 
-    C --> C1["/telemetry — position/heading/battery"]
+    C --> C1["/telemetry — position, heading, battery, IMU, motor temps, odometry, GPS"]
     C --> C2["/status — state changes"]
     C --> C3["/command/ack — command acknowledgments"]
+    C --> C4["/thoughts — robot LLM-generated thoughts and actions"]
 
     D --> D1["/events — motion/sound/temperature"]
     D --> D2["/status — online/offline/battery"]
@@ -166,6 +167,9 @@ and makes monitoring easy.
 ```
 
 ### Robot Telemetry
+
+Core fields (required — all robots must publish these):
+
 ```json
 {
   "name": "Rover Alpha",
@@ -179,6 +183,68 @@ and makes monitoring easy.
   "timestamp": "2026-02-16T12:00:00+00:00"
 }
 ```
+
+Extended fields (optional — include when hardware provides them):
+
+```json
+{
+  "battery_state": {
+    "charge_pct": 0.85,
+    "voltage": 12.30,
+    "current_draw": 1.8,
+    "temperature_c": 28.5
+  },
+  "imu": {
+    "roll": 0.5,
+    "pitch": -1.2,
+    "yaw": 127.4,
+    "accel_x": 0.1,
+    "accel_y": 2.8,
+    "accel_z": 9.81
+  },
+  "motor_temps": {"left": 32.1, "right": 31.8},
+  "odometry": 452.3,
+  "gps": {"lat": 37.7749, "lng": -122.4194, "alt": 15.0}
+}
+```
+
+| Extended Field | Type | Description | Source (real hardware) | Source (simulated) |
+|---------------|------|-------------|----------------------|-------------------|
+| `battery_state.charge_pct` | float | 0.0-1.0 charge level | BMS or INA219 | Derived from drain rate |
+| `battery_state.voltage` | float | Pack voltage (e.g. 12.6V for 3S LiPo) | INA219 voltage divider | LiPo discharge curve interpolation |
+| `battery_state.current_draw` | float | Amps drawn (0 = idle) | INA219 current shunt | Motor load model (idle 0.3A, moving ~2A) |
+| `battery_state.temperature_c` | float | Battery pack temperature | Thermistor on pack | Thermal model from current draw |
+| `imu.roll` | float | Roll angle in degrees (0 = level) | MPU6050 / BNO055 | Simulated from turn rate |
+| `imu.pitch` | float | Pitch angle in degrees (0 = level) | MPU6050 / BNO055 | Simulated from acceleration |
+| `imu.yaw` | float | Yaw in degrees (same as heading) | Magnetometer / gyro | Equals heading |
+| `imu.accel_x/y/z` | float | Acceleration m/s^2 | IMU accelerometer | Derived from motor commands |
+| `motor_temps.left/right` | float | Motor temperature in celsius | Thermistors on motor housing | Load-based thermal model |
+| `odometry` | float | Total distance traveled (meters) | Wheel encoder integration | Accumulated from position delta |
+| `gps.lat/lng/alt` | float | GPS position (WGS84) | NEO-6M / ZED-F9P | null (not available in sim) |
+
+The bridge and TargetTracker process extended fields when present but do not
+require them. Robots that only publish core fields work identically.
+
+### Robot Thoughts
+
+Published by robots with LLM-powered thinkers (see `examples/robot-template/brain/thinker.py`).
+Topic: `tritium/{site}/robots/{id}/thoughts`
+
+```json
+{
+  "robot_id": "rover-alpha",
+  "type": "thought",
+  "text": "Hostile detected at north fence. Moving to intercept.",
+  "think_count": 42,
+  "timestamp": 1740009600.0
+}
+```
+
+These messages allow Amy to see what each robot is thinking. They are
+published at the thinker's cycle rate (~0.2 Hz, configurable via
+`think_interval` in the robot's config). Amy's sensorium can incorporate
+robot thoughts into the battlespace narrative for richer situational
+awareness.
 
 ### Robot Command (dispatch)
 ```json
@@ -224,6 +290,7 @@ unintercepted.
 | `robots/+/status` | in | 1 | yes | LWT uses retain+QoS 1; explicit publishes must match |
 | `robots/+/command` | out | 1 | no | Commands must be delivered |
 | `robots/+/command/ack` | in | 1 | no | Robot confirms command receipt |
+| `robots/+/thoughts` | in | 0 | no | Robot LLM thoughts (~0.2 Hz), ephemeral |
 | `sensors/+/events` | in | 1 | no | Sensor events are infrequent and actionable |
 | `sensors/+/status` | in | 1 | yes | Device online/offline state |
 | `amy/alerts` | out | 1 | no | Alerts are actionable, must not be lost |
@@ -280,12 +347,9 @@ The `MQTTBridge` lives in the `comms/` package alongside `EventBus`:
    Amy orchestrates it but does not own it — the bridge would exist
    even without Amy (e.g., for a headless sensor aggregator).
 
-2. **Clean dependency direction.** `comms/` depends on `tracking/`
-   (TargetTracker) for data injection. `amy/` depends on `comms/`
+2. **Clean dependency direction.** `src/amy/comms/` depends on `src/amy/tactical/`
+   (TargetTracker) for data injection. Amy modules depend on `src/amy/comms/`
    (EventBus) for pub/sub. No circular imports.
-
-3. **Backward-compatible stub.** `amy/mqtt_bridge.py` re-exports from
-   `comms.mqtt_bridge` so existing imports continue to work.
 
 ### Reconnection Behavior
 
@@ -328,7 +392,7 @@ The frontend renders them on the same tactical map.
 - Camera video feeds: real cameras serve MJPEG via `/api/amy/nodes/{id}/video`.
   Simulated cameras would need a synthetic MJPEG endpoint.
 - Audio: real audio comes from BCC950 mic. There is no simulated audio source.
-- The SensorNode abstraction (`amy/nodes/base.py`) supports this
+- The SensorNode abstraction (`src/amy/nodes/base.py`) supports this
   conceptually but no MQTT-based remote SensorNode implementation exists yet.
 
 ### Scalability Considerations
@@ -501,7 +565,9 @@ publishes the known device list.
 
 | Source | Rate | Message Size | Bandwidth |
 |--------|------|-------------|-----------|
-| Robot telemetry | 2 Hz | ~200 bytes | 400 B/s per robot |
+| Robot telemetry (core) | 2 Hz | ~200 bytes | 400 B/s per robot |
+| Robot telemetry (extended) | 2 Hz | ~500 bytes | 1 KB/s per robot |
+| Robot thoughts | ~0.2 Hz | ~200 bytes | negligible per robot |
 | Camera detections | 1-10 Hz | ~300 bytes/frame | 0.3-3 KB/s per camera |
 | Sensor events | ~0.1 Hz | ~100 bytes | negligible |
 | Amy commands | ~0.01 Hz | ~150 bytes | negligible |
@@ -603,6 +669,65 @@ The `examples/robot-template/` provides a complete reference implementation
 of a TRITIUM-SC robot brain. See `brain/mqtt_client.py` for the device-side
 MQTT client, including command ACK support. Protocol compatibility is enforced
 by `tests/test_brain.py::TestProtocolCompatibility`.
+
+## Telegraf + InfluxDB Integration
+
+All MQTT telemetry is automatically persisted to InfluxDB via Telegraf's
+MQTT consumer plugin. No changes to publishers are required — Telegraf
+subscribes independently alongside the `MQTTBridge`.
+
+### How It Works
+
+```
+Robot --MQTT--> Mosquitto --subscribe--> Telegraf --write--> InfluxDB
+                    |
+                    +--subscribe--> MQTTBridge (existing, unchanged)
+```
+
+Telegraf and MQTTBridge are independent MQTT subscribers. Both receive every
+message. Telegraf writes to InfluxDB for historical storage; MQTTBridge
+feeds the real-time pipeline (EventBus -> WebSocket -> browser).
+
+### Configuration
+
+Central Telegraf config: `conf/telegraf/telegraf.conf`
+
+Each MQTT topic pattern maps to an InfluxDB measurement:
+
+| MQTT Topic | Measurement | Tags |
+|-----------|-------------|------|
+| `tritium/+/robots/+/telemetry` | `robot_telemetry` | `site`, `robot_id` |
+| `tritium/+/cameras/+/detections` | `camera_detections` | `site`, `camera_id` |
+| `tritium/+/sensors/+/events` | `sensor_events` | `site`, `sensor_id` |
+| `tritium/+/+/+/status` | `device_status` | (from payload) |
+
+Topic parsing extracts tags from the topic path using Telegraf's
+`topic_parsing` feature. For example, `tritium/home/robots/rover-alpha/telemetry`
+produces tags `site=home, robot_id=rover-alpha`.
+
+### Querying Historical Data
+
+Use the FastAPI telemetry proxy (tokens stay server-side):
+
+```bash
+# Robot battery over last 24 hours
+curl http://localhost:8000/api/telemetry/robot/rover-alpha?field=battery&hours=24
+
+# Detection counts per camera
+curl http://localhost:8000/api/telemetry/detections?hours=12
+
+# Fleet summary
+curl http://localhost:8000/api/telemetry/summary
+```
+
+See `docs/INFRASTRUCTURE.md` for full API documentation.
+
+### Robot-Side Telegraf
+
+Each robot can also run Telegraf locally (`conf/telegraf/telegraf-robot.conf`)
+to collect system metrics (CPU, memory, disk, network) and write them to
+the central InfluxDB. This provides infrastructure monitoring alongside
+application telemetry.
 
 ## Test Coverage
 

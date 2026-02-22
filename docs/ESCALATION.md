@@ -237,9 +237,8 @@ configurable per operational posture.
 
 ## File Organization
 
-Canonical location: `tracking/escalation.py` containing both ThreatClassifier
-and AutoDispatcher. A backward-compatible stub at `amy/escalation.py`
-re-exports for existing imports.
+Canonical location: `src/amy/tactical/escalation.py` containing both
+ThreatClassifier and AutoDispatcher.
 
 The two classes are tightly coupled (the dispatcher exists only because the
 classifier exists), the file is ~500 lines, and splitting into a package

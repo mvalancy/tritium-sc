@@ -79,6 +79,9 @@ Each target has a **heading line** showing which direction it faces, a **name la
 
 ## What to Do
 
+![Combat](screenshots/game-combat.png)
+*Combat in action — turrets and drones engaging hostile intruders*
+
 ### The Core Loop
 
 1. **Watch** the map for hostile intruders (red diamonds) entering the battlespace
@@ -210,6 +213,9 @@ The camera has smooth interpolation (lerp factor 0.1) so movement feels fluid.
 | `Scroll` | Zoom (cursor-centered) |
 | `Double-Click` | Center + zoom on target |
 | `Minimap Click` | Pan camera to minimap location |
+
+![Help Overlay](screenshots/help-overlay.png)
+*Press ? to see all keyboard shortcuts*
 
 ### Global Keyboard Shortcuts
 
