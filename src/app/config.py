@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite+aiosqlite:///./tritium.db"
 
     # Recordings path (where synced footage lives)
-    recordings_path: Path = Path("/mnt/nvme-raid5/mvalancy/sec-cameras")
+    recordings_path: Path = Path("./data/recordings")
 
     # Server
     host: str = "0.0.0.0"

@@ -12,7 +12,7 @@ services:
       - ./app:/app/app
       - ./frontend:/app/frontend
       # Recordings (read-only)
-      - /mnt/nvme-raid5/mvalancy/sec-cameras:/data:ro
+      - ${RECORDINGS_PATH:-./data/recordings}:/data:ro
       # Database (persistent)
       - tritium_db:/app/data
     environment:
