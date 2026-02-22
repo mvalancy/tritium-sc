@@ -1,0 +1,29 @@
+mqtt_bridge:
+  ros__parameters:
+    mqtt_host: "localhost"       # Override via env: MQTT_HOST
+    mqtt_port: 1883
+    site_id: "home"
+    robot_id: "ros2-rover-alpha"
+    robot_name: "ROS2 Rover Alpha"
+    asset_type: "rover"
+    telemetry_rate: 2.0          # Hz
+    use_sim_odom: true           # False for real hardware
+    home_x: 0.0                  # Recall destination X
+    home_y: 0.0                  # Recall destination Y
+    influx_url: "http://gb10-01:8086"
+    influx_org: "tritium"
+    influx_bucket: "telemetry"
+
+synthetic_camera:
+  ros__parameters:
+    mqtt_host: "localhost"       # Override via env: MQTT_HOST
+    mqtt_port: 1883
+    site_id: "home"
+    robot_id: "ros2-rover-alpha"
+    robot_name: "ROS2 Rover Alpha"
+    asset_type: "rover"
+    camera_enabled: true         # On/off toggle (also via MQTT command)
+    camera_scene_type: "bird_eye"  # bird_eye, street_cam, battle, neighborhood
+    camera_fps: 10               # Frames per second published to MQTT
+    camera_width: 640            # Frame width in pixels
+    camera_height: 480           # Frame height in pixels

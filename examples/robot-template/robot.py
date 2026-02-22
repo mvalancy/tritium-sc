@@ -2,6 +2,7 @@
 """TRITIUM-SC Robot Template — standalone robot brain.
 
 Connects to TRITIUM-SC via MQTT. Publishes telemetry, receives commands.
+Runs YOLO for fast visual tracking and LLM for deeper autonomous thinking.
 Runs completely independently on any Python-capable hardware.
 
 Usage:
@@ -12,6 +13,7 @@ Usage:
 import argparse
 import signal
 import sys
+import threading
 import time
 
 import yaml
@@ -20,6 +22,9 @@ from brain.mqtt_client import RobotMQTTClient
 from brain.navigator import Navigator
 from brain.turret import TurretController
 from brain.telemetry import TelemetryPublisher
+from brain.thinker import RobotThinker
+from brain.camera import RobotCamera
+from brain.vision_bridge import VisionBridge
 
 
 def load_config(path: str) -> dict:
@@ -72,11 +77,48 @@ def main():
     navigator = Navigator(hw, config)
     turret = TurretController(hw, config)
     telemetry = TelemetryPublisher(mqtt, hw, navigator, turret, config)
+    camera = RobotCamera(mqtt, config)
+    vision_bridge = VisionBridge(config.get("camera", {}))
+    thinker = RobotThinker(config)
+
+    # Wire YOLO detections → vision bridge (camera detects, thinker reasons)
+    _original_publish_detection = mqtt.publish_detection
+    def _publish_detection_with_bridge(detections: list[dict]) -> None:
+        """Intercept YOLO detections: publish to MQTT AND feed to thinker."""
+        _original_publish_detection(detections)
+        vision_bridge.push_detections(detections)
+    mqtt.publish_detection = _publish_detection_with_bridge
+
+    # Wire thinker action handlers to hardware
+    thinker.on_action("say", lambda params: mqtt.publish_thought(
+        thinker.to_mqtt_message()
+    ))
+    thinker.on_action("look_at", lambda params: (
+        turret.aim(
+            {"left": -45, "right": 45, "up": 0, "down": 0, "center": 0}.get(
+                params[0] if params else "center", 0
+            ),
+            {"up": 30, "down": -15, "center": 0}.get(
+                params[0] if params else "center", 0
+            ),
+        ) if params else None
+    ))
+    thinker.on_action("fire_nerf", lambda params: turret.fire())
+
+    # Register fire_nerf if not already in config
+    if "fire_nerf" not in thinker.actions:
+        thinker.register_action("fire_nerf", description="Fire the nerf turret")
 
     # Wire command handler
+    recent_commands: list[dict] = []
+
     def handle_command(command: dict):
         cmd = command.get("command", "")
         cmd_ts = command.get("timestamp", "")
+        recent_commands.append(command)
+        if len(recent_commands) > 10:
+            recent_commands.pop(0)
+
         if cmd == "dispatch":
             x, y = command.get("x", 0), command.get("y", 0)
             print(f"  [CMD] Dispatch to ({x:.1f}, {y:.1f})")
@@ -115,6 +157,50 @@ def main():
     mqtt.connect()
     navigator.start()
     telemetry.start()
+    camera.start()
+
+    # Start thinker loop (threaded, if enabled)
+    think_running = True
+
+    def think_loop():
+        """Autonomous thinking loop — YOLO detects fast, LLM decides deep."""
+        while think_running and thinker.enabled:
+            try:
+                pos = hw.get_position()
+                tel = {
+                    "position": {"x": pos[0], "y": pos[1]},
+                    "battery": hw.get_battery(),
+                    "status": navigator.status,
+                }
+                # Feed YOLO detections into thinker context
+                nearby = vision_bridge.get_nearby_targets(robot_position=pos)
+                result = thinker.think_once(
+                    telemetry=tel,
+                    nearby_targets=nearby,
+                    recent_commands=recent_commands[-3:],
+                )
+                if result:
+                    action = result["action"]
+                    params = result["params"]
+                    print(f"  [THINK] {action}({', '.join(repr(p) for p in params)})")
+                    thinker.dispatch_action(action, params)
+
+                    # Publish thought to Amy
+                    if mqtt.connected:
+                        mqtt.publish_thought(thinker.to_mqtt_message())
+            except Exception as e:
+                print(f"  [THINK] Error: {e}")
+
+            time.sleep(thinker.think_interval)
+
+    think_thread = None
+    if thinker.enabled:
+        print(f"  Thinker: {thinker.model} @ {thinker.ollama_host} (every {thinker.think_interval}s)")
+        think_thread = threading.Thread(target=think_loop, daemon=True)
+        think_thread.start()
+    else:
+        print("  Thinker: disabled (enable in config.yaml)")
+
     print("  Robot brain online. Ctrl+C to stop.")
 
     # Graceful shutdown
@@ -130,6 +216,10 @@ def main():
             time.sleep(0.1)
     finally:
         print("\n  Shutting down...")
+        think_running = False
+        if think_thread:
+            think_thread.join(timeout=2)
+        camera.stop()
         telemetry.stop()
         navigator.stop()
         mqtt.disconnect()

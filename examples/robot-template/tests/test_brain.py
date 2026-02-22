@@ -136,6 +136,53 @@ class TestMQTTClient:
         assert received[0]["command"] == "dispatch"
 
 
+class TestMQTTThoughts:
+    """Verify robot publishes thoughts in the format Amy's bridge expects."""
+
+    def _make_client(self, config=None):
+        from brain.mqtt_client import RobotMQTTClient
+        return RobotMQTTClient(config or {"robot_id": "r1", "site_id": "home"})
+
+    def test_publish_thought_topic(self):
+        client = self._make_client({"robot_id": "rover-alpha", "site_id": "home"})
+        client._connected = True
+        client._client.publish.reset_mock()
+        client.publish_thought({
+            "robot_id": "rover-alpha",
+            "type": "thought",
+            "text": "Scanning north sector",
+            "think_count": 1,
+        })
+        call_args = client._client.publish.call_args
+        topic = call_args[0][0]
+        assert topic == "tritium/home/robots/rover-alpha/thoughts"
+
+    def test_publish_thought_payload(self):
+        client = self._make_client({"robot_id": "r1", "site_id": "lab"})
+        client._connected = True
+        client._client.publish.reset_mock()
+        thought = {
+            "robot_id": "r1",
+            "type": "thought",
+            "text": "All clear",
+            "think_count": 5,
+        }
+        client.publish_thought(thought)
+        call_args = client._client.publish.call_args
+        payload = json.loads(call_args[0][1])
+        assert payload["type"] == "thought"
+        assert payload["text"] == "All clear"
+        assert payload["think_count"] == 5
+        assert "timestamp" in payload
+
+    def test_publish_thought_when_disconnected(self):
+        client = self._make_client({"robot_id": "r1", "site_id": "home"})
+        client._connected = False
+        client._client.publish.reset_mock()
+        client.publish_thought({"robot_id": "r1", "type": "thought", "text": "test"})
+        client._client.publish.assert_not_called()
+
+
 class TestProtocolCompatibility:
     """Verify robot template speaks exactly the same protocol as mqtt_bridge.py."""
 

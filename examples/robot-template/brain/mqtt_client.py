@@ -96,6 +96,11 @@ class RobotMQTTClient:
         topic = f"tritium/{self._site}/cameras/{self._robot_id}/detections"
         self._publish(topic, {"boxes": detections, "camera_id": self._robot_id})
 
+    def publish_thought(self, thought: dict) -> None:
+        """Publish a robot thought for Amy's situational awareness."""
+        topic = f"tritium/{self._site}/robots/{self._robot_id}/thoughts"
+        self._publish(topic, thought)
+
     def publish_command_ack(self, command: str, command_timestamp: str, status: str = "accepted") -> None:
         """Acknowledge a command back to TRITIUM-SC.
 

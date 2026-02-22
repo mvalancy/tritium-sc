@@ -12,6 +12,15 @@ mqtt:
   username: ""
   password: ""
 
+infrastructure:
+  influxdb:
+    url: "http://gb10-01:8086"
+    token: ""               # Set via INFLUX_TOKEN env var
+    org: "tritium"
+    bucket: "telemetry"
+  telegraf:
+    config: "/etc/telegraf/telegraf.conf"
+
 hardware:
   mode: "simulated"
   motor_left_forward: 17
@@ -26,9 +35,21 @@ telemetry:
   interval: 0.5
   battery_pin: null
 
+# YOLO camera — fast visual tracking (same pipeline as Amy)
 camera:
   enabled: false
   device: 0
   yolo_model: "yolov8n.pt"
   detection_interval: 1.0
   publish_frames: false
+
+# LLM Thinker — deeper autonomous reasoning via Ollama
+thinker:
+  enabled: false
+  model: "gemma3:4b"
+  ollama_host: "http://localhost:11434"
+  think_interval: 5.0
+  # Custom Lua actions this robot can perform (in addition to think/say/look_at)
+  actions:
+    - name: fire_nerf
+      description: "Fire the nerf turret at current aim point"

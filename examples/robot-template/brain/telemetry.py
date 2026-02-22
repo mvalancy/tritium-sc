@@ -1,4 +1,9 @@
-"""Telemetry publisher — sends robot state to TRITIUM-SC via MQTT."""
+"""Telemetry publisher — sends rich robot state to TRITIUM-SC via MQTT.
+
+Publishes position, heading, speed, battery (with voltage/current/temp),
+IMU, odometry, motor temps, and elevation. All data flows through MQTT
+to Amy's target tracker for unified situational awareness.
+"""
 
 from __future__ import annotations
 
@@ -51,7 +56,9 @@ class TelemetryPublisher:
     def _publish_loop(self) -> None:
         while self._running:
             pos = self._hw.get_position()
-            self._mqtt.publish_telemetry({
+
+            # Core telemetry (compatible with existing bridge)
+            data = {
                 "name": self._robot_name,
                 "asset_type": self._asset_type,
                 "position": {"x": pos[0], "y": pos[1]},
@@ -63,5 +70,59 @@ class TelemetryPublisher:
                     "pan": self._turret.pan,
                     "tilt": self._turret.tilt,
                 },
-            })
+            }
+
+            # Extended telemetry (simulation or real sensors)
+            try:
+                bat_state = self._hw.get_battery_state()
+                data["battery_state"] = {
+                    "charge_pct": bat_state.charge_pct,
+                    "voltage": bat_state.voltage,
+                    "current_draw": bat_state.current_draw,
+                    "temperature_c": bat_state.temperature_c,
+                }
+            except (NotImplementedError, AttributeError):
+                pass
+
+            try:
+                data["elevation"] = self._hw.get_elevation()
+            except (NotImplementedError, AttributeError):
+                pass
+
+            try:
+                imu = self._hw.get_imu()
+                data["imu"] = {
+                    "roll": imu.roll,
+                    "pitch": imu.pitch,
+                    "yaw": imu.yaw,
+                    "accel_x": imu.accel_x,
+                    "accel_y": imu.accel_y,
+                    "accel_z": imu.accel_z,
+                }
+            except (NotImplementedError, AttributeError):
+                pass
+
+            try:
+                data["odometry"] = self._hw.get_odometry()
+            except (NotImplementedError, AttributeError):
+                pass
+
+            try:
+                left_t, right_t = self._hw.get_motor_temps()
+                data["motor_temps"] = {"left": left_t, "right": right_t}
+            except (NotImplementedError, AttributeError):
+                pass
+
+            try:
+                gps = self._hw.get_gps()
+                if gps is not None:
+                    data["gps"] = {
+                        "lat": gps[0],
+                        "lng": gps[1],
+                        "altitude": gps[2],
+                    }
+            except (NotImplementedError, AttributeError):
+                pass
+
+            self._mqtt.publish_telemetry(data)
             time.sleep(self._interval)
