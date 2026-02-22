@@ -16,6 +16,7 @@
 import { TritiumStore } from './store.js';
 import { EventBus } from './events.js';
 import { resolveLabels } from './label-collision.js';
+import { drawUnit as drawUnitIcon } from './unit-icons.js';
 
 // ============================================================
 // Constants
@@ -732,21 +733,13 @@ function _drawUnit(ctx, id, unit) {
 
     const sp = worldToScreen(pos.x, pos.y);
     const alliance = (unit.alliance || 'unknown').toLowerCase();
-    const color = ALLIANCE_COLORS[alliance] || ALLIANCE_COLORS.unknown;
     const type = (unit.type || '').toLowerCase();
     const status = (unit.status || 'active').toLowerCase();
     const isNeutralized = status === 'neutralized' || status === 'eliminated' || status === 'destroyed';
     const isSelected = TritiumStore.get('map.selectedUnitId') === id;
     const isHovered = _state.hoveredUnit === id;
-    const baseSize = 6 * Math.min(_state.cam.zoom, 3);
-    const size = isSelected ? baseSize * 1.3 : (isHovered ? baseSize * 1.15 : baseSize);
 
-    // Fade neutralized targets
-    if (isNeutralized) {
-        ctx.globalAlpha = 0.4;
-    }
-
-    // Smooth heading interpolation (shared by both paths)
+    // Smooth heading interpolation
     const heading = unit.heading;
     let smoothedHeading = heading;
     if (heading !== undefined && heading !== null) {
@@ -757,96 +750,34 @@ function _drawUnit(ctx, id, unit) {
         _state.smoothHeadings.set(id, smoothedHeading);
     }
 
-    // Use war-combat.js rich shapes if available
-    if (typeof warCombatDrawTargetShape === 'function') {
-        const targetObj = {
-            asset_type: unit.type || '',
-            heading: smoothedHeading,
-            status: unit.status || 'active',
-            weapon_cooldown: unit.weapon_cooldown,
-            weapon_range: unit.weapon_range,
-            last_fired: unit.last_fired,
-            kills: unit.kills,
-            fov_angle: unit.fov_angle,
-            fov_range: unit.fov_range,
-        };
-        warCombatDrawTargetShape(ctx, sp, size, targetObj, alliance, _state.cam.zoom);
-        ctx.globalAlpha = 1.0;
-    } else {
-        // Fallback: basic shapes
-        ctx.fillStyle = color;
-        ctx.strokeStyle = color;
+    // Compute scale from zoom and hover/selection
+    let scale = Math.min(_state.cam.zoom, 3) / 3; // normalized 0..1 for zoom 0..3
+    scale = Math.max(0.3, scale); // minimum readability
+    if (isSelected) scale *= 1.3;
+    else if (isHovered) scale *= 1.15;
 
-        switch (type) {
-            case 'rover':
-                _drawRoundedRect(ctx, sp.x, sp.y, size, color);
-                break;
-            case 'drone':
-                _drawDiamond(ctx, sp.x, sp.y, size, color);
-                break;
-            case 'turret':
-                _drawTriangle(ctx, sp.x, sp.y, size, color);
-                break;
-            case 'person':
-                _drawCircle(ctx, sp.x, sp.y, size, color);
-                break;
-            case 'hostile_kid':
-                _drawCircleWithX(ctx, sp.x, sp.y, size, color);
-                break;
-            case 'mesh_radio':
-            case 'meshtastic':
-                // Antenna icon in cyan
-                ctx.strokeStyle = '#00f0ff';
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                ctx.moveTo(sp.x, sp.y + size * 0.5);
-                ctx.lineTo(sp.x, sp.y - size * 0.8);
-                ctx.stroke();
-                ctx.fillStyle = '#00f0ff';
-                ctx.beginPath();
-                ctx.arc(sp.x, sp.y - size * 0.8, 2, 0, Math.PI * 2);
-                ctx.fill();
-                break;
-            default: {
-                ctx.fillStyle = color;
-                const half = size * 0.8;
-                ctx.fillRect(sp.x - half, sp.y - half, half * 2, half * 2);
-                break;
-            }
-        }
+    // Map type name to unit-icons type
+    let iconType = type;
+    if (type.includes('turret') || type.includes('sentry')) iconType = 'turret';
+    else if (type.includes('drone')) iconType = 'drone';
+    else if (type.includes('rover') || type.includes('interceptor') || type.includes('patrol')) iconType = 'rover';
+    else if (type.includes('tank') || type.includes('truck') || type.includes('vehicle')) iconType = 'tank';
+    else if (type.includes('camera') || type.includes('sensor')) iconType = 'sensor';
+    else if (type === 'person' && alliance === 'hostile') iconType = 'hostile_person';
+    else if (type === 'person' && alliance === 'neutral') iconType = 'neutral_person';
+    else if (type === 'hostile_kid') iconType = 'hostile_person';
+    else if (type === 'mesh_radio' || type === 'meshtastic') iconType = 'sensor';
 
-        // Heading arrow (fallback only — warCombatDrawTargetShape handles its own)
-        if (heading !== undefined && heading !== null && !isNeutralized) {
-            const rad = (90 - smoothedHeading) * Math.PI / 180;
-            const lineLen = size * 2.2;
-            ctx.strokeStyle = color;
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.moveTo(sp.x, sp.y);
-            ctx.lineTo(sp.x + Math.cos(rad) * lineLen, sp.y - Math.sin(rad) * lineLen);
-            ctx.stroke();
-        }
-
-        // Neutralized X overlay
-        if (isNeutralized) {
-            const xSize = size * 1.2;
-            ctx.strokeStyle = '#ff2a6d';
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.moveTo(sp.x - xSize, sp.y - xSize);
-            ctx.lineTo(sp.x + xSize, sp.y + xSize);
-            ctx.moveTo(sp.x + xSize, sp.y - xSize);
-            ctx.lineTo(sp.x - xSize, sp.y + xSize);
-            ctx.stroke();
-        }
-
-        ctx.globalAlpha = 1.0;
+    // Compute health ratio (0.0 = dead, 1.0 = full)
+    let health = 1.0;
+    if (isNeutralized) {
+        health = 0;
+    } else if (unit.health !== undefined && unit.maxHealth) {
+        health = Math.max(0, Math.min(1, unit.health / unit.maxHealth));
     }
 
-    // Health bar (only if health < maxHealth and unit has health data)
-    if (unit.health !== undefined && unit.maxHealth && unit.health < unit.maxHealth && !isNeutralized) {
-        _drawHealthBar(ctx, sp.x, sp.y, size, unit.health, unit.maxHealth);
-    }
+    // Draw using procedural unit icons
+    drawUnitIcon(ctx, iconType, alliance, smoothedHeading, sp.x, sp.y, scale, isSelected, health);
 
     // Labels are drawn by _drawLabels() using label-collision.js
 }
