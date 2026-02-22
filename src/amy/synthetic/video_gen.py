@@ -822,3 +822,446 @@ def render_neighborhood(
     )
 
     return frame
+
+
+# ==========================================================================
+# CCTV Scene Types + Enhanced CCTV Renderer
+# ==========================================================================
+
+CCTV_SCENE_TYPES = ("front_door", "back_yard", "street_view", "parking", "driveway")
+
+
+def _apply_barrel_distortion(
+    frame: np.ndarray, strength: float = 0.3,
+) -> np.ndarray:
+    """Apply subtle barrel (fisheye) distortion to a frame."""
+    h, w = frame.shape[:2]
+    fx = fy = w * 0.8
+    cx, cy = w / 2, h / 2
+    camera_matrix = np.array([
+        [fx, 0, cx],
+        [0, fy, cy],
+        [0, 0, 1],
+    ], dtype=np.float64)
+    dist_coeffs = np.array([strength, 0.0, 0.0, 0.0], dtype=np.float64)
+    map1, map2 = cv2.initUndistortRectifyMap(
+        camera_matrix, dist_coeffs, None, camera_matrix, (w, h), cv2.CV_32FC1,
+    )
+    return cv2.remap(frame, map1, map2, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+
+
+def _apply_jpeg_compression(frame: np.ndarray, quality: int = 70) -> np.ndarray:
+    """Apply JPEG compression artifacts by encoding and decoding."""
+    _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
+    return cv2.imdecode(buf, cv2.IMREAD_COLOR)
+
+
+def _draw_cctv_overlay(
+    frame: np.ndarray,
+    camera_name: str,
+    timestamp: str,
+    frame_number: int,
+    width: int,
+    height: int,
+) -> None:
+    """Draw CCTV HUD: camera name, timestamp, REC dot, frame counter."""
+    text_color = (200, 200, 200)
+    cv2.putText(
+        frame, camera_name, (10, 20),
+        cv2.FONT_HERSHEY_SIMPLEX, 0.5, text_color, 1,
+    )
+    cv2.putText(
+        frame, timestamp, (width - 200, 20),
+        cv2.FONT_HERSHEY_SIMPLEX, 0.4, text_color, 1,
+    )
+    cv2.circle(frame, (width - 220, 17), 5, (60, 60, 220), -1)
+    cv2.putText(
+        frame, "REC", (width - 212, 22),
+        cv2.FONT_HERSHEY_SIMPLEX, 0.35, (60, 60, 220), 1,
+    )
+    cv2.putText(
+        frame, f"F:{frame_number:05d}", (width - 90, height - 10),
+        cv2.FONT_HERSHEY_SIMPLEX, 0.35, (120, 120, 120), 1,
+    )
+
+
+def _scene_front_door(
+    frame: np.ndarray,
+    rng: random.Random,
+    np_rng: np.random.RandomState,
+    width: int,
+    height: int,
+    bg: tuple[int, int, int],
+    time_of_day: str,
+    frame_number: int,
+) -> None:
+    """Render a front door / entryway scene -- slight downward angle."""
+    porch_y = int(height * 0.4)
+    porch_color = tuple(min(255, c + 20) for c in bg)
+    frame[porch_y:] = porch_color
+
+    door_w = int(width * 0.18)
+    door_h = int(height * 0.45)
+    door_x = width // 2 - door_w // 2
+    door_y = porch_y - door_h + int(height * 0.15)
+    door_color = tuple(min(255, c + 8) for c in bg)
+    cv2.rectangle(frame, (door_x, door_y), (door_x + door_w, door_y + door_h), door_color, -1)
+    cv2.rectangle(frame, (door_x, door_y), (door_x + door_w, door_y + door_h),
+                  tuple(min(255, c + 25) for c in bg), 1)
+
+    knob_x = door_x + door_w - 12
+    knob_y = door_y + door_h // 2
+    cv2.circle(frame, (knob_x, knob_y), 4, tuple(min(255, c + 40) for c in bg), -1)
+
+    if time_of_day in ("night", "dusk"):
+        light_x = door_x + door_w // 2
+        light_y = door_y - 15
+        overlay = frame.copy()
+        cv2.circle(overlay, (light_x, light_y), 45, (50, 55, 65), -1)
+        cv2.addWeighted(overlay, 0.25, frame, 0.75, 0, frame)
+        cv2.circle(frame, (light_x, light_y), 3, (180, 200, 230), -1)
+
+    for wx in range(0, width, rng.randint(35, 55)):
+        line_color = tuple(min(255, c + rng.randint(-3, 3)) for c in bg)
+        cv2.line(frame, (wx, 0), (wx, porch_y), line_color, 1)
+
+    mat_w = int(door_w * 1.3)
+    mat_x = width // 2 - mat_w // 2
+    mat_y = door_y + door_h + 5
+    mat_color = tuple(max(0, c - 5) for c in porch_color)
+    cv2.rectangle(frame, (mat_x, mat_y), (mat_x + mat_w, mat_y + 12), mat_color, -1)
+
+    if rng.random() < 0.3:
+        px = rng.randint(width // 4, 3 * width // 4)
+        py = porch_y + rng.randint(20, int(height * 0.4))
+        person_h = rng.randint(30, 50)
+        person_w = person_h // 3
+        sil_color = tuple(max(0, c - 10) for c in porch_color)
+        cv2.ellipse(frame, (px, py - person_h + 8), (person_w // 2, 8), 0, 0, 360, sil_color, -1)
+        cv2.rectangle(frame, (px - person_w // 2, py - person_h + 16), (px + person_w // 2, py), sil_color, -1)
+
+
+def _scene_back_yard(
+    frame: np.ndarray,
+    rng: random.Random,
+    np_rng: np.random.RandomState,
+    width: int,
+    height: int,
+    bg: tuple[int, int, int],
+    time_of_day: str,
+    frame_number: int,
+) -> None:
+    """Render a wide-angle back yard -- fence line, grass."""
+    sky_y = int(height * 0.35)
+
+    grass_base = (
+        max(0, bg[0] - 5),
+        min(255, bg[1] + 15),
+        max(0, bg[2] - 5),
+    )
+    frame[sky_y:] = grass_base
+
+    for _ in range(200):
+        gx = rng.randint(0, width - 1)
+        gy = rng.randint(sky_y, height - 1)
+        gc = tuple(max(0, min(255, c + rng.randint(-8, 8))) for c in grass_base)
+        cv2.circle(frame, (gx, gy), 1, gc, -1)
+
+    fence_y = sky_y + 5
+    fence_color = tuple(min(255, c + 30) for c in bg)
+    for fx in range(0, width, 15):
+        cv2.rectangle(frame, (fx, fence_y - 20), (fx + 3, fence_y + 5), fence_color, -1)
+    cv2.line(frame, (0, fence_y - 15), (width, fence_y - 15), fence_color, 1)
+    cv2.line(frame, (0, fence_y - 5), (width, fence_y - 5), fence_color, 1)
+
+    for _ in range(rng.randint(1, 3)):
+        tx = rng.randint(50, width - 50)
+        trunk_h = rng.randint(30, 50)
+        tree_color = tuple(max(0, c - 5) for c in bg)
+        cv2.line(frame, (tx, sky_y), (tx, sky_y - trunk_h), tree_color, 3)
+        cv2.circle(frame, (tx, sky_y - trunk_h - 15), rng.randint(15, 25), tree_color, -1)
+
+    if rng.random() < 0.25:
+        ax = rng.randint(100, width - 100)
+        ay = rng.randint(sky_y + 40, height - 30)
+        animal_color = tuple(max(0, c - 8) for c in grass_base)
+        cv2.ellipse(frame, (ax, ay), (12, 6), 0, 0, 360, animal_color, -1)
+
+
+def _scene_street_view(
+    frame: np.ndarray,
+    rng: random.Random,
+    np_rng: np.random.RandomState,
+    width: int,
+    height: int,
+    bg: tuple[int, int, int],
+    time_of_day: str,
+    frame_number: int,
+) -> None:
+    """Render a long perspective street with vanishing point, parked cars."""
+    horizon_y = int(height * 0.38)
+    vanishing_x = width // 2 + rng.randint(-30, 30)
+
+    ground_color = tuple(min(255, c + 10) for c in bg)
+    frame[horizon_y:] = ground_color
+
+    road_y1 = int(height * 0.5)
+    road_color = tuple(max(0, c - 3) for c in bg)
+    frame[road_y1:] = road_color
+
+    line_color = tuple(min(255, c + 8) for c in road_color)
+    for frac in [0.15, 0.35, 0.5, 0.65, 0.85]:
+        lx = int(vanishing_x - width * frac)
+        rx = int(vanishing_x + width * frac)
+        cv2.line(frame, (vanishing_x, horizon_y), (lx, height), line_color, 1)
+        cv2.line(frame, (vanishing_x, horizon_y), (rx, height), line_color, 1)
+
+    road_mid_y = (road_y1 + height) // 2
+    for dx in range(0, width, 25):
+        cv2.line(frame, (dx, road_mid_y), (dx + 12, road_mid_y), (50, 50, 50), 1)
+
+    for i in range(1, 5):
+        y = horizon_y + int((height - horizon_y) * (i / 5.0))
+        cv2.line(frame, (0, y), (width, y), line_color, 1)
+
+    for _ in range(rng.randint(2, 5)):
+        cy = rng.randint(road_y1 + 20, height - 30)
+        depth = (cy - horizon_y) / max(1, height - horizon_y)
+        car_w = int(25 * (0.3 + 0.7 * depth))
+        car_h = int(12 * (0.3 + 0.7 * depth))
+        side = rng.choice([-1, 1])
+        cx = vanishing_x + side * int(width * 0.25 * depth)
+        car_color = tuple(max(0, min(255, c + rng.randint(-10, 10))) for c in bg)
+        cv2.rectangle(frame, (cx - car_w, cy - car_h), (cx + car_w, cy + car_h), car_color, -1)
+        cv2.rectangle(frame, (cx - car_w, cy - car_h), (cx + car_w, cy + car_h),
+                      tuple(min(255, c + 15) for c in car_color), 1)
+
+    if time_of_day in ("night", "dusk"):
+        for sx in [width // 4, 3 * width // 4]:
+            sy = horizon_y + 15
+            overlay = frame.copy()
+            cv2.circle(overlay, (sx, sy), 40, (50, 60, 70), -1)
+            cv2.addWeighted(overlay, 0.3, frame, 0.7, 0, frame)
+            cv2.circle(frame, (sx, sy - 25), 3, (180, 200, 230), -1)
+            cv2.line(frame, (sx, sy - 25), (sx, horizon_y - 5), (70, 70, 70), 2)
+
+    if rng.random() < 0.35:
+        py = rng.randint(road_y1, height - 20)
+        depth = (py - horizon_y) / max(1, height - horizon_y)
+        person_h = int(35 * (0.3 + 0.7 * depth))
+        px = vanishing_x + rng.randint(-int(width * 0.2 * depth), int(width * 0.2 * depth))
+        sil_color = tuple(max(0, c - 8) for c in road_color)
+        cv2.ellipse(frame, (px, py - person_h + 6), (person_h // 6, 5), 0, 0, 360, sil_color, -1)
+        cv2.rectangle(frame, (px - person_h // 6, py - person_h + 11), (px + person_h // 6, py), sil_color, -1)
+
+
+def _scene_parking(
+    frame: np.ndarray,
+    rng: random.Random,
+    np_rng: np.random.RandomState,
+    width: int,
+    height: int,
+    bg: tuple[int, int, int],
+    time_of_day: str,
+    frame_number: int,
+) -> None:
+    """Render an overhead parking area view."""
+    asphalt = tuple(min(255, c + 5) for c in bg)
+    frame[:] = asphalt
+
+    line_color = tuple(min(255, c + 40) for c in asphalt)
+    spacing = 60
+    for px_x in range(30, width - 30, spacing):
+        cv2.line(frame, (px_x, int(height * 0.2)), (px_x, int(height * 0.8)), line_color, 1)
+
+    cv2.line(frame, (30, int(height * 0.2)), (width - 30, int(height * 0.2)), line_color, 1)
+    cv2.line(frame, (30, int(height * 0.8)), (width - 30, int(height * 0.8)), line_color, 1)
+
+    for i in range(rng.randint(3, 7)):
+        slot = rng.randint(0, (width - 60) // spacing)
+        cx = 30 + slot * spacing + spacing // 2
+        cy = rng.choice([int(height * 0.35), int(height * 0.65)])
+        car_w = int(spacing * 0.35)
+        car_h = int(spacing * 0.7)
+        car_color = tuple(max(0, min(255, c + rng.randint(-15, 20))) for c in asphalt)
+        cv2.rectangle(frame, (cx - car_w, cy - car_h), (cx + car_w, cy + car_h), car_color, -1)
+        cv2.rectangle(frame, (cx - car_w, cy - car_h), (cx + car_w, cy + car_h),
+                      tuple(min(255, c + 12) for c in car_color), 1)
+
+    if time_of_day in ("night", "dusk"):
+        for lx in range(width // 5, width, width // 3):
+            ly = height // 2
+            overlay = frame.copy()
+            cv2.circle(overlay, (lx, ly), 60, (45, 55, 65), -1)
+            cv2.addWeighted(overlay, 0.2, frame, 0.8, 0, frame)
+
+
+def _scene_driveway(
+    frame: np.ndarray,
+    rng: random.Random,
+    np_rng: np.random.RandomState,
+    width: int,
+    height: int,
+    bg: tuple[int, int, int],
+    time_of_day: str,
+    frame_number: int,
+) -> None:
+    """Render a side-angle driveway with sidewalk."""
+    horizon_y = int(height * 0.4)
+
+    ground_color = tuple(min(255, c + 12) for c in bg)
+    frame[horizon_y:] = ground_color
+
+    dw_left = int(width * 0.3)
+    dw_right = int(width * 0.6)
+    dw_color = tuple(min(255, c + 20) for c in ground_color)
+    pts = np.array([
+        [dw_left, height],
+        [dw_right, height],
+        [int(width * 0.5), horizon_y + 20],
+        [int(width * 0.35), horizon_y + 20],
+    ], dtype=np.int32)
+    cv2.fillPoly(frame, [pts], dw_color)
+
+    sw_y = int(height * 0.88)
+    sw_color = tuple(min(255, c + 25) for c in ground_color)
+    cv2.rectangle(frame, (0, sw_y), (width, height), sw_color, -1)
+
+    wall_x = int(width * 0.15)
+    wall_color = tuple(min(255, c + 6) for c in bg)
+    cv2.rectangle(frame, (0, int(height * 0.1)), (wall_x, horizon_y + 30), wall_color, -1)
+    gd_y1 = horizon_y - 10
+    gd_y2 = horizon_y + 25
+    gd_color = tuple(min(255, c + 12) for c in wall_color)
+    cv2.rectangle(frame, (5, gd_y1), (wall_x - 5, gd_y2), gd_color, -1)
+    for gy in range(gd_y1 + 5, gd_y2, 5):
+        cv2.line(frame, (5, gy), (wall_x - 5, gy), tuple(min(255, c + 5) for c in gd_color), 1)
+
+    grass_color = (
+        max(0, bg[0] - 3),
+        min(255, bg[1] + 10),
+        max(0, bg[2] - 3),
+    )
+    grass_pts = np.array([
+        [dw_right + 10, height],
+        [width, height],
+        [width, horizon_y],
+        [int(width * 0.55), horizon_y + 20],
+    ], dtype=np.int32)
+    cv2.fillPoly(frame, [grass_pts], grass_color)
+
+    if rng.random() < 0.4:
+        car_x = (dw_left + dw_right) // 2
+        car_y = int(height * 0.7)
+        car_w, car_h = 35, 18
+        car_color = tuple(max(0, min(255, c + rng.randint(-10, 15))) for c in dw_color)
+        cv2.rectangle(frame, (car_x - car_w, car_y - car_h), (car_x + car_w, car_y + car_h), car_color, -1)
+        cv2.rectangle(frame, (car_x - car_w, car_y - car_h), (car_x + car_w, car_y + car_h),
+                      tuple(min(255, c + 15) for c in car_color), 1)
+
+    if time_of_day in ("night", "dusk"):
+        sl_x = int(width * 0.75)
+        sl_y = horizon_y + 10
+        overlay = frame.copy()
+        cv2.circle(overlay, (sl_x, sl_y), 45, (50, 60, 70), -1)
+        cv2.addWeighted(overlay, 0.25, frame, 0.75, 0, frame)
+        cv2.circle(frame, (sl_x, sl_y - 30), 3, (180, 200, 230), -1)
+        cv2.line(frame, (sl_x, sl_y - 30), (sl_x, horizon_y - 10), (70, 70, 70), 2)
+
+
+_CCTV_SCENE_RENDERERS = {
+    "front_door": _scene_front_door,
+    "back_yard": _scene_back_yard,
+    "street_view": _scene_street_view,
+    "parking": _scene_parking,
+    "driveway": _scene_driveway,
+}
+
+
+def render_cctv_frame(
+    camera_name: str = "CAM-01",
+    scene_type: str = "front_door",
+    time_of_day: str = "night",
+    resolution: tuple[int, int] = (640, 480),
+    timestamp: str | None = None,
+    seed: int | None = None,
+    frame_number: int = 0,
+) -> np.ndarray:
+    """Render a single synthetic CCTV camera frame.
+
+    Produces a convincing fake security camera frame with:
+    - Scene-specific composition (front_door, back_yard, street_view, parking, driveway)
+    - Time-of-day lighting (day, dusk, night)
+    - Gaussian sensor noise
+    - Subtle barrel distortion
+    - JPEG compression artifacts
+    - Camera name + timestamp + REC overlay + frame counter
+    - Composited silhouette figures
+
+    Deterministic given the same seed, camera_name, scene_type, time_of_day,
+    and frame_number.
+
+    Args:
+        camera_name: Camera identifier shown in overlay.
+        scene_type: One of CCTV_SCENE_TYPES.
+        time_of_day: "day", "dusk", or "night".
+        resolution: (width, height) of output frame.
+        timestamp: Override timestamp text. None = current time.
+        seed: Random seed for deterministic output.
+        frame_number: Frame counter for sequence generation.
+
+    Returns:
+        BGR uint8 numpy array of shape (height, width, 3).
+
+    Raises:
+        ValueError: If scene_type is not in CCTV_SCENE_TYPES.
+    """
+    if scene_type not in CCTV_SCENE_TYPES:
+        raise ValueError(
+            f"Invalid CCTV scene_type '{scene_type}'. Must be one of {CCTV_SCENE_TYPES}"
+        )
+
+    rng = random.Random(seed) if seed is not None else random.Random()
+    np_rng = np.random.RandomState(seed if seed is not None else None)
+    width, height = resolution
+    frame = np.zeros((height, width, 3), dtype=np.uint8)
+
+    # Background based on time of day with per-camera color temperature shift
+    cam_hash = hash(camera_name) % 20 - 10
+    bg_colors = {
+        "night": (15 + cam_hash // 3, 10, 10),
+        "day": (155 + cam_hash, 140, 120),
+        "dusk": (55 + cam_hash // 2, 40, 35),
+    }
+    bg = bg_colors.get(time_of_day, bg_colors["night"])
+    bg = tuple(max(0, min(255, c)) for c in bg)
+    frame[:] = bg
+
+    # Render scene-specific content
+    scene_fn = _CCTV_SCENE_RENDERERS[scene_type]
+    scene_fn(frame, rng, np_rng, width, height, bg, time_of_day, frame_number)
+
+    # Gaussian sensor noise (sigma 3-8)
+    noise_sigma = 3.0 + (hash(camera_name) % 50) / 10.0
+    noise_sigma = min(8.0, max(3.0, noise_sigma))
+    noise = np_rng.normal(0, noise_sigma, (height, width, 3)).astype(np.int16)
+    frame = np.clip(frame.astype(np.int16) + noise, 0, 255).astype(np.uint8)
+
+    # Subtle barrel distortion
+    frame = _apply_barrel_distortion(frame, strength=0.15)
+
+    # Occasional horizontal line artifact
+    if rng.random() < 0.1:
+        artifact_y = rng.randint(0, height - 1)
+        line_shift = rng.randint(-3, 3)
+        frame[artifact_y] = np.roll(frame[artifact_y], line_shift, axis=0)
+
+    # JPEG compression artifacts (quality 60-75)
+    jpeg_quality = 60 + (hash(camera_name) % 16)
+    frame = _apply_jpeg_compression(frame, quality=jpeg_quality)
+
+    # Overlay drawn AFTER compression so text stays sharp
+    ts = timestamp or time.strftime("%Y-%m-%d %H:%M:%S")
+    _draw_cctv_overlay(frame, camera_name, ts, frame_number, width, height)
+
+    return frame

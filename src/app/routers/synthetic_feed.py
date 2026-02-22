@@ -27,6 +27,7 @@ from pydantic import BaseModel
 
 from amy.synthetic.video_gen import (
     render_bird_eye,
+    render_cctv_frame,
     render_street_cam,
     render_battle_scene,
     render_neighborhood,
@@ -41,6 +42,7 @@ _RENDERERS = {
     "street_cam": render_street_cam,
     "battle": render_battle_scene,
     "neighborhood": render_neighborhood,
+    "cctv": render_cctv_frame,
 }
 
 
@@ -103,8 +105,9 @@ class SyntheticFeedManager:
         if config.feed_id in self._feeds:
             raise ValueError(f"Feed '{config.feed_id}' already exists")
 
-        # Validate scene type
-        if config.scene_type not in SCENE_TYPES:
+        # Validate scene type (support both original scene types and "cctv")
+        valid_types = set(SCENE_TYPES) | {"cctv"}
+        if config.scene_type not in valid_types:
             config.scene_type = "bird_eye"
 
         state = _FeedState(config=config)
@@ -175,6 +178,10 @@ class SyntheticFeedManager:
             kwargs["camera_name"] = f"SYN-{feed_id}"
         elif cfg.scene_type == "neighborhood":
             kwargs["camera_name"] = f"SYN-{feed_id}"
+        elif cfg.scene_type == "cctv":
+            kwargs["camera_name"] = f"SYN-{feed_id}"
+            kwargs["scene_type"] = "front_door"
+            kwargs["frame_number"] = state.frame_count
 
         frame = renderer(**kwargs)
         state.frame_count += 1

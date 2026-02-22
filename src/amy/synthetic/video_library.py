@@ -23,10 +23,12 @@ import cv2
 import numpy as np
 
 from amy.synthetic.video_gen import (
+    CCTV_SCENE_TYPES,
     Explosion,
     Projectile,
     render_battle_scene,
     render_bird_eye,
+    render_cctv_frame,
     render_neighborhood,
     render_street_cam,
 )
@@ -431,6 +433,100 @@ class SyntheticVideoLibrary:
                 frame_kwargs.update(demo)
 
             yield renderer(**frame_kwargs)
+
+
+    def generate_cctv_clip(
+        self,
+        camera_name: str,
+        scene_type: str,
+        duration: float = 5.0,
+        fps: int = 10,
+        resolution: tuple[int, int] = (640, 480),
+        seed: int = 42,
+        time_of_day: str = "night",
+    ) -> Path:
+        """Generate a CCTV video clip with individual JPEG frames.
+
+        Creates an MP4 clip and individual JPEG frames in a camera-named
+        directory. Includes subtle motion (camera vibration, moving figures).
+
+        Args:
+            camera_name: Camera identifier (e.g. "CAM-01").
+            scene_type: CCTV scene type (front_door, back_yard, street_view, parking, driveway).
+            duration: Clip duration in seconds.
+            fps: Frames per second.
+            resolution: (width, height).
+            seed: Random seed for deterministic output.
+            time_of_day: "day", "dusk", or "night".
+
+        Returns:
+            Path to the clip directory containing clip.mp4, frame_*.jpg, metadata.json.
+
+        Raises:
+            ValueError: If scene_type is invalid.
+        """
+        if scene_type not in CCTV_SCENE_TYPES:
+            raise ValueError(
+                f"Invalid CCTV scene_type '{scene_type}'. Must be one of {CCTV_SCENE_TYPES}"
+            )
+        if duration <= 0:
+            raise ValueError(f"Duration must be positive, got {duration}")
+        if fps <= 0:
+            raise ValueError(f"FPS must be positive, got {fps}")
+
+        total_frames = max(1, int(duration * fps))
+
+        # Create clip directory under cameras/{camera_name}
+        clip_dir = self._library_path / "cameras" / camera_name
+        clip_dir.mkdir(parents=True, exist_ok=True)
+
+        width, height = resolution
+        clip_path = clip_dir / "clip.mp4"
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        writer = cv2.VideoWriter(str(clip_path), fourcc, fps, (width, height))
+
+        if not writer.isOpened():
+            raise RuntimeError(f"Failed to open VideoWriter at {clip_path}")
+
+        try:
+            for i in range(total_frames):
+                ts = f"2026-02-22 03:{(i // 60) % 60:02d}:{i % 60:02d}"
+                frame = render_cctv_frame(
+                    camera_name=camera_name,
+                    scene_type=scene_type,
+                    time_of_day=time_of_day,
+                    resolution=resolution,
+                    timestamp=ts,
+                    seed=seed + i,
+                    frame_number=i,
+                )
+                writer.write(frame)
+                # Save individual JPEG frames
+                cv2.imwrite(
+                    str(clip_dir / f"frame_{i:03d}.jpg"),
+                    frame,
+                    [cv2.IMWRITE_JPEG_QUALITY, 80],
+                )
+        finally:
+            writer.release()
+
+        # Write metadata
+        metadata = {
+            "camera_name": camera_name,
+            "scene_type": scene_type,
+            "time_of_day": time_of_day,
+            "duration": duration,
+            "fps": fps,
+            "resolution": list(resolution),
+            "total_frames": total_frames,
+            "seed": seed,
+            "created": datetime.now().isoformat(),
+            "clip_file": "clip.mp4",
+        }
+        with open(clip_dir / "metadata.json", "w") as f:
+            json.dump(metadata, f, indent=2)
+
+        return clip_dir
 
 
 def _has_target_kwargs(scene_type: str, kwargs: dict) -> bool:
