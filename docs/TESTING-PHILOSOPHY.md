@@ -145,7 +145,7 @@ flowchart LR
 *Solid-color panel diagnostic — each panel rendered in a unique color to detect overlaps*
 
 ![Green Blobs Annotated](screenshots/green-blobs-annotated.png)
-*OpenCV unit detection — bounding boxes identify friendly (green) and hostile (red) units on the tactical map*
+*OpenCV color detection on the tactical map — green pixel clusters (friendly units) are visible on satellite imagery. Current detection finds blobs by color threshold; bounding-box accuracy varies (some units missed, no hostile detection shown here). This is the baseline we're improving against.*
 
 ![DOM Audit](screenshots/dom-audit-annotated.png)
 *Full DOM element audit — every interactive element labeled and verified*

@@ -238,6 +238,15 @@ tier14_defects() {
     fi
 }
 
+tier15_battle_proof() {
+    header "Tier 15: Battle Proof (Full 10-Wave E2E)"
+    if $VENV -m pytest "$SCRIPT_DIR/tests/visual/test_battle_proof.py" -v --timeout=900 --tb=short 2>&1; then
+        pass "Battle proof (full 10-wave E2E)"
+    else
+        fail "Battle proof"
+    fi
+}
+
 tier_dist() {
     header "Distributed Testing (local + ${REMOTE_HOST:-<unset>})"
     if [ -z "${REMOTE_HOST:-}" ]; then
@@ -320,17 +329,19 @@ main() {
         12) tier12_layout ;;
         13) tier13_ux ;;
         14) tier14_defects ;;
+        15|battle-proof) tier15_battle_proof ;;
         --dist) tier1_syntax; tier2_unit; tier3_js; tier8_lib; tier_dist ;;
         --visual) tier7_visual ;;
         --gameplay) tier4_gameplay ;;
         --battle) tier6_battle ;;
+        --battle-proof) tier15_battle_proof ;;
         --integration) tier9_integration ;;
         --quality) tier10_quality ;;
         --smoke) tier11_smoke ;;
         --layout) tier12_layout ;;
         --ux) tier13_ux ;;
         --defects) tier14_defects ;;
-        *) echo "Usage: $0 [all|fast|1-14|--dist|--visual|--gameplay|--battle|--integration|--quality|--smoke|--layout|--ux|--defects]"; exit 1 ;;
+        *) echo "Usage: $0 [all|fast|1-15|--dist|--visual|--gameplay|--battle|--battle-proof|--integration|--quality|--smoke|--layout|--ux|--defects]"; exit 1 ;;
     esac
     set -e
 
