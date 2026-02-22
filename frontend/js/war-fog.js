@@ -18,13 +18,13 @@
 // ============================================================
 
 var FOG_VISION_RADII = {
-    turret:  20,
-    drone:   15,
-    rover:   12,
-    camera:  18,
-    sensor:  18,
-    person:  10,
-    default: 10,
+    turret:  50,
+    drone:   60,
+    rover:   40,
+    camera:  30,
+    sensor:  30,
+    person:  15,
+    default: 20,
 };
 
 // ============================================================

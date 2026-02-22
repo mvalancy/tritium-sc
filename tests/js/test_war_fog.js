@@ -48,37 +48,37 @@ console.log('\n--- Vision Radii ---');
 
 (function testTurretVisionRadius() {
     const r = fogGetVisionRadius({ asset_type: 'turret' });
-    assertClose(r, 20, 0.001, 'Turret vision radius is 20');
+    assertClose(r, 50, 0.001, 'Turret vision radius is 50');
 })();
 
 (function testDroneVisionRadius() {
     const r = fogGetVisionRadius({ asset_type: 'drone' });
-    assertClose(r, 15, 0.001, 'Drone vision radius is 15');
+    assertClose(r, 60, 0.001, 'Drone vision radius is 60');
 })();
 
 (function testRoverVisionRadius() {
     const r = fogGetVisionRadius({ asset_type: 'rover' });
-    assertClose(r, 12, 0.001, 'Rover vision radius is 12');
+    assertClose(r, 40, 0.001, 'Rover vision radius is 40');
 })();
 
 (function testCameraVisionRadius() {
     const r = fogGetVisionRadius({ asset_type: 'camera' });
-    assertClose(r, 18, 0.001, 'Camera vision radius is 18');
+    assertClose(r, 30, 0.001, 'Camera vision radius is 30');
 })();
 
 (function testSensorVisionRadius() {
     const r = fogGetVisionRadius({ asset_type: 'sensor' });
-    assertClose(r, 18, 0.001, 'Sensor vision radius is 18');
+    assertClose(r, 30, 0.001, 'Sensor vision radius is 30');
 })();
 
 (function testPersonVisionRadius() {
     const r = fogGetVisionRadius({ asset_type: 'person' });
-    assertClose(r, 10, 0.001, 'Person vision radius is 10 (default)');
+    assertClose(r, 15, 0.001, 'Person vision radius is 15');
 })();
 
 (function testUnknownTypeGetsDefault() {
     const r = fogGetVisionRadius({ asset_type: 'unknown_thing' });
-    assertClose(r, 10, 0.001, 'Unknown type gets default vision radius 10');
+    assertClose(r, 20, 0.001, 'Unknown type gets default vision radius 20');
 })();
 
 (function testVisionRadiusWithCustomOverride() {
@@ -88,7 +88,7 @@ console.log('\n--- Vision Radii ---');
 
 (function testVisionRadiusCaseInsensitive() {
     const r = fogGetVisionRadius({ asset_type: 'Turret' });
-    assertClose(r, 20, 0.001, 'Vision radius lookup is case-insensitive');
+    assertClose(r, 50, 0.001, 'Vision radius lookup is case-insensitive');
 })();
 
 // ============================================================
@@ -112,7 +112,7 @@ console.log('\n--- Fog Vision Map ---');
     assert(circles.length === 1, 'Only friendly units contribute to vision map (got ' + circles.length + ')');
     assertClose(circles[0].x, 5, 0.001, 'Vision circle x matches turret position');
     assertClose(circles[0].y, 10, 0.001, 'Vision circle y matches turret position');
-    assertClose(circles[0].r, 20, 0.001, 'Vision circle radius matches turret type');
+    assertClose(circles[0].r, 50, 0.001, 'Vision circle radius matches turret type');
 })();
 
 (function testBuildVisionMapMultipleFriendlies() {

@@ -128,6 +128,12 @@ const _state = {
     // Smooth heading cache
     smoothHeadings: new Map(),
 
+    // Fog of war
+    fogEnabled: true,
+
+    // Screen shake tracking
+    _shakeActive: false,
+
     // Cleanup handles
     unsubs: [],
     boundHandlers: new Map(),
@@ -433,6 +439,15 @@ function _draw() {
 
     // Layer 4: Zones
     _drawZones(ctx);
+
+    // Layer 4.5: Fog of war (darkens areas far from friendly units)
+    if (typeof fogDraw === 'function' && _state.fogEnabled) {
+        const fogTargets = _buildTargetsObject();
+        // fogDraw expects raw canvas dimensions, but our ctx has a DPI transform
+        // Create a wrapper canvas object with CSS pixel dims for fogDraw
+        const fogCanvas = { width: cssW, height: cssH };
+        fogDraw(ctx, fogCanvas, worldToScreen, fogTargets, _state.cam, TritiumStore.get('map.mode'));
+    }
 
     // Layer 5: Targets (shapes only — labels handled separately)
     _drawTargets(ctx);
@@ -2006,11 +2021,20 @@ export function toggleGrid() {
 /**
  * Return current map state for menu checkmarks.
  */
+/**
+ * Toggle fog of war on/off.
+ */
+export function toggleFog() {
+    _state.fogEnabled = !_state.fogEnabled;
+    console.log(`[MAP] Fog of war ${_state.fogEnabled ? 'ON' : 'OFF'}`);
+}
+
 export function getMapState() {
     return {
         showSatellite: _state.showSatellite,
         showRoads: _state.showRoads,
         showGrid: _state.showGrid,
+        fogEnabled: _state.fogEnabled,
     };
 }
 

@@ -7,7 +7,7 @@
 import { TritiumStore } from './store.js';
 import { EventBus } from './events.js';
 import { WebSocketManager } from './websocket.js';
-import { initMap, destroyMap, toggleSatellite, toggleRoads, toggleGrid, getMapState, centerOnAction, resetCamera, zoomIn, zoomOut } from './map.js';
+import { initMap, destroyMap, toggleSatellite, toggleRoads, toggleGrid, toggleFog, getMapState, centerOnAction, resetCamera, zoomIn, zoomOut } from './map.js';
 import { PanelManager } from './panel-manager.js';
 import { LayoutManager } from './layout-manager.js';
 import { createMenuBar, focusSaveInput } from './menu-bar.js';
@@ -258,6 +258,7 @@ function initPanelSystem(container) {
             toggleSatellite: () => (_activeMapModule ? _activeMapModule.toggleSatellite() : toggleSatellite()),
             toggleRoads: () => (_activeMapModule ? _activeMapModule.toggleRoads() : toggleRoads()),
             toggleGrid: () => (_activeMapModule ? _activeMapModule.toggleGrid() : toggleGrid()),
+            toggleFog: () => (_activeMapModule ? _activeMapModule.toggleFog() : toggleFog()),
             toggle3DMode,
             centerOnAction: () => (_activeMapModule ? _activeMapModule.centerOnAction() : centerOnAction()),
             resetCamera: () => (_activeMapModule ? _activeMapModule.resetCamera() : resetCamera()),
