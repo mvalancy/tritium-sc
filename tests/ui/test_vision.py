@@ -1482,6 +1482,8 @@ def main():
                         help="Add ultra analysis pass (qwen2.5vl:72b)")
     parser.add_argument("--view", default=None,
                         help="Audit a single view (e.g., war, amy, assets)")
+    parser.add_argument("--views", type=str, default=None,
+                        help="Comma-separated subset of views to audit (e.g., grid,player,war)")
     parser.add_argument("--resolution", default=None,
                         help="Single resolution: mobile, tablet, desktop")
     parser.add_argument("--quick", action="store_true",
@@ -1529,6 +1531,13 @@ def main():
             print(f"Unknown view: {args.view}. Available: {', '.join(VIEWS.keys())}")
             return 1
         views = [args.view]
+    elif args.views:
+        requested = [v.strip() for v in args.views.split(',')]
+        unknown = [v for v in requested if v not in VIEWS]
+        if unknown:
+            print(f"Unknown views: {', '.join(unknown)}. Available: {', '.join(VIEWS.keys())}")
+            return 1
+        views = requested
     else:
         views = list(VIEWS.keys())
 

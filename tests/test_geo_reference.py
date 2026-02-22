@@ -1,9 +1,9 @@
-"""Tests for amy.geo — server-side geo-reference and coordinate transforms."""
+"""Tests for amy.tactical.geo — server-side geo-reference and coordinate transforms."""
 
 import math
 import pytest
 
-from amy.geo import (
+from amy.tactical.geo import (
     GeoReference,
     METERS_PER_DEG_LAT,
     init_reference,
@@ -23,7 +23,7 @@ TEST_LNG = -122.4194
 @pytest.fixture(autouse=True)
 def reset_reference():
     """Reset the geo reference before each test."""
-    import geo.reference as geo_mod
+    import amy.tactical.geo as geo_mod
     geo_mod._ref = GeoReference()
     yield
     geo_mod._ref = GeoReference()
@@ -210,7 +210,7 @@ class TestTrackedTargetGeoIntegration:
     def test_to_dict_includes_latlng(self):
         init_reference(TEST_LAT, TEST_LNG)
 
-        from amy.target_tracker import TrackedTarget
+        from amy.tactical.target_tracker import TrackedTarget
         target = TrackedTarget(
             target_id="track-1",
             name="Tracked Rover",
