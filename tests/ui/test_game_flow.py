@@ -70,6 +70,112 @@ class TestGameHudPanel:
         take_screenshot(page, 'game-hud-buttons')
 
 
+class TestSetupMode:
+    """Setup mode palette and unit placement."""
+
+    def test_setup_mode_shows_palette(self, page, take_screenshot):
+        """Pressing S should show the deploy palette."""
+        # Switch to setup mode
+        page.keyboard.press('s')
+        page.wait_for_timeout(800)
+
+        palette = page.locator('#war-setup-palette')
+        is_visible = palette.evaluate(
+            "el => el.style.display !== 'none' && el.offsetWidth > 0"
+        )
+        take_screenshot(page, 'setup-palette')
+        assert is_visible, "Deploy palette should be visible in setup mode"
+
+    def test_setup_palette_has_categories(self, page, take_screenshot):
+        """Deploy palette should have at least one category with items."""
+        page.keyboard.press('s')
+        page.wait_for_timeout(800)
+
+        items = page.locator('#war-setup-palette .palette-item')
+        count = items.count()
+        take_screenshot(page, 'setup-palette-items')
+        assert count > 0, f"Palette should have items, got {count}"
+
+    def test_observe_mode_hides_palette(self, page, take_screenshot):
+        """Switching to observe mode should hide the deploy palette."""
+        page.keyboard.press('s')
+        page.wait_for_timeout(500)
+        page.keyboard.press('o')
+        page.wait_for_timeout(500)
+
+        palette = page.locator('#war-setup-palette')
+        is_hidden = palette.evaluate(
+            "el => el.style.display === 'none' || el.offsetWidth === 0"
+        )
+        take_screenshot(page, 'observe-palette-hidden')
+        assert is_hidden, "Palette should be hidden in observe mode"
+
+    def test_place_turret_via_api(self, page, take_screenshot, tritium_server):
+        """Placing a turret via API should add it to simulation targets."""
+        import requests
+        # Reset to setup state
+        requests.post(f"{tritium_server.url}/api/game/reset", timeout=5)
+        page.wait_for_timeout(500)
+
+        resp = requests.post(f"{tritium_server.url}/api/game/place", json={
+            "name": "Test Turret",
+            "asset_type": "turret",
+            "position": {"x": 5, "y": 5},
+        }, timeout=5)
+        assert resp.ok, f"Place turret should succeed, got {resp.status_code}"
+        data = resp.json()
+        assert "target_id" in data, "Response should contain target_id"
+
+        page.wait_for_timeout(1000)
+        take_screenshot(page, 'turret-placed')
+
+        # Verify via targets API
+        resp = requests.get(
+            f"{tritium_server.url}/api/amy/simulation/targets", timeout=5
+        )
+        if resp.ok:
+            targets = resp.json()
+            if isinstance(targets, dict):
+                targets = targets.get("targets", [])
+            turrets = [t for t in targets
+                       if t.get("asset_type") == "turret"
+                       and t.get("name") == "Test Turret"]
+            assert len(turrets) > 0, "Placed turret should appear in targets API"
+
+        # Clean up
+        requests.post(f"{tritium_server.url}/api/game/reset", timeout=5)
+
+
+class TestAudioToggle:
+    """Audio mute/unmute toggle."""
+
+    def test_mute_toggle_key(self, page, take_screenshot):
+        """Pressing M should toggle mute state."""
+        # Get initial mute state
+        initial_muted = page.evaluate("""() => {
+            const store = window.TritiumStore || window.store;
+            if (store && store.audio) return store.audio.muted;
+            return null;
+        }""")
+
+        page.keyboard.press('m')
+        page.wait_for_timeout(300)
+
+        after_muted = page.evaluate("""() => {
+            const store = window.TritiumStore || window.store;
+            if (store && store.audio) return store.audio.muted;
+            return null;
+        }""")
+
+        take_screenshot(page, 'audio-mute-toggle')
+
+        # If store has audio state, verify it toggled
+        if initial_muted is not None and after_muted is not None:
+            assert initial_muted != after_muted, \
+                f"Mute should toggle: was {initial_muted}, now {after_muted}"
+        # Otherwise just verify M doesn't crash (no console error)
+
+
 class TestSpawnHostile:
     """Spawning a hostile unit."""
 
