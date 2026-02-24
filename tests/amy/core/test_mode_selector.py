@@ -8,8 +8,8 @@ import threading
 import pytest
 
 from amy.commander import Commander, EventBus
-from amy.simulation.engine import SimulationEngine
-from amy.simulation.target import SimulationTarget
+from engine.simulation.engine import SimulationEngine
+from engine.simulation.target import SimulationTarget
 
 
 class SimpleEventBus:
@@ -261,6 +261,7 @@ class TestThinkingModeContext:
             goals="no goals",
             time_of_day="morning",
             war_mode="",
+            tactical_situation="",
         )
         assert "SIMULATION MODE" in system
         assert "simulated targets" in system
@@ -282,6 +283,7 @@ class TestThinkingModeContext:
             goals="no goals",
             time_of_day="morning",
             war_mode="",
+            tactical_situation="",
         )
         assert "LIVE SENSORS" in system
         assert "real cameras" in system

@@ -11,7 +11,7 @@ os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
 import numpy as np
 import pytest
 
-from amy.nodes.base import SensorNode, Position
+from engine.nodes.base import SensorNode, Position
 
 
 class MockSensorNode(SensorNode):
@@ -161,7 +161,7 @@ def sensorium():
 @pytest.fixture
 def synthetic_video_lib(tmp_path):
     """A SyntheticVideoLibrary using a temp directory."""
-    from amy.synthetic.video_library import SyntheticVideoLibrary
+    from engine.synthetic.video_library import SyntheticVideoLibrary
     return SyntheticVideoLibrary(library_path=str(tmp_path / "synthetic_video"))
 
 
