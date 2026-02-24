@@ -11,7 +11,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
 
-from amy.audio.audio_library import AudioLibrary
+from engine.audio.audio_library import AudioLibrary
 
 router = APIRouter(prefix="/api/audio", tags=["audio"])
 

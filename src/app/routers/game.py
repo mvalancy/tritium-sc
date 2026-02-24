@@ -69,7 +69,7 @@ async def place_unit(unit: PlaceUnit, request: Request):
     if engine.game_mode.state != "setup":
         raise HTTPException(400, "Can only place units during setup")
 
-    from amy.simulation.target import SimulationTarget
+    from engine.simulation.target import SimulationTarget
 
     target = SimulationTarget(
         target_id=f"{unit.asset_type}-{uuid.uuid4().hex[:6]}",

@@ -75,8 +75,8 @@ def _create_simulation_engine():
     if not settings.simulation_enabled:
         return None
 
-    from amy.comms.event_bus import EventBus
-    from amy.simulation import SimulationEngine, load_layout
+    from engine.comms.event_bus import EventBus
+    from engine.simulation import SimulationEngine, load_layout
 
     # Temporary event bus; gets replaced by Amy's actual bus after create_amy
     engine = SimulationEngine(EventBus())
@@ -103,7 +103,7 @@ def _start_mqtt_bridge(amy_instance) -> object | None:
         return None
 
     try:
-        from amy.comms.mqtt_bridge import MQTTBridge
+        from engine.comms.mqtt_bridge import MQTTBridge
         bridge = MQTTBridge(
             event_bus=amy_instance.event_bus,
             target_tracker=amy_instance.target_tracker,
@@ -137,7 +137,7 @@ def _start_meshtastic_bridge(amy_instance) -> object | None:
         return None
 
     try:
-        from amy.comms.meshtastic_bridge import MeshtasticBridge
+        from engine.comms.meshtastic_bridge import MeshtasticBridge
         bridge = MeshtasticBridge(
             event_bus=amy_instance.event_bus,
             target_tracker=amy_instance.target_tracker,
@@ -158,7 +158,7 @@ def _start_meshtastic_bridge(amy_instance) -> object | None:
 def _start_escalation(amy_instance, sim_engine, mqtt_bridge) -> None:
     """Start threat classifier and auto-dispatcher."""
     try:
-        from amy.tactical.escalation import ThreatClassifier, AutoDispatcher
+        from engine.tactical.escalation import ThreatClassifier, AutoDispatcher
 
         zones = _load_escalation_zones()
 
@@ -189,7 +189,7 @@ def _load_escalation_zones() -> list[dict]:
     """Load zones from layout file or return defaults."""
     if settings.simulation_layout:
         try:
-            from amy.simulation.loader import load_zones
+            from engine.simulation.loader import load_zones
             layout_path = Path(settings.simulation_layout)
             if layout_path.exists():
                 zones = load_zones(str(layout_path))
@@ -289,7 +289,7 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Recordings path not found: {settings.recordings_path}")
 
     # Geo reference — anchor local coordinates to real-world lat/lng
-    from amy.tactical.geo import init_reference
+    from engine.tactical.geo import init_reference
     init_reference(settings.map_center_lat, settings.map_center_lng, settings.map_center_alt)
     if settings.map_center_lat == 0.0 and settings.map_center_lng == 0.0:
         logger.info("Geo reference: initialized at origin (use /api/geo/reference to set location)")
@@ -334,7 +334,7 @@ async def lifespan(app: FastAPI):
             # Synthetic camera node (overhead view of simulation)
             if sim_engine is not None:
                 try:
-                    from amy.nodes.synthetic_camera import SyntheticCameraNode
+                    from engine.nodes.synthetic_camera import SyntheticCameraNode
                     syn_cam = SyntheticCameraNode(sim_engine)
                     syn_cam.start()
                     amy_instance.nodes[syn_cam.node_id] = syn_cam
@@ -354,6 +354,30 @@ async def lifespan(app: FastAPI):
             # Bridge Amy events to WebSocket
             start_amy_event_bridge(amy_instance, asyncio.get_event_loop())
             logger.info("Amy event bridge started")
+
+            # Load real-world geo data (roads + buildings) for 3D renderer
+            try:
+                from engine.tactical.street_graph import StreetGraph
+                from engine.tactical.obstacles import BuildingObstacles
+
+                if settings.map_center_lat != 0.0 or settings.map_center_lng != 0.0:
+                    sg = StreetGraph()
+                    sg.load(settings.map_center_lat, settings.map_center_lng, radius_m=300)
+                    if sg.graph:
+                        if sim_engine is not None:
+                            sim_engine.set_street_graph(sg)
+                        app.state.road_polylines = sg.to_polylines()
+                        logger.info(f"Road polylines: {len(app.state.road_polylines)} segments")
+
+                    obs = BuildingObstacles()
+                    obs.load(settings.map_center_lat, settings.map_center_lng, radius_m=300)
+                    if obs.polygons:
+                        if sim_engine is not None:
+                            sim_engine.set_obstacles(obs)
+                        app.state.building_dicts = obs.to_dicts()
+                        logger.info(f"Building data: {len(app.state.building_dicts)} buildings")
+            except Exception:
+                logger.warning("Geo data unavailable", exc_info=True)
 
             # MQTT bridge
             mqtt_bridge = _start_mqtt_bridge(amy_instance)

@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Optional
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import Response
 from loguru import logger
 from pydantic import BaseModel
@@ -81,7 +81,7 @@ async def get_reference():
     Returns the real-world lat/lng/alt that defines local (0, 0, 0).
     The frontend uses this to initialize the map center and coordinate transforms.
     """
-    from amy.tactical.geo import get_reference
+    from engine.tactical.geo import get_reference
     ref = get_reference()
     return {
         "lat": ref.lat,
@@ -100,7 +100,7 @@ async def set_reference(body: SetReferenceRequest):
     All existing simulation targets keep their local positions;
     their lat/lng will be recomputed from the new reference.
     """
-    from amy.tactical.geo import init_reference
+    from engine.tactical.geo import init_reference
     ref = init_reference(body.lat, body.lng, body.alt)
     logger.info(f"Geo reference set: {ref.lat:.7f}, {ref.lng:.7f}, alt={ref.alt:.1f}")
     return {
@@ -122,7 +122,7 @@ async def geocode_and_set_reference(request: GeocodeRequest):
     result = await geocode(request)
 
     # Set as reference
-    from amy.tactical.geo import init_reference
+    from engine.tactical.geo import init_reference
     init_reference(result.lat, result.lng)
     logger.info(f"Geo reference set from geocode: {result.lat:.7f}, {result.lng:.7f}")
 
@@ -357,3 +357,23 @@ async def get_buildings(
         pass
 
     return buildings
+
+
+# ---------------------------------------------------------------------------
+# Overlay: pre-loaded road polylines + building polygons for 3D renderer
+# ---------------------------------------------------------------------------
+
+@router.get("/overlay")
+async def get_overlay(request: Request):
+    """Return pre-loaded road polylines and building polygons.
+
+    This data is loaded at startup from the street graph and building
+    obstacles (Overpass API). The frontend uses it to render 3D roads
+    and extruded buildings on the Three.js map.
+
+    Returns:
+        {"roads": [...], "buildings": [...]}
+    """
+    roads = getattr(request.app.state, "road_polylines", None) or []
+    buildings = getattr(request.app.state, "building_dicts", None) or []
+    return {"roads": roads, "buildings": buildings}

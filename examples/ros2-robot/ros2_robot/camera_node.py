@@ -32,7 +32,7 @@ from rclpy.node import Node
 
 import paho.mqtt.client as mqtt
 
-# Add project root to sys.path so we can import amy.synthetic
+# Add project root to sys.path so we can import engine.synthetic
 _project_root = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     "..", "..", "src",
@@ -40,14 +40,14 @@ _project_root = os.path.join(
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
-from amy.synthetic.video_gen import (
+from engine.synthetic.video_gen import (
     render_bird_eye,
     render_street_cam,
     render_battle_scene,
     render_neighborhood,
     _world_to_pixel,
 )
-from amy.synthetic.video_library import SCENE_TYPES
+from engine.synthetic.video_library import SCENE_TYPES
 
 # Scene type -> renderer mapping
 _RENDERERS = {

@@ -181,7 +181,7 @@ async def mesh_status(request: Request):
 async def mesh_discover(request: Request):
     """Trigger mDNS scan and return found devices."""
     try:
-        from amy.comms.meshtastic_bridge import MeshtasticBridge
+        from engine.comms.meshtastic_bridge import MeshtasticBridge
         devices = MeshtasticBridge.discover(timeout=3.0)
         return {"devices": devices, "count": len(devices)}
     except Exception as e:

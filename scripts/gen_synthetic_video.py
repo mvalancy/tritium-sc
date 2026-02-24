@@ -20,7 +20,7 @@ from pathlib import Path
 _root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_root / "src"))
 
-from amy.synthetic.video_library import SCENE_TYPES, SyntheticVideoLibrary
+from engine.synthetic.video_library import SCENE_TYPES, SyntheticVideoLibrary
 
 
 def main() -> None:

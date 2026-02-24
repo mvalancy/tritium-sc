@@ -16,7 +16,7 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
-from amy.comms.speaker import DEFAULT_PIPER_DIR, DEFAULT_PIPER_BIN, Speaker
+from engine.comms.speaker import DEFAULT_PIPER_DIR, DEFAULT_PIPER_BIN, Speaker
 
 router = APIRouter(prefix="/api/tts", tags=["tts"])
 

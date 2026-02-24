@@ -23,7 +23,7 @@ _project_root = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__f
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
-from amy.audio.audio_library import AudioLibrary, _EFFECT_CATALOG
+from engine.audio.audio_library import AudioLibrary, _EFFECT_CATALOG
 
 
 def _format_size(size_bytes: int) -> str:

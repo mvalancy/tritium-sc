@@ -33,8 +33,8 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_PROJECT_ROOT / "src"))
 
 import cv2
-from amy.synthetic.video_gen import render_cctv_frame
-from amy.synthetic.video_library import SyntheticVideoLibrary
+from engine.synthetic.video_gen import render_cctv_frame
+from engine.synthetic.video_library import SyntheticVideoLibrary
 
 # Camera definitions: (name, scene_type, time_of_day)
 CAMERAS = [

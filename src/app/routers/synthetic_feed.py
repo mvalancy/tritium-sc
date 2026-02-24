@@ -25,14 +25,14 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 
-from amy.synthetic.video_gen import (
+from engine.synthetic.video_gen import (
     render_bird_eye,
     render_cctv_frame,
     render_street_cam,
     render_battle_scene,
     render_neighborhood,
 )
-from amy.synthetic.video_library import SCENE_TYPES
+from engine.synthetic.video_library import SCENE_TYPES
 
 router = APIRouter(prefix="/api/synthetic", tags=["synthetic-cameras"])
 

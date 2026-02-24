@@ -16,9 +16,9 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from amy.scenarios.frame_gen import _CACHE_DIR
-from amy.scenarios.library import ScenarioLibrary
-from amy.scenarios.runner import ScenarioRunner
+from engine.scenarios.frame_gen import _CACHE_DIR
+from engine.scenarios.library import ScenarioLibrary
+from engine.scenarios.runner import ScenarioRunner
 
 router = APIRouter(prefix="/api/scenarios", tags=["scenarios"])
 
@@ -121,7 +121,7 @@ async def compare_runs(scenario: str):
 @router.post("/backfill")
 async def backfill_behavioral():
     """Re-compute behavioral profiles for all existing results."""
-    from amy.scenarios.scorer import Scorer
+    from engine.scenarios.scorer import Scorer
 
     updated = 0
     scorer = Scorer()
@@ -130,7 +130,7 @@ async def backfill_behavioral():
         try:
             with open(path) as f:
                 data = json.load(f)
-            from amy.scenarios.schema import ScenarioResult, RecordedAction
+            from engine.scenarios.schema import ScenarioResult, RecordedAction
             result = ScenarioResult(**data)
 
             duration = result.config.get("time_scale", 1.0) * result.duration_actual
