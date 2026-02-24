@@ -73,40 +73,9 @@ See [docs/PLAN.md](docs/PLAN.md) for the full development roadmap and technical 
 ```
 tritium-sc/
 ├── src/                        # ALL Python source code
-│   ├── amy/                    # AMY — AI Commander (autonomous consciousness)
-│   │   ├── __init__.py        # create_amy() factory, version
-│   │   ├── commander.py       # Main orchestrator (the central hub)
-│   │   ├── router.py          # FastAPI: /api/amy/*
-│   │   ├── brain/             # Consciousness & reasoning (L2-L4)
-│   │   │   ├── thinking.py   # L4 deliberation: LLM inner monologue
-│   │   │   ├── sensorium.py  # L3 awareness: temporal sensor fusion
-│   │   │   ├── perception.py # L2 frame analysis, quality gate
-│   │   │   ├── extraction.py # Fact extraction from conversation
-│   │   │   ├── memory.py     # Persistent long-term memory
-│   │   │   ├── vision.py     # Ollama chat API wrapper
-│   │   │   └── agent.py      # LLM agent with tool use
-│   │   ├── actions/           # Motor control & Lua dispatch
-│   │   │   ├── motor.py      # Motor programs, MotorCommand
-│   │   │   ├── lua_motor.py  # Lua parser, VALID_ACTIONS
-│   │   │   ├── lua_multi.py  # Multi-action sequences
-│   │   │   ├── lua_registry.py # Dynamic action registry
-│   │   │   ├── tools.py      # Tool definitions for agent mode
-│   │   │   └── announcer.py  # War commentary (Smash TV style)
-│   │   ├── comms/             # Communication & I/O
-│   │   │   ├── event_bus.py  # Thread-safe pub/sub (generic)
-│   │   │   ├── listener.py   # Audio VAD + recording
-│   │   │   ├── speaker.py    # TTS output
-│   │   │   ├── transcript.py # Conversation logging
-│   │   │   └── mqtt_bridge.py # MQTT broker bridge
-│   │   ├── tactical/          # Tracking, threat detection, geo
-│   │   │   ├── target_tracker.py # Unified target registry
-│   │   │   ├── escalation.py # ThreatClassifier + AutoDispatcher
-│   │   │   └── geo.py        # Coordinate transforms
-│   │   ├── inference/         # Model routing & fleet
-│   │   │   ├── model_router.py # Task-aware model selection
-│   │   │   ├── fleet.py      # Multi-host Ollama discovery
-│   │   │   └── robot_thinker.py # Robot LLM thinking
-│   │   ├── simulation/        # Battlespace simulation engine
+│   ├── engine/                 # System infrastructure (reusable, commander-agnostic)
+│   │   ├── commander_protocol.py  # Protocol interface for swappable commanders
+│   │   ├── simulation/        # Battlespace simulation engine (30+ files)
 │   │   │   ├── engine.py     # 10Hz tick loop, hostile spawner
 │   │   │   ├── target.py     # SimulationTarget dataclass
 │   │   │   ├── combat.py     # Projectile flight, hit detection, damage
@@ -114,11 +83,54 @@ tritium-sc/
 │   │   │   ├── behaviors.py  # Unit AI (turret, drone, rover, hostile)
 │   │   │   ├── ambient.py    # AmbientSpawner (neutral activity)
 │   │   │   └── loader.py     # TritiumLevelFormat JSON parser
+│   │   ├── comms/             # Communication & I/O
+│   │   │   ├── event_bus.py  # Thread-safe pub/sub (generic)
+│   │   │   ├── listener.py   # Audio VAD + recording
+│   │   │   ├── speaker.py    # TTS output (Piper)
+│   │   │   ├── mqtt_bridge.py # MQTT broker bridge
+│   │   │   ├── cot.py        # CoT XML protocol
+│   │   │   ├── mqtt_cot.py   # MQTT CoT codec
+│   │   │   └── tak_bridge.py # TAK server bridge
+│   │   ├── tactical/          # Tracking, threat detection, geo
+│   │   │   ├── target_tracker.py # Unified target registry
+│   │   │   ├── escalation.py # ThreatClassifier + AutoDispatcher
+│   │   │   ├── geo.py        # Coordinate transforms
+│   │   │   ├── street_graph.py # OSM road extraction + A*
+│   │   │   └── obstacles.py  # Building obstacles
+│   │   ├── inference/         # Model routing & fleet
+│   │   │   ├── model_router.py # Task-aware model selection
+│   │   │   ├── fleet.py      # Multi-host Ollama discovery
+│   │   │   └── robot_thinker.py # Robot LLM thinking
+│   │   ├── perception/        # Frame analysis & vision
+│   │   │   ├── perception.py # Layered perception: quality gate, motion
+│   │   │   ├── vision.py     # Ollama chat API wrapper
+│   │   │   └── extraction.py # Fact extraction from conversation
+│   │   ├── actions/           # Lua dispatch & formations
+│   │   │   ├── lua_motor.py  # Lua parser, VALID_ACTIONS
+│   │   │   ├── lua_multi.py  # Multi-action sequences
+│   │   │   ├── lua_registry.py # Dynamic action registry
+│   │   │   └── formation_actions.py # Squad formations
 │   │   ├── nodes/             # Distributed sensor nodes
 │   │   ├── audio/             # Audio pipeline (sound effects, library)
+│   │   ├── units/             # Unit type registry (16 types)
 │   │   ├── synthetic/         # Procedural media generation
 │   │   ├── scenarios/         # Behavioral test framework
 │   │   └── layouts/           # Level format JSON files
+│   ├── amy/                    # AMY — AI Commander personality plugin
+│   │   ├── __init__.py        # create_amy() factory, version
+│   │   ├── commander.py       # Main orchestrator (implements CommanderProtocol)
+│   │   ├── router.py          # FastAPI: /api/amy/*
+│   │   ├── brain/             # Amy's consciousness & reasoning
+│   │   │   ├── thinking.py   # L4 deliberation: LLM inner monologue
+│   │   │   ├── sensorium.py  # L3 awareness: temporal sensor fusion
+│   │   │   ├── memory.py     # Persistent long-term memory
+│   │   │   └── agent.py      # LLM agent with tool use
+│   │   ├── actions/           # Amy-specific actions
+│   │   │   ├── motor.py      # PTZ motor programs, MotorCommand
+│   │   │   ├── tools.py      # Tool definitions for agent mode
+│   │   │   └── announcer.py  # War commentary (Smash TV style)
+│   │   └── comms/
+│   │       └── transcript.py # Conversation logging (daily JSONL)
 │   └── app/                    # FastAPI backend
 │       ├── main.py            # App entry point, lifespan, boot sequence
 │       ├── config.py          # Pydantic settings
@@ -138,14 +150,24 @@ tritium-sc/
 │       ├── cybercore.css     # CYBERCORE CSS framework
 │       └── tritium.css       # Custom + Amy + War Room panel styles
 ├── tests/                      # ALL tests
-│   ├── amy/                   # 3014 unit tests
-│   │   ├── core/             # Brain, behavior, commander (33 files)
-│   │   ├── simulation/       # Combat, game mode, engine (11 files)
-│   │   ├── api/              # FastAPI router tests (19 files)
+│   ├── engine/                # System infrastructure tests
+│   │   ├── simulation/       # Simulation engine tests (48 files)
+│   │   ├── comms/            # CoT, MQTT, event bus, speaker (20+ files)
+│   │   ├── tactical/         # Geo, escalation tests
+│   │   ├── api/              # FastAPI router tests (21 files)
 │   │   ├── nodes/            # Sensor nodes, MQTT, ML (16 files)
+│   │   ├── actions/          # Lua, dispatch, formation tests
+│   │   ├── inference/        # Model router, fleet tests
+│   │   ├── perception/       # Perception, extraction tests
+│   │   ├── units/            # Unit type registry tests
 │   │   ├── synthetic/        # Video, audio generation (14 files)
 │   │   ├── scenarios/        # Behavioral tests (6 files)
+│   │   ├── audio/            # Audio pipeline tests
 │   │   └── models/           # Data models (10 files)
+│   ├── amy/                   # Amy personality tests
+│   │   ├── core/             # Commander, thinking, memory, sensorium
+│   │   ├── brain/            # Thinking battle tests
+│   │   └── api/              # Amy-specific API tests
 │   ├── integration/           # 23 server E2E tests (headless, auto-port)
 │   ├── visual/                # 23 three-layer E2E (OpenCV + LLM + API)
 │   ├── js/                    # 281 JS tests (math, audio, fog, geo, panels)
@@ -176,41 +198,55 @@ tritium-sc/
 
 ## Important Files
 
+### Engine (system infrastructure)
+
 | File | Purpose |
 |------|---------|
-| `src/amy/commander.py` | Amy AI Commander — main orchestrator, VisionThread, AudioThread |
+| `src/engine/commander_protocol.py` | Protocol interface for swappable commanders |
+| `src/engine/simulation/engine.py` | SimulationEngine — 10Hz tick loop |
+| `src/engine/simulation/target.py` | SimulationTarget dataclass (all entity types) |
+| `src/engine/simulation/combat.py` | CombatSystem — projectile flight, hit detection, damage |
+| `src/engine/simulation/game_mode.py` | GameMode — wave-based game progression |
+| `src/engine/simulation/behaviors.py` | UnitBehaviors — turret, drone, rover, hostile AI |
+| `src/engine/simulation/loader.py` | TritiumLevelFormat JSON parser |
+| `src/engine/comms/event_bus.py` | EventBus — thread-safe pub/sub for all internal events |
+| `src/engine/comms/listener.py` | Audio VAD + recording |
+| `src/engine/comms/speaker.py` | TTS output (Piper) |
+| `src/engine/comms/mqtt_bridge.py` | MQTT broker bridge — distributed device communication |
+| `src/engine/tactical/target_tracker.py` | Unified registry of real (YOLO) + virtual (sim) targets |
+| `src/engine/tactical/escalation.py` | ThreatClassifier (2Hz) + AutoDispatcher |
+| `src/engine/tactical/geo.py` | Server-side geo-reference and coordinate transforms |
+| `src/engine/inference/model_router.py` | Task-aware model selection with fleet fallback |
+| `src/engine/inference/fleet.py` | OllamaFleet — multi-host discovery (conf/env/Tailscale) |
+| `src/engine/inference/robot_thinker.py` | LLM-powered autonomous robot thinking |
+| `src/engine/perception/perception.py` | Layered perception: quality gate, complexity, motion detection |
+| `src/engine/perception/vision.py` | Ollama chat API wrapper |
+| `src/engine/perception/extraction.py` | Fact extraction from conversation (regex-based) |
+| `src/engine/actions/lua_motor.py` | Lua parser, VALID_ACTIONS |
+| `src/engine/actions/lua_registry.py` | Dynamic Lua action registry for Amy and robots |
+| `src/engine/nodes/base.py` | Abstract SensorNode (camera, mic, PTZ, speaker) |
+| `src/engine/nodes/bcc950.py` | BCC950 PTZ camera + mic + speaker node |
+| `src/engine/nodes/mqtt_robot.py` | MQTTSensorNode — wraps MQTT robot as SensorNode |
+| `src/engine/units/` | Unit type registry (16 types, auto-discovery) |
+
+### Amy (personality plugin)
+
+| File | Purpose |
+|------|---------|
+| `src/amy/commander.py` | Amy AI Commander — main orchestrator (implements CommanderProtocol) |
 | `src/amy/router.py` | /api/amy/* — status, thoughts SSE, chat, commands |
 | `src/amy/brain/thinking.py` | L4 deliberation: inner monologue via fast LLM |
 | `src/amy/brain/sensorium.py` | L3 awareness: temporal sensor fusion + narrative |
-| `src/amy/brain/perception.py` | Layered perception: quality gate, complexity, motion detection |
-| `src/amy/brain/extraction.py` | Fact extraction from conversation (regex-based) |
 | `src/amy/brain/memory.py` | Persistent long-term memory (JSON file) |
-| `src/amy/brain/vision.py` | Ollama chat API wrapper |
-| `src/amy/actions/motor.py` | Motor programs, MotorCommand generators |
-| `src/amy/actions/lua_motor.py` | Lua parser, VALID_ACTIONS |
-| `src/amy/actions/lua_multi.py` | Multi-action Lua sequences |
-| `src/amy/actions/lua_registry.py` | Dynamic Lua action registry for Amy and robots |
+| `src/amy/brain/agent.py` | LLM agent with tool use |
+| `src/amy/actions/motor.py` | PTZ motor programs, MotorCommand generators |
 | `src/amy/actions/announcer.py` | WarAnnouncer — Smash TV style commentary |
-| `src/amy/comms/event_bus.py` | EventBus — thread-safe pub/sub for all internal events |
-| `src/amy/comms/listener.py` | Audio VAD + recording |
-| `src/amy/comms/speaker.py` | TTS output (Piper) |
-| `src/amy/comms/mqtt_bridge.py` | MQTT broker bridge — distributed device communication |
 | `src/amy/comms/transcript.py` | Conversation logging (daily JSONL) |
-| `src/amy/tactical/target_tracker.py` | Unified registry of real (YOLO) + virtual (sim) targets |
-| `src/amy/tactical/escalation.py` | ThreatClassifier (2Hz) + AutoDispatcher |
-| `src/amy/tactical/geo.py` | Server-side geo-reference and coordinate transforms |
-| `src/amy/inference/model_router.py` | Task-aware model selection with fleet fallback |
-| `src/amy/inference/fleet.py` | OllamaFleet — multi-host discovery (conf/env/Tailscale) |
-| `src/amy/inference/robot_thinker.py` | LLM-powered autonomous robot thinking |
-| `src/amy/simulation/engine.py` | SimulationEngine — 10Hz tick loop |
-| `src/amy/simulation/target.py` | SimulationTarget dataclass (all entity types) |
-| `src/amy/simulation/combat.py` | CombatSystem — projectile flight, hit detection, damage |
-| `src/amy/simulation/game_mode.py` | GameMode — wave-based game progression |
-| `src/amy/simulation/behaviors.py` | UnitBehaviors — turret, drone, rover, hostile AI |
-| `src/amy/simulation/loader.py` | TritiumLevelFormat JSON parser |
-| `src/amy/nodes/base.py` | Abstract SensorNode (camera, mic, PTZ, speaker) |
-| `src/amy/nodes/bcc950.py` | BCC950 PTZ camera + mic + speaker node |
-| `src/amy/nodes/mqtt_robot.py` | MQTTSensorNode — wraps MQTT robot as SensorNode |
+
+### App + Frontend
+
+| File | Purpose |
+|------|---------|
 | `src/app/main.py` | FastAPI app entry point, lifespan, boot sequence |
 | `src/app/config.py` | Pydantic settings (app + Amy + MQTT + simulation) |
 | `src/app/models.py` | SQLAlchemy models (Camera, Event, Zone, Asset, etc.) |

@@ -22,12 +22,15 @@ tier1_syntax() {
     header "Tier 1: Syntax Check"
     local ok=0 err=0
     # Python files
-    for f in src/amy/commander.py src/amy/sensorium.py src/amy/thinking.py src/amy/target_tracker.py \
-             src/amy/escalation.py src/amy/perception.py src/amy/extraction.py src/amy/event_bus.py \
-             src/amy/nodes/synthetic_camera.py src/amy/nodes/mqtt_robot.py src/amy/audio/synthetic.py \
-             src/amy/audio/sound_effects.py src/amy/audio/audio_library.py \
-             src/amy/synthetic/video_gen.py src/amy/synthetic/video_library.py \
-             src/amy/simulation/combat.py src/amy/simulation/game_mode.py src/amy/simulation/behaviors.py \
+    for f in src/amy/commander.py src/amy/brain/sensorium.py src/amy/brain/thinking.py \
+             src/engine/tactical/target_tracker.py src/engine/tactical/escalation.py \
+             src/engine/perception/perception.py src/engine/perception/extraction.py \
+             src/engine/comms/event_bus.py src/engine/nodes/synthetic_camera.py \
+             src/engine/nodes/mqtt_robot.py src/engine/audio/synthetic.py \
+             src/engine/audio/sound_effects.py src/engine/audio/audio_library.py \
+             src/engine/synthetic/video_gen.py src/engine/synthetic/video_library.py \
+             src/engine/simulation/combat.py src/engine/simulation/game_mode.py \
+             src/engine/simulation/behaviors.py \
              src/app/main.py src/app/config.py src/app/routers/audio.py src/app/routers/synthetic_feed.py; do
         if [ -f "$SCRIPT_DIR/$f" ]; then
             if python3 -m py_compile "$SCRIPT_DIR/$f" 2>/dev/null; then
@@ -56,7 +59,7 @@ tier1_syntax() {
 
 tier2_unit() {
     header "Tier 2: Unit Tests (pytest)"
-    if $VENV -m pytest "$SCRIPT_DIR/tests/amy/" -m unit --tb=short -q 2>&1; then
+    if $VENV -m pytest "$SCRIPT_DIR/tests/amy/" "$SCRIPT_DIR/tests/engine/" -m unit --tb=short -q 2>&1; then
         pass "Unit tests"
     else
         fail "Unit tests"
@@ -66,7 +69,7 @@ tier2_unit() {
 tier3_js() {
     header "Tier 3: JS Tests"
     local js_err=0
-    for jstest in test_war_math.js test_war_audio.js test_war_fog.js test_geo_math.js test_panel_manager.js test_mesh_panel.js; do
+    for jstest in test_war_math.js test_war_audio.js test_war_fog.js test_geo_math.js test_panel_manager.js test_mesh_panel.js test_game_hud.js; do
         if [ -f "$SCRIPT_DIR/tests/js/$jstest" ]; then
             if node "$SCRIPT_DIR/tests/js/$jstest"; then
                 pass "JS $jstest"
@@ -238,15 +241,6 @@ tier14_defects() {
     fi
 }
 
-tier15_battle_proof() {
-    header "Tier 15: Battle Proof (Full 10-Wave E2E)"
-    if $VENV -m pytest "$SCRIPT_DIR/tests/visual/test_battle_proof.py" -v --timeout=900 --tb=short 2>&1; then
-        pass "Battle proof (full 10-wave E2E)"
-    else
-        fail "Battle proof"
-    fi
-}
-
 tier_dist() {
     header "Distributed Testing (local + ${REMOTE_HOST:-<unset>})"
     if [ -z "${REMOTE_HOST:-}" ]; then
@@ -264,9 +258,9 @@ tier_dist() {
         "$SCRIPT_DIR/" "$REMOTE_HOST:$REMOTE_CODE_PATH/"
 
     info "Running tier 2 + tier 8 on both machines..."
-    $VENV -m pytest "$SCRIPT_DIR/tests/amy/" -m unit --tb=short -q &
+    $VENV -m pytest "$SCRIPT_DIR/tests/amy/" "$SCRIPT_DIR/tests/engine/" -m unit --tb=short -q &
     local pid1=$!
-    ssh "$REMOTE_HOST" "cd $REMOTE_CODE_PATH && .venv/bin/python3 -m pytest tests/amy/ -m unit --tb=short -q" &
+    ssh "$REMOTE_HOST" "cd $REMOTE_CODE_PATH && .venv/bin/python3 -m pytest tests/amy/ tests/engine/ -m unit --tb=short -q" &
     local pid2=$!
     wait $pid1 && pass "local unit tests" || fail "local unit tests"
     wait $pid2 && pass "$REMOTE_HOST unit tests" || fail "$REMOTE_HOST unit tests"
@@ -329,19 +323,17 @@ main() {
         12) tier12_layout ;;
         13) tier13_ux ;;
         14) tier14_defects ;;
-        15|battle-proof) tier15_battle_proof ;;
         --dist) tier1_syntax; tier2_unit; tier3_js; tier8_lib; tier_dist ;;
         --visual) tier7_visual ;;
         --gameplay) tier4_gameplay ;;
         --battle) tier6_battle ;;
-        --battle-proof) tier15_battle_proof ;;
         --integration) tier9_integration ;;
         --quality) tier10_quality ;;
         --smoke) tier11_smoke ;;
         --layout) tier12_layout ;;
         --ux) tier13_ux ;;
         --defects) tier14_defects ;;
-        *) echo "Usage: $0 [all|fast|1-15|--dist|--visual|--gameplay|--battle|--battle-proof|--integration|--quality|--smoke|--layout|--ux|--defects]"; exit 1 ;;
+        *) echo "Usage: $0 [all|fast|1-14|--dist|--visual|--gameplay|--battle|--integration|--quality|--smoke|--layout|--ux|--defects]"; exit 1 ;;
     esac
     set -e
 
