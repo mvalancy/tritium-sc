@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from amy.brain.thinking import GoalStack, ThinkingThread
-from amy.actions.lua_motor import MotorOutput
+from engine.actions.lua_motor import MotorOutput
 
 
 pytestmark = pytest.mark.unit

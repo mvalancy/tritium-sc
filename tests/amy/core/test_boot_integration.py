@@ -13,9 +13,9 @@ class TestBootIntegration:
     def test_full_subsystem_boot(self):
         """Boot simulation engine + ambient + classifier + dispatcher together."""
         from amy.commander import EventBus
-        from amy.simulation import SimulationEngine, AmbientSpawner
-        from amy.tactical.target_tracker import TargetTracker
-        from amy.tactical.escalation import ThreatClassifier, AutoDispatcher
+        from engine.simulation import SimulationEngine, AmbientSpawner
+        from engine.tactical.target_tracker import TargetTracker
+        from engine.tactical.escalation import ThreatClassifier, AutoDispatcher
 
         bus = EventBus()
         engine = SimulationEngine(bus)
@@ -87,7 +87,7 @@ class TestBootIntegration:
 
     def test_simulation_bridge_data_format(self):
         """Verify SimulationTarget.to_dict() has all fields the frontend needs."""
-        from amy.simulation.target import SimulationTarget
+        from engine.simulation.target import SimulationTarget
 
         target = SimulationTarget(
             target_id="test-001",
@@ -121,7 +121,7 @@ class TestBootIntegration:
 
     def test_tracker_stores_position_as_tuple(self):
         """Verify TargetTracker.update_from_simulation() converts dict position to tuple."""
-        from amy.tactical.target_tracker import TargetTracker
+        from engine.tactical.target_tracker import TargetTracker
 
         tracker = TargetTracker()
         tracker.update_from_simulation({
@@ -148,7 +148,7 @@ class TestBootIntegration:
 
     def test_tracker_update_existing_target(self):
         """Verify updating a simulation target preserves identity, updates fields."""
-        from amy.tactical.target_tracker import TargetTracker
+        from engine.tactical.target_tracker import TargetTracker
 
         tracker = TargetTracker()
         # Initial creation
@@ -187,8 +187,8 @@ class TestBootIntegration:
     def test_escalation_with_real_tracker_data(self):
         """Feed a hostile target to tracker, verify classifier escalates it."""
         from amy.commander import EventBus
-        from amy.tactical.target_tracker import TargetTracker
-        from amy.tactical.escalation import ThreatClassifier
+        from engine.tactical.target_tracker import TargetTracker
+        from engine.tactical.escalation import ThreatClassifier
 
         bus = EventBus()
         tracker = TargetTracker()
@@ -244,10 +244,10 @@ class TestBootIntegration:
     def test_auto_dispatch_with_real_data(self):
         """Test the full dispatch pipeline: hostile in zone -> unit dispatched."""
         from amy.commander import EventBus
-        from amy.tactical.target_tracker import TargetTracker
-        from amy.simulation import SimulationEngine
-        from amy.simulation.target import SimulationTarget
-        from amy.tactical.escalation import ThreatClassifier, AutoDispatcher
+        from engine.tactical.target_tracker import TargetTracker
+        from engine.simulation import SimulationEngine
+        from engine.simulation.target import SimulationTarget
+        from engine.tactical.escalation import ThreatClassifier, AutoDispatcher
 
         bus = EventBus()
         tracker = TargetTracker()
@@ -338,7 +338,7 @@ class TestBootIntegration:
 
     def test_tracker_get_all_returns_objects_with_tuple_positions(self):
         """Verify get_all() returns TrackedTarget objects with tuple positions."""
-        from amy.tactical.target_tracker import TargetTracker
+        from engine.tactical.target_tracker import TargetTracker
 
         tracker = TargetTracker()
         tracker.update_from_simulation({
@@ -374,8 +374,8 @@ class TestBootIntegration:
     def test_classifier_skips_friendly_targets(self):
         """Verify ThreatClassifier does not classify friendly targets."""
         from amy.commander import EventBus
-        from amy.tactical.target_tracker import TargetTracker
-        from amy.tactical.escalation import ThreatClassifier
+        from engine.tactical.target_tracker import TargetTracker
+        from engine.tactical.escalation import ThreatClassifier
 
         bus = EventBus()
         tracker = TargetTracker()
@@ -411,10 +411,10 @@ class TestBootIntegration:
     def test_dispatcher_skips_low_battery_units(self):
         """Verify AutoDispatcher won't dispatch units with low battery."""
         from amy.commander import EventBus
-        from amy.tactical.target_tracker import TargetTracker
-        from amy.simulation import SimulationEngine
-        from amy.simulation.target import SimulationTarget
-        from amy.tactical.escalation import ThreatClassifier, AutoDispatcher
+        from engine.tactical.target_tracker import TargetTracker
+        from engine.simulation import SimulationEngine
+        from engine.simulation.target import SimulationTarget
+        from engine.tactical.escalation import ThreatClassifier, AutoDispatcher
 
         bus = EventBus()
         tracker = TargetTracker()
@@ -472,7 +472,7 @@ class TestBootIntegration:
     def test_ambient_spawner_creates_neutral_targets(self):
         """Verify AmbientSpawner spawns neutral targets with correct alliance."""
         from amy.commander import EventBus
-        from amy.simulation import SimulationEngine
+        from engine.simulation import SimulationEngine
 
         bus = EventBus()
         engine = SimulationEngine(bus)

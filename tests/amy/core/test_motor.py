@@ -21,7 +21,7 @@ from amy.actions.motor import (
     search_scan,
     track_person,
 )
-from amy.nodes.base import Position
+from engine.nodes.base import Position
 
 pytestmark = pytest.mark.unit
 

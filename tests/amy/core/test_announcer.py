@@ -19,7 +19,7 @@ from amy.actions.announcer import (
     THREAT_PHRASES,
     WarAnnouncer,
 )
-from amy.comms.event_bus import EventBus
+from engine.comms.event_bus import EventBus
 
 
 # ---------------------------------------------------------------------------
@@ -640,27 +640,27 @@ class TestReset:
 @pytest.mark.unit
 class TestLuaMotorIntegration:
     def test_battle_cry_parses(self) -> None:
-        from amy.actions.lua_motor import parse_motor_output
+        from engine.actions.lua_motor import parse_motor_output
         result = parse_motor_output('battle_cry("FOR THE NEIGHBORHOOD!")')
         assert result.valid
         assert result.action == "battle_cry"
         assert result.params == ["FOR THE NEIGHBORHOOD!"]
 
     def test_taunt_parses(self) -> None:
-        from amy.actions.lua_motor import parse_motor_output
+        from engine.actions.lua_motor import parse_motor_output
         result = parse_motor_output('taunt("Intruder Delta")')
         assert result.valid
         assert result.action == "taunt"
         assert result.params == ["Intruder Delta"]
 
     def test_battle_cry_requires_string(self) -> None:
-        from amy.actions.lua_motor import parse_motor_output
+        from engine.actions.lua_motor import parse_motor_output
         result = parse_motor_output('battle_cry(42)')
         assert not result.valid
         assert "string" in result.error.lower()
 
     def test_taunt_requires_string(self) -> None:
-        from amy.actions.lua_motor import parse_motor_output
+        from engine.actions.lua_motor import parse_motor_output
         result = parse_motor_output('taunt(42)')
         assert not result.valid
         assert "string" in result.error.lower()

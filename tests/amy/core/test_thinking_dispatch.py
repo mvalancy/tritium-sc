@@ -12,9 +12,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from amy.actions.lua_motor import MotorOutput, parse_motor_output
-from amy.simulation.target import SimulationTarget
-from amy.simulation.engine import SimulationEngine
+from engine.actions.lua_motor import MotorOutput, parse_motor_output
+from engine.simulation.target import SimulationTarget
+from engine.simulation.engine import SimulationEngine
 from amy.brain.thinking import ThinkingThread
 
 
