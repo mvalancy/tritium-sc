@@ -426,6 +426,101 @@ function _formatNum(n) {
 }
 
 // ============================================================
+// Canvas overlay: countdown (drawn directly on map canvas)
+// ============================================================
+
+/**
+ * Draw a large centered countdown number on the canvas.
+ * Called from the map render loop when game is in countdown state.
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {number} canvasW
+ * @param {number} canvasH
+ */
+function warHudDrawCanvasCountdown(ctx, canvasW, canvasH) {
+    if (!ctx || _hudState.gameState !== 'countdown') return;
+
+    const el = document.getElementById('war-countdown');
+    const text = (el && el.textContent) || '';
+    if (!text) return;
+
+    const cx = canvasW / 2;
+    const cy = canvasH / 2;
+
+    // Large translucent background circle
+    ctx.save();
+    ctx.globalAlpha = 0.25;
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.arc(cx, cy, 80, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Countdown number
+    ctx.globalAlpha = 1.0;
+    ctx.font = 'bold 72px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#00f0ff';
+    ctx.shadowColor = '#00f0ff';
+    ctx.shadowBlur = 20;
+    ctx.fillText(text, cx, cy);
+    ctx.shadowBlur = 0;
+
+    ctx.restore();
+}
+
+// ============================================================
+// Canvas overlay: friendly health bars (drawn above units on map)
+// ============================================================
+
+/**
+ * Draw thin 2px health bars above friendly units on the canvas.
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {Function} worldToScreen (x, y) => { sx, sy }
+ * @param {number} zoom current map zoom level
+ */
+function warHudDrawFriendlyHealthBars(ctx, worldToScreen, zoom) {
+    if (!ctx || !worldToScreen || typeof warState === 'undefined') return;
+    if (_hudState.gameState !== 'active' && _hudState.gameState !== 'wave_complete') return;
+
+    const targets = warState.targets || [];
+    const barWidth = Math.max(16, Math.min(40, zoom * 2.5));
+    const barHeight = 2;
+    const yOffset = -12; // pixels above unit center
+
+    for (const t of targets) {
+        if (!t || t.alliance !== 'friendly') continue;
+        if (t.status === 'eliminated' || t.status === 'dead') continue;
+
+        const hp = typeof t.health === 'number' ? t.health : 100;
+        const maxHp = t.max_health || 100;
+        if (maxHp <= 0) continue;
+        const ratio = Math.max(0, Math.min(1, hp / maxHp));
+        // Skip drawing full-health bars to reduce clutter
+        if (ratio >= 1.0) continue;
+
+        const pos = t.position || t;
+        const screen = worldToScreen(pos.x || 0, pos.y || 0);
+        if (!screen) continue;
+
+        const x = screen.sx - barWidth / 2;
+        const y = screen.sy + yOffset;
+
+        ctx.save();
+
+        // Background bar
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.fillRect(x - 1, y - 1, barWidth + 2, barHeight + 2);
+
+        // Health fill
+        const color = ratio > 0.6 ? '#05ffa1' : ratio >= 0.3 ? '#fcee0a' : '#ff2a6d';
+        ctx.fillStyle = color;
+        ctx.fillRect(x, y, barWidth * ratio, barHeight);
+
+        ctx.restore();
+    }
+}
+
+// ============================================================
 // Expose globally
 // ============================================================
 
@@ -439,3 +534,5 @@ window.warHudHideBeginWarButton = warHudHideBeginWarButton;
 window.warHudShowGameOver = warHudShowGameOver;
 window.warHudPlayAgain = warHudPlayAgain;
 window.warHudShowAmyAnnouncement = warHudShowAmyAnnouncement;
+window.warHudDrawCanvasCountdown = warHudDrawCanvasCountdown;
+window.warHudDrawFriendlyHealthBars = warHudDrawFriendlyHealthBars;

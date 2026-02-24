@@ -547,6 +547,130 @@
     border-top: 1px solid var(--border);
 }
 
+.ghud-empty {
+    font-family: var(--font-mono);
+    font-size: 0.55rem;
+    color: var(--text-ghost);
+    text-align: center;
+    padding: 6px 0;
+}
+
+/* Roster section */
+.ghud-roster {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.ghud-roster-unit {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 4px;
+    border-radius: var(--radius-sm);
+    transition: background 0.15s ease;
+}
+
+.ghud-roster-unit:hover {
+    background: rgba(0, 240, 255, 0.03);
+}
+
+.ghud-roster-icon {
+    font-size: 0.6rem;
+    color: var(--cyan);
+    flex-shrink: 0;
+    width: 14px;
+    text-align: center;
+}
+
+.ghud-roster-name {
+    font-family: var(--font-mono);
+    font-size: 0.55rem;
+    color: var(--text-secondary);
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ghud-roster-hp {
+    font-family: var(--font-mono);
+    font-size: 0.45rem;
+    letter-spacing: -0.05em;
+    flex-shrink: 0;
+}
+
+/* Wave progress section */
+.ghud-wave-progress {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.ghud-wave-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+/* Combat metrics section */
+.ghud-combat-metrics {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 4px 0;
+    border-top: 1px solid var(--border);
+}
+
+/* MVP tracker section */
+.ghud-mvp {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 6px;
+    background: rgba(0, 240, 255, 0.03);
+    border: 1px solid rgba(0, 240, 255, 0.08);
+    border-radius: var(--radius-sm);
+}
+
+.ghud-mvp-icon {
+    font-size: 0.7rem;
+    color: var(--cyan);
+    flex-shrink: 0;
+}
+
+.ghud-mvp-name {
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    color: var(--text-primary);
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ghud-mvp-kills {
+    font-family: var(--font-mono);
+    font-size: 0.5rem;
+    letter-spacing: 0.08em;
+    color: var(--green);
+    flex-shrink: 0;
+}
+
+/* Section label for HUD subsections */
+.ghud-section-label {
+    font-family: var(--font-mono);
+    font-size: 0.45rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-ghost);
+    margin: 6px 0 2px;
+    padding-top: 4px;
+    border-top: 1px solid var(--border);
+}
+
 
 /* ========================================
    Units & Alerts Panel Inner Layout

@@ -106,7 +106,7 @@ export class WebSocketManager {
      */
     _updateUnit(t) {
         if (!t || !t.target_id) return;
-        TritiumStore.updateUnit(t.target_id, {
+        const update = {
             name: t.name || t.target_id,
             type: t.asset_type || t.type || 'unknown',
             alliance: t.alliance || 'unknown',
@@ -118,7 +118,15 @@ export class WebSocketManager {
             status: t.status || 'active',
             eliminations: t.kills || t.eliminations || 0,
             speed: t.speed || 0,
-        });
+        };
+        // Extended combat telemetry fields
+        if (t.kills !== undefined) update.kills = t.kills;
+        if (t.morale !== undefined) update.morale = t.morale;
+        if (t.fsm_state !== undefined) update.fsmState = t.fsm_state;
+        if (t.degradation !== undefined) update.degradation = t.degradation;
+        if (t.weapon_range !== undefined) update.weaponRange = t.weapon_range;
+        if (t.is_combatant !== undefined) update.isCombatant = t.is_combatant;
+        TritiumStore.updateUnit(t.target_id, update);
     }
 
     _scheduleReconnect() {

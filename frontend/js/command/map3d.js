@@ -258,7 +258,7 @@ export function initMap() {
     _state.dirLight.shadow.mapSize.width = 2048;
     _state.dirLight.shadow.mapSize.height = 2048;
     _state.dirLight.shadow.camera.near = 1;
-    _state.dirLight.shadow.camera.far = 200;
+    _state.dirLight.shadow.camera.far = 300;
     _state.dirLight.shadow.camera.left = -80;
     _state.dirLight.shadow.camera.right = 80;
     _state.dirLight.shadow.camera.top = 80;
@@ -294,6 +294,7 @@ export function initMap() {
     // Load geo reference + satellite tiles
     _loadGeoReference();
     _fetchZones();
+    _loadOverlayData();
 
     // Start render loop
     _state.lastFrameTime = performance.now();
@@ -350,10 +351,10 @@ function _positionCamera() {
     const cam = _state.camera;
     const { x, y, zoom } = _state.cam;
 
-    // RTS camera: looking down at an angle
-    const tiltRad = CAM_TILT_ANGLE * Math.PI / 180;
+    // Use dynamic tilt angle (smooth lerp between top-down and tilted)
+    const tiltDeg = _state.cam.tiltAngle !== undefined ? _state.cam.tiltAngle : CAM_TILT_ANGLE;
+    const tiltRad = tiltDeg * Math.PI / 180;
     const height = zoom * CAM_HEIGHT_FACTOR;
-    const dist = height / Math.sin(tiltRad);
     const forward = height / Math.tan(tiltRad);
 
     const tp = gameToThree(x, y);
@@ -379,6 +380,12 @@ function _updateCamera(dt) {
     c.x = fadeToward(c.x, c.targetX, CAM_LERP, dt);
     c.y = fadeToward(c.y, c.targetY, CAM_LERP, dt);
     c.zoom = fadeToward(c.zoom, c.targetZoom, CAM_LERP * 0.8, dt);
+
+    // Smooth tilt angle lerp
+    if (c.tiltTarget !== undefined) {
+        if (c.tiltAngle === undefined) c.tiltAngle = CAM_TILT_ANGLE;
+        c.tiltAngle = fadeToward(c.tiltAngle, c.tiltTarget, CAM_LERP * 0.6, dt);
+    }
 
     // Edge scrolling
     if (!_state.isPanning) {
@@ -515,6 +522,24 @@ function _initMaterials() {
     _state.materials.effectRing = new THREE.MeshBasicMaterial({
         color: 0xff2a6d, transparent: true, opacity: 0.6,
         side: THREE.DoubleSide, depthWrite: false,
+    });
+
+    // Building material (dark with subtle emissive for cyberpunk look)
+    _state.materials.building = new THREE.MeshStandardMaterial({
+        color: 0x1a1a2e,
+        roughness: 0.85,
+        metalness: 0.1,
+        emissive: 0x0a0a15,
+        emissiveIntensity: 0.1,
+    });
+
+    // Road surface material
+    _state.materials.road = new THREE.MeshBasicMaterial({
+        color: 0x3a3a4a,
+        transparent: true,
+        opacity: 0.5,
+        side: THREE.DoubleSide,
+        depthWrite: false,
     });
 }
 
@@ -874,7 +899,13 @@ function _updateUnits(dt) {
         if (typeof TritiumModels !== 'undefined' && TritiumModels.animateModel) {
             group.traverse(c => {
                 if (c.userData && c.userData.isBody) {
-                    TritiumModels.animateModel(c, dt, unit.status || 'active');
+                    TritiumModels.animateModel(c, dt, performance.now() / 1000, {
+                        speed: unit.speed || 0,
+                        heading: unit.heading || 0,
+                        selected: id === TritiumStore.get('map.selectedUnitId'),
+                        battery: unit.battery || 1.0,
+                        alliance: (unit.alliance || 'unknown').toLowerCase(),
+                    });
                 }
             });
         }
@@ -1687,6 +1718,137 @@ function _fetchZones() {
 }
 
 // ============================================================
+// Overlay: buildings + roads from /api/geo/overlay
+// ============================================================
+
+async function _loadOverlayData() {
+    try {
+        const resp = await fetch('/api/geo/overlay');
+        if (!resp.ok) return;
+        _state.overlayData = await resp.json();
+        _buildBuildings();
+        _buildRoads();
+    } catch (e) {
+        console.warn('[MAP3D] Overlay data unavailable:', e.message);
+    }
+}
+
+function _buildBuildings() {
+    const buildings = _state.overlayData?.buildings;
+    if (!buildings?.length) return;
+
+    const group = new THREE.Group();
+    group.name = 'buildings';
+
+    for (const bldg of buildings) {
+        const height = bldg.height || 8;
+        const poly = bldg.polygon;
+        if (!poly || poly.length < 3) continue;
+
+        // Build a THREE.Shape from polygon points (game coords)
+        const shape = new THREE.Shape();
+        for (let i = 0; i < poly.length; i++) {
+            const [gx, gy] = poly[i];
+            // Shape is built in XY plane; we'll rotate to XZ after extrude
+            if (i === 0) shape.moveTo(gx, gy);
+            else shape.lineTo(gx, gy);
+        }
+        shape.closePath();
+
+        const extrudeSettings = { depth: height, bevelEnabled: false };
+        const geo = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+
+        const mesh = new THREE.Mesh(geo, _state.materials.building);
+        // ExtrudeGeometry builds in XY with depth along +Z.
+        // Rotate so Y=up, X=east, Z=-north (matching Three.js scene).
+        mesh.rotation.x = -Math.PI / 2;
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+
+        group.add(mesh);
+    }
+
+    _state.scene.add(group);
+    _state.buildingGroup = group;
+    console.log(`[MAP3D] Buildings: ${buildings.length} extruded meshes`);
+}
+
+function _buildRoads() {
+    const roads = _state.overlayData?.roads;
+    if (!roads?.length) return;
+
+    const group = new THREE.Group();
+    group.name = 'roads';
+
+    for (const road of roads) {
+        const isPrimary = ['primary', 'secondary', 'trunk', 'motorway', 'tertiary'].includes(road.class);
+        const width = isPrimary ? 3.0 : 1.5;
+
+        const points = (road.points || []).map(([gx, gy]) => {
+            const tp = gameToThree(gx, gy);
+            return new THREE.Vector3(tp.x, 0.05, tp.z);
+        });
+
+        if (points.length < 2) continue;
+
+        // Thin line (always visible even at distance)
+        const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
+        const lineMat = new THREE.LineBasicMaterial({
+            color: isPrimary ? 0x445566 : 0x334455,
+            transparent: true,
+            opacity: isPrimary ? 0.6 : 0.4,
+        });
+        group.add(new THREE.Line(lineGeo, lineMat));
+
+        // Flat ribbon mesh for wider primary roads
+        if (isPrimary && points.length >= 2) {
+            const ribbon = _createRoadRibbon(points, width);
+            if (ribbon) group.add(ribbon);
+        }
+    }
+
+    _state.scene.add(group);
+    _state.roadGroup = group;
+    _state.roadGroup.visible = _state.showRoads;
+    console.log(`[MAP3D] Roads: ${roads.length} segments`);
+}
+
+function _createRoadRibbon(points, width) {
+    const positions = [];
+    const half = width / 2;
+
+    for (let i = 0; i < points.length; i++) {
+        const p = points[i];
+        let dir;
+        if (i < points.length - 1) {
+            dir = points[i + 1].clone().sub(p).normalize();
+        } else {
+            dir = p.clone().sub(points[i - 1]).normalize();
+        }
+        // Perpendicular in XZ plane
+        const perp = new THREE.Vector3(-dir.z, 0, dir.x);
+        positions.push(
+            p.x + perp.x * half, 0.04, p.z + perp.z * half,
+            p.x - perp.x * half, 0.04, p.z - perp.z * half,
+        );
+    }
+
+    const indices = [];
+    for (let i = 0; i < points.length - 1; i++) {
+        const a = i * 2, b = a + 1, c = a + 2, d = a + 3;
+        indices.push(a, b, c, b, d, c);
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setIndex(indices);
+    geo.computeVertexNormals();
+
+    return new THREE.Mesh(geo, _state.materials.road);
+}
+
+
+// ============================================================
 // Exported API
 // ============================================================
 
@@ -1763,12 +1925,23 @@ export function zoomOut() {
 
 /**
  * Toggle road overlay on/off.
- * In 3D mode, road tiles are composited onto the satellite CanvasTexture.
  */
 export function toggleRoads() {
     _state.showRoads = !_state.showRoads;
     console.log(`[MAP3D] Road overlay ${_state.showRoads ? 'ON' : 'OFF'}`);
-    // Road compositing onto satellite texture will be added in a future update
+    if (_state.roadGroup) {
+        _state.roadGroup.visible = _state.showRoads;
+    }
+}
+
+/**
+ * Toggle building visibility.
+ */
+export function toggleBuildings() {
+    if (_state.buildingGroup) {
+        _state.buildingGroup.visible = !_state.buildingGroup.visible;
+        console.log(`[MAP3D] Buildings ${_state.buildingGroup.visible ? 'ON' : 'OFF'}`);
+    }
 }
 
 /**
@@ -1781,6 +1954,33 @@ export function toggleGrid() {
 }
 
 /**
+ * Toggle fog of war density.
+ */
+export function toggleFog() {
+    if (_state.scene) {
+        if (_state.scene.fog && _state.scene.fog.density > 0) {
+            _state.scene.fog.density = 0;
+        } else {
+            _state.scene.fog = new THREE.FogExp2(BG_COLOR, 0.002);
+        }
+    }
+}
+
+/**
+ * Toggle camera between tilted RTS view and top-down orthographic.
+ */
+export function toggleTilt() {
+    if (!_state.cam) return;
+    if (_state.cam.tiltTarget === undefined) {
+        _state.cam.tiltTarget = CAM_TILT_ANGLE;
+        _state.cam.tiltAngle = CAM_TILT_ANGLE;
+    }
+    // Toggle between tilted (50) and top-down (89)
+    _state.cam.tiltTarget = _state.cam.tiltTarget > 70 ? CAM_TILT_ANGLE : 89;
+    console.log(`[MAP3D] Camera tilt: ${_state.cam.tiltTarget === 89 ? 'TOP-DOWN' : 'TILTED'}`);
+}
+
+/**
  * Return current map state for menu checkmarks.
  */
 export function getMapState() {
@@ -1788,5 +1988,7 @@ export function getMapState() {
         showSatellite: _state.showSatellite,
         showRoads: !!_state.showRoads,
         showGrid: _state.showGrid !== false,
+        showBuildings: _state.buildingGroup ? _state.buildingGroup.visible : false,
+        tiltMode: _state.cam.tiltTarget > 70 ? 'top-down' : 'tilted',
     };
 }

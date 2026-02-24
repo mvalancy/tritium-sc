@@ -7,7 +7,7 @@
 import { TritiumStore } from './store.js';
 import { EventBus } from './events.js';
 import { WebSocketManager } from './websocket.js';
-import { initMap, destroyMap, toggleSatellite, toggleRoads, toggleGrid, toggleFog, getMapState, centerOnAction, resetCamera, zoomIn, zoomOut } from './map.js';
+import { initMap, destroyMap, toggleSatellite, toggleRoads, toggleGrid, toggleFog, getMapState, centerOnAction, resetCamera, zoomIn, zoomOut, toggleTilt } from './map3d.js';
 import { PanelManager } from './panel-manager.js';
 import { LayoutManager } from './layout-manager.js';
 import { createMenuBar, focusSaveInput } from './menu-bar.js';
@@ -784,6 +784,20 @@ function initKeyboard() {
                 break;
             case ']':
                 _mapActions ? _mapActions.zoomIn() : zoomIn();
+                break;
+            case 'v':
+            case 'V':
+                if (_activeMapModule && _activeMapModule.toggleTilt) {
+                    _activeMapModule.toggleTilt();
+                } else if (typeof toggleTilt === 'function') {
+                    toggleTilt();
+                }
+                break;
+            case 'k':
+            case 'K':
+                if (_activeMapModule && _activeMapModule.toggleBuildings) {
+                    _activeMapModule.toggleBuildings();
+                }
                 break;
             case 'g':
             case 'G':
