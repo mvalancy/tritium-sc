@@ -160,6 +160,97 @@ class OllamaFleet:
         except Exception:
             return None
 
+    def chat(
+        self, model: str, prompt: str, images: list[str] | None = None,
+        timeout: float = 30.0,
+    ) -> str:
+        """Send a chat request, optionally with images (base64-encoded).
+
+        Uses Ollama /api/chat endpoint which supports multimodal models
+        like llava:7b. For text-only chat, omit the images parameter.
+
+        Args:
+            model: Ollama model name (e.g. "llava:7b").
+            prompt: The text prompt to send.
+            images: Optional list of base64-encoded image strings.
+            timeout: Request timeout in seconds.
+
+        Returns:
+            Response text from the model, or empty string on failure.
+        """
+        import urllib.request
+
+        host = self.best_host(model)
+        if host is None:
+            return ""
+
+        message: dict[str, Any] = {"role": "user", "content": prompt}
+        if images:
+            message["images"] = images
+
+        payload = json.dumps({
+            "model": model,
+            "messages": [message],
+            "stream": False,
+        }).encode()
+
+        try:
+            req = urllib.request.Request(
+                f"{host.url}/api/chat",
+                data=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                },
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                data = json.loads(resp.read().decode())
+                return data.get("message", {}).get("content", "")
+        except Exception:
+            return ""
+
+    def generate(
+        self, model: str, prompt: str, timeout: float = 30.0,
+    ) -> str:
+        """Send a generate request to the best host with the requested model.
+
+        Args:
+            model: Ollama model name (e.g. "qwen2.5:7b").
+            prompt: The text prompt to send.
+            timeout: Request timeout in seconds.
+
+        Returns:
+            Response text from the model, or empty string on failure.
+        """
+        import urllib.request
+
+        host = self.best_host(model)
+        if host is None:
+            return ""
+
+        payload = json.dumps({
+            "model": model,
+            "prompt": prompt,
+            "stream": False,
+        }).encode()
+
+        try:
+            req = urllib.request.Request(
+                f"{host.url}/api/generate",
+                data=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                },
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                data = json.loads(resp.read().decode())
+                return data.get("response", "")
+        except Exception:
+            return ""
+
     def status(self) -> str:
         """Human-readable fleet status."""
         if not self._hosts:

@@ -16,6 +16,6 @@ class Rover(UnitType):
     placeable = True
     combat = CombatStats(
         health=150, max_health=150,
-        weapon_range=10.0, weapon_cooldown=2.0, weapon_damage=12,
+        weapon_range=60.0, weapon_cooldown=2.0, weapon_damage=12,
         is_combatant=True,
     )

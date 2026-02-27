@@ -16,6 +16,6 @@ class HostileVehicle(UnitType):
     placeable = False
     combat = CombatStats(
         health=200, max_health=200,
-        weapon_range=12.0, weapon_cooldown=2.0, weapon_damage=15,
+        weapon_range=70.0, weapon_cooldown=2.0, weapon_damage=15,
         is_combatant=True,
     )

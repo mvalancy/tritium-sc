@@ -18,6 +18,6 @@ class ScoutDrone(UnitType):
     placeable = True
     combat = CombatStats(
         health=40, max_health=40,
-        weapon_range=8.0, weapon_cooldown=1.5, weapon_damage=5,
+        weapon_range=40.0, weapon_cooldown=1.5, weapon_damage=5,
         is_combatant=True,
     )

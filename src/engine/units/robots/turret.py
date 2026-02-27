@@ -16,6 +16,6 @@ class Turret(UnitType):
     placeable = True
     combat = CombatStats(
         health=200, max_health=200,
-        weapon_range=20.0, weapon_cooldown=1.5, weapon_damage=15,
+        weapon_range=80.0, weapon_cooldown=1.5, weapon_damage=15,
         is_combatant=True,
     )

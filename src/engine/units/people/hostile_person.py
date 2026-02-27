@@ -18,6 +18,6 @@ class HostilePerson(UnitType):
     placeable = False
     combat = CombatStats(
         health=80, max_health=80,
-        weapon_range=8.0, weapon_cooldown=2.5, weapon_damage=10,
+        weapon_range=40.0, weapon_cooldown=2.5, weapon_damage=10,
         is_combatant=True,
     )

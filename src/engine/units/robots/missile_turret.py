@@ -16,6 +16,6 @@ class MissileTurret(UnitType):
     placeable = True
     combat = CombatStats(
         health=200, max_health=200,
-        weapon_range=35.0, weapon_cooldown=5.0, weapon_damage=50,
+        weapon_range=150.0, weapon_cooldown=5.0, weapon_damage=50,
         is_combatant=True,
     )

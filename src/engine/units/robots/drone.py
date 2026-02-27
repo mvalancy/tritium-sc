@@ -18,6 +18,6 @@ class Drone(UnitType):
     placeable = True
     combat = CombatStats(
         health=60, max_health=60,
-        weapon_range=12.0, weapon_cooldown=1.0, weapon_damage=8,
+        weapon_range=50.0, weapon_cooldown=1.0, weapon_damage=8,
         is_combatant=True,
     )

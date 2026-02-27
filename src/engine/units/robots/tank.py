@@ -16,6 +16,6 @@ class Tank(UnitType):
     placeable = True
     combat = CombatStats(
         health=400, max_health=400,
-        weapon_range=25.0, weapon_cooldown=3.0, weapon_damage=30,
+        weapon_range=100.0, weapon_cooldown=3.0, weapon_damage=30,
         is_combatant=True,
     )

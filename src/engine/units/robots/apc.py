@@ -16,6 +16,6 @@ class APC(UnitType):
     placeable = True
     combat = CombatStats(
         health=300, max_health=300,
-        weapon_range=15.0, weapon_cooldown=1.0, weapon_damage=8,
+        weapon_range=60.0, weapon_cooldown=1.0, weapon_damage=8,
         is_combatant=True,
     )
