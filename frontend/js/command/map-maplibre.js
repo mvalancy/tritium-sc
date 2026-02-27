@@ -755,6 +755,7 @@ function _applyMarkerStyle(el, unit) {
     const type = (unit.type || 'unknown').toLowerCase();
     const selected = _state.selectedUnitId === unit.id;
     const has3D = !!_state.threeRoot;
+    const modelsVisible = _state.showModels3d;
 
     // Icon letter — order matters: specific types before broad includes()
     let icon = '?';
@@ -805,6 +806,28 @@ function _applyMarkerStyle(el, unit) {
             width: auto; max-width: 70px;
         `;
         el.textContent = ''; // clear any icon letter
+
+        // Location dot — small map point visible when 3D models are hidden
+        let locDot = el.querySelector('.unit-loc-dot');
+        if (!modelsVisible) {
+            if (!locDot) {
+                locDot = document.createElement('div');
+                locDot.className = 'unit-loc-dot';
+                el.insertBefore(locDot, el.firstChild);
+            }
+            const dotSize = 6;
+            const selGlow = selected && _state.showSelectionFx;
+            locDot.style.cssText = `
+                width: ${dotSize}px; height: ${dotSize}px;
+                border-radius: 50%;
+                background: ${color};
+                box-shadow: 0 0 ${selGlow ? '8' : '3'}px ${color};
+                margin-bottom: 2px;
+                flex-shrink: 0;
+            `;
+        } else if (locDot) {
+            locDot.remove();
+        }
 
         // Callsign label — short, no-wrap, tiny (respects showLabels toggle)
         let nameLabel = el.querySelector('.unit-name-3d');
@@ -896,6 +919,8 @@ function _applyMarkerStyle(el, unit) {
         if (old3dName) old3dName.remove();
         const old3dHp = el.querySelector('.unit-hp-bar-3d');
         if (old3dHp) old3dHp.remove();
+        const oldLocDot = el.querySelector('.unit-loc-dot');
+        if (oldLocDot) oldLocDot.remove();
 
         // Damage state visual effects (respects showHealthBars toggle)
         let damageGlow = el.querySelector('.unit-damage-glow');
