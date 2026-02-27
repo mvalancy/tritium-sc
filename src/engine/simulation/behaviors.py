@@ -63,6 +63,7 @@ _WEAPON_TYPES: dict[str, str] = {
     "hostile_person": "nerf_pistol",
     "hostile_leader": "nerf_pistol",
     "hostile_vehicle": "nerf_cannon",
+    "swarm_drone": "nerf_dart_gun",
 }
 
 

@@ -27,7 +27,7 @@ _STATIONARY_TYPES = {"turret", "heavy_turret", "missile_turret"}
 _FLYING_TYPES = {"drone", "scout_drone"}
 
 # Unit types that follow roads
-_ROAD_TYPES = {"rover", "tank", "apc"}
+_ROAD_TYPES = {"rover", "tank", "apc", "vehicle"}
 
 # Distance threshold for hostile direct approach (meters)
 _HOSTILE_DIRECT_RANGE = 30.0

@@ -64,6 +64,7 @@ from .cover import CoverSystem
 from .degradation import DegradationSystem
 from .game_mode import GameMode
 from .morale import MoraleSystem
+from .npc import NPCManager
 from .pursuit import PursuitSystem
 from .sensors import SensorSimulator
 from .stats import StatsTracker
@@ -156,6 +157,9 @@ class SimulationEngine:
         # Sensor simulation
         self.sensor_sim = SensorSimulator(event_bus)
 
+        # NPC world population (vehicles + pedestrians)
+        self._npc_manager: NPCManager | None = None
+
         # Idle-unit telemetry throttling — track per-target state snapshots
         # to detect no-change ticks.  After 5 consecutive identical ticks,
         # downgrade to 2Hz (publish every 5th tick) until something changes.
@@ -226,6 +230,10 @@ class SimulationEngine:
     @property
     def ambient_spawner(self) -> AmbientSpawner | None:
         return self._ambient_spawner
+
+    @property
+    def npc_manager(self) -> NPCManager | None:
+        return self._npc_manager
 
     @property
     def spawners_paused(self) -> bool:
@@ -350,6 +358,21 @@ class SimulationEngine:
         self._ambient_spawner = AmbientSpawner(self)
         self._ambient_spawner.start()
 
+        # NPC world population
+        try:
+            from app.config import settings
+            npc_max_v = settings.npc_max_vehicles
+            npc_max_p = settings.npc_max_pedestrians
+            npc_on = settings.npc_enabled
+        except Exception:
+            npc_max_v = 30
+            npc_max_p = 40
+            npc_on = True
+        if npc_on:
+            self._npc_manager = NPCManager(
+                self, max_vehicles=npc_max_v, max_pedestrians=npc_max_p
+            )
+
         # Start combat event listener
         self._combat_sub_thread = threading.Thread(
             target=self._combat_event_listener, name="combat-events", daemon=True
@@ -417,6 +440,10 @@ class SimulationEngine:
         self.unit_comms.tick(dt, targets_dict)
         self.stats_tracker.tick(dt, targets_dict)
         self.upgrade_system.tick(dt, targets_dict)
+
+        # Tick NPC manager (mission lifecycle, cleanup)
+        if self._npc_manager is not None:
+            self._npc_manager.tick(dt)
 
         # Tick FSMs with enriched context and sync state back to targets
         self._tick_fsms(dt, targets_dict)
@@ -744,6 +771,7 @@ class SimulationEngine:
             "person": 1.5,
             "hostile_vehicle": 6.0,
             "hostile_leader": 1.8,
+            "swarm_drone": 6.0,
         }
         target_speed = speed if speed is not None else default_speeds.get(asset_type, 1.5)
 

@@ -54,6 +54,7 @@ _DRAIN_RATES: dict[str, float] = {
     "missile_turret": 0.0003,
     "tank": 0.0008,
     "apc": 0.0010,
+    "swarm_drone": 0.003,
 }
 
 # Combat stat profiles by (asset_type, alliance).
@@ -76,6 +77,8 @@ _COMBAT_PROFILES: dict[str, tuple[float, float, float, float, float, bool]] = {
     # Hostile variants
     "hostile_vehicle":  (200.0, 200.0, 70.0, 2.0, 15.0, True),
     "hostile_leader":   (150.0, 150.0, 50.0, 2.0, 12.0, True),
+    # Swarm drone: fast, fragile, short-range
+    "swarm_drone":      (25.0,  25.0,  20.0, 1.0,  5.0, True),
 }
 
 
