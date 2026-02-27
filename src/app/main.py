@@ -33,6 +33,7 @@ from app.routers.synthetic_feed import router as synthetic_feed_router
 from app.routers.telemetry import router as telemetry_router
 from app.routers.mesh import router as mesh_router
 from app.routers.geodata import router as geodata_router
+from app.routers.npc import router as npc_router
 
 
 # ---------------------------------------------------------------------------
@@ -554,6 +555,7 @@ app.include_router(synthetic_feed_router)
 app.include_router(telemetry_router)
 app.include_router(mesh_router)
 app.include_router(geodata_router)
+app.include_router(npc_router)
 
 # Static files
 frontend_path = Path(__file__).parent.parent.parent / "frontend"

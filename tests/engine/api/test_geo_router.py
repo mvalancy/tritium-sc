@@ -348,3 +348,98 @@ class TestMsftBuildingsEndpoint:
             client = TestClient(_make_app())
             resp = client.get("/api/geo/msft-buildings?lat=37.77&lng=-122.42&radius=100")
             assert resp.status_code == 501
+
+
+# ---------------------------------------------------------------------------
+# Position Corrections API
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+class TestPositionCorrections:
+    """GET/POST /api/geo/layout/corrections — save/load unit position corrections."""
+
+    def test_get_empty_corrections(self):
+        """Returns empty list when no corrections file exists."""
+        with tempfile.TemporaryDirectory() as td:
+            fake_file = Path(td) / "position_corrections.json"
+            with patch("app.routers.geo._CORRECTIONS_FILE", fake_file):
+                client = TestClient(_make_app())
+                resp = client.get("/api/geo/layout/corrections")
+                assert resp.status_code == 200
+                data = resp.json()
+                assert data["corrections"] == []
+
+    def test_save_corrections(self):
+        """Save corrections and verify they persist."""
+        with tempfile.TemporaryDirectory() as td:
+            fake_file = Path(td) / "position_corrections.json"
+            with patch("app.routers.geo._CORRECTIONS_FILE", fake_file):
+                client = TestClient(_make_app())
+                payload = {
+                    "corrections": [
+                        {"unit_id": "turret-01", "x": 10.5, "y": -20.3, "label": "Front turret"},
+                        {"unit_id": "camera-01", "x": 5.0, "y": 8.0},
+                    ]
+                }
+                resp = client.post("/api/geo/layout/corrections", json=payload)
+                assert resp.status_code == 200
+                assert resp.json()["saved"] == 2
+
+                # Verify file was written
+                assert fake_file.exists()
+                saved = json.loads(fake_file.read_text())
+                assert len(saved) == 2
+                assert saved[0]["unit_id"] == "turret-01"
+
+    def test_save_then_load_corrections(self):
+        """Round-trip: save then load."""
+        with tempfile.TemporaryDirectory() as td:
+            fake_file = Path(td) / "position_corrections.json"
+            with patch("app.routers.geo._CORRECTIONS_FILE", fake_file):
+                client = TestClient(_make_app())
+                payload = {
+                    "corrections": [
+                        {"unit_id": "rover-01", "x": 100.0, "y": 200.0, "label": "Patrol start"},
+                    ]
+                }
+                client.post("/api/geo/layout/corrections", json=payload)
+                resp = client.get("/api/geo/layout/corrections")
+                assert resp.status_code == 200
+                data = resp.json()
+                assert len(data["corrections"]) == 1
+                assert data["corrections"][0]["unit_id"] == "rover-01"
+                assert data["corrections"][0]["x"] == 100.0
+
+    def test_save_empty_corrections(self):
+        """Saving empty list clears the file."""
+        with tempfile.TemporaryDirectory() as td:
+            fake_file = Path(td) / "position_corrections.json"
+            with patch("app.routers.geo._CORRECTIONS_FILE", fake_file):
+                client = TestClient(_make_app())
+                resp = client.post("/api/geo/layout/corrections", json={"corrections": []})
+                assert resp.status_code == 200
+                assert resp.json()["saved"] == 0
+
+    def test_save_corrections_validation(self):
+        """Missing required fields should fail validation."""
+        with tempfile.TemporaryDirectory() as td:
+            fake_file = Path(td) / "position_corrections.json"
+            with patch("app.routers.geo._CORRECTIONS_FILE", fake_file):
+                client = TestClient(_make_app())
+                # Missing x, y
+                resp = client.post("/api/geo/layout/corrections", json={
+                    "corrections": [{"unit_id": "bad"}]
+                })
+                assert resp.status_code == 422
+
+    def test_corrections_label_optional(self):
+        """Label field is optional."""
+        with tempfile.TemporaryDirectory() as td:
+            fake_file = Path(td) / "position_corrections.json"
+            with patch("app.routers.geo._CORRECTIONS_FILE", fake_file):
+                client = TestClient(_make_app())
+                payload = {
+                    "corrections": [{"unit_id": "sensor-01", "x": 0.0, "y": 0.0}]
+                }
+                resp = client.post("/api/geo/layout/corrections", json=payload)
+                assert resp.status_code == 200

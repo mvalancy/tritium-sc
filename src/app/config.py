@@ -83,6 +83,11 @@ class Settings(BaseSettings):
     simulation_bounds: float = 200.0  # Half-extent in meters (±200 = 400m x 400m)
     simulation_max_hostiles: int = 200  # Maximum simultaneous hostile targets
 
+    # NPC world population
+    npc_enabled: bool = True
+    npc_max_vehicles: int = 30       # Peak vehicle count (scaled by time-of-day)
+    npc_max_pedestrians: int = 40    # Peak pedestrian count (scaled by time-of-day)
+
     # Amy AI Commander
     amy_enabled: bool = True
     amy_camera_device: str | None = None    # auto-detect BCC950

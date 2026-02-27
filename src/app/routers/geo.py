@@ -1,4 +1,5 @@
-"""Geo engine — address geocoding, satellite tile proxy, building footprints.
+"""Geo engine — address geocoding, satellite tile proxy, building footprints,
+GIS interoperability protocols (KML, MGRS, UTM, WMS).
 
 All data sources are FREE with no API keys:
 - Nominatim (OpenStreetMap) for geocoding
@@ -31,6 +32,7 @@ _CACHE_DIR = Path(settings.geo_cache_dir).expanduser()
 _TILE_CACHE = _CACHE_DIR / "tiles"
 _GEOCODE_CACHE = _CACHE_DIR / "geocode"
 _BUILDINGS_CACHE = _CACHE_DIR / "buildings"
+_GIS_CACHE = _CACHE_DIR / "gis"
 
 _USER_AGENT = "TRITIUM-SC/0.1.0"
 _NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
@@ -571,3 +573,551 @@ async def get_overlay(request: Request):
     roads = getattr(request.app.state, "road_polylines", None) or []
     buildings = getattr(request.app.state, "building_dicts", None) or []
     return {"roads": roads, "buildings": buildings}
+
+
+# ---------------------------------------------------------------------------
+# Layout position corrections — save/load corrected unit/sensor positions
+# ---------------------------------------------------------------------------
+
+_CORRECTIONS_FILE = _CACHE_DIR / "position_corrections.json"
+
+
+class PositionCorrection(BaseModel):
+    """A position correction for a unit or sensor."""
+    unit_id: str
+    x: float
+    y: float
+    label: Optional[str] = None
+
+
+class PositionCorrectionsPayload(BaseModel):
+    """Payload for saving position corrections."""
+    corrections: list[PositionCorrection]
+
+
+@router.get("/layout/corrections")
+async def get_layout_corrections():
+    """Load saved position corrections.
+
+    Returns a list of corrections, each with unit_id, x, y, and optional label.
+    Used by the frontend to restore manually-repositioned units/sensors.
+    """
+    if _CORRECTIONS_FILE.exists():
+        try:
+            data = json.loads(_CORRECTIONS_FILE.read_text())
+            return {"corrections": data}
+        except Exception:
+            return {"corrections": []}
+    return {"corrections": []}
+
+
+@router.post("/layout/corrections")
+async def save_layout_corrections(payload: PositionCorrectionsPayload):
+    """Save position corrections to disk.
+
+    Overwrites the entire corrections file with the provided list.
+    The frontend sends all current corrections when the user saves.
+    """
+    _CORRECTIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    data = [c.model_dump() for c in payload.corrections]
+    _CORRECTIONS_FILE.write_text(json.dumps(data, indent=2))
+    logger.info(f"Saved {len(data)} position corrections")
+    return {"saved": len(data)}
+
+
+# ---------------------------------------------------------------------------
+# GIS Infrastructure Layers (Overpass API)
+# ---------------------------------------------------------------------------
+
+# Meters per story for estimating building height from levels
+_METERS_PER_LEVEL = 3.0
+
+# Layer catalog: metadata for all available GIS data layers
+_LAYER_CATALOG = [
+    {
+        "id": "power-lines",
+        "name": "Power Lines",
+        "type": "line",
+        "color": "#fcee0a",
+        "endpoint": "/api/geo/layers/power",
+    },
+    {
+        "id": "traffic-signals",
+        "name": "Traffic Signals",
+        "type": "point",
+        "color": "#ff2a6d",
+        "endpoint": "/api/geo/layers/traffic",
+    },
+    {
+        "id": "waterways",
+        "name": "Waterways",
+        "type": "line",
+        "color": "#0066ff",
+        "endpoint": "/api/geo/layers/water",
+    },
+    {
+        "id": "water-towers",
+        "name": "Water Towers",
+        "type": "point",
+        "color": "#0088ff",
+        "endpoint": "/api/geo/layers/water",
+    },
+    {
+        "id": "telecom-lines",
+        "name": "Telecom Lines",
+        "type": "line",
+        "color": "#ff8800",
+        "endpoint": "/api/geo/layers/cable",
+    },
+    {
+        "id": "building-heights",
+        "name": "Building Heights",
+        "type": "polygon",
+        "color": "#00f0ff",
+        "endpoint": "/api/geo/layers/building-heights",
+    },
+]
+
+
+def _overpass_to_geojson(
+    elements: list[dict],
+    *,
+    as_polygon: bool = False,
+) -> dict:
+    """Convert Overpass API elements to a GeoJSON FeatureCollection.
+
+    Args:
+        elements: List of Overpass elements (nodes and ways).
+        as_polygon: If True, closed ways become Polygon; otherwise LineString.
+
+    Returns:
+        A GeoJSON FeatureCollection dict.
+    """
+    features = []
+    for el in elements:
+        el_type = el.get("type")
+        tags = el.get("tags", {})
+
+        if el_type == "node":
+            lat = el.get("lat")
+            lon = el.get("lon")
+            if lat is None or lon is None:
+                continue
+            features.append({
+                "type": "Feature",
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [lon, lat],
+                },
+                "properties": tags,
+            })
+
+        elif el_type == "way":
+            geometry = el.get("geometry")
+            if not geometry or len(geometry) < 2:
+                continue
+
+            coords = [[pt["lon"], pt["lat"]] for pt in geometry]
+
+            if as_polygon:
+                # Ensure ring is closed
+                if coords[0] != coords[-1]:
+                    coords.append(coords[0])
+                features.append({
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [coords],
+                    },
+                    "properties": tags,
+                })
+            else:
+                features.append({
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "LineString",
+                        "coordinates": coords,
+                    },
+                    "properties": tags,
+                })
+
+    return {"type": "FeatureCollection", "features": features}
+
+
+async def _fetch_overpass_geojson(
+    query: str,
+    cache_key: str,
+    *,
+    as_polygon: bool = False,
+) -> dict:
+    """Execute an Overpass query and return GeoJSON, with disk caching.
+
+    Args:
+        query: Overpass QL query string.
+        cache_key: Unique key for disk cache.
+        as_polygon: Pass through to _overpass_to_geojson.
+
+    Returns:
+        GeoJSON FeatureCollection dict.
+
+    Raises:
+        HTTPException: On Overpass API failure (502).
+    """
+    cache_hash = hashlib.sha256(cache_key.encode()).hexdigest()[:16]
+    cache_path = _GIS_CACHE / f"{cache_hash}.json"
+
+    if cache_path.exists():
+        try:
+            return json.loads(cache_path.read_text())
+        except Exception:
+            pass
+
+    async with httpx.AsyncClient() as client:
+        try:
+            resp = await client.post(
+                _OVERPASS_URL,
+                data={"data": query},
+                headers={"User-Agent": _USER_AGENT},
+                timeout=30.0,
+            )
+            resp.raise_for_status()
+        except httpx.HTTPError as e:
+            logger.warning(f"Overpass GIS query failed: {e}")
+            raise HTTPException(status_code=502, detail="GIS data service unavailable")
+
+    data = resp.json()
+    elements = data.get("elements", [])
+    geojson = _overpass_to_geojson(elements, as_polygon=as_polygon)
+
+    _GIS_CACHE.mkdir(parents=True, exist_ok=True)
+    try:
+        cache_path.write_text(json.dumps(geojson))
+    except Exception:
+        pass
+
+    return geojson
+
+
+@router.get("/layers/catalog")
+async def get_layer_catalog():
+    """Return the catalog of available GIS data layers.
+
+    Each entry contains:
+      - id: unique layer identifier
+      - name: human-readable layer name
+      - type: geometry type (point, line, polygon)
+      - color: hex color for rendering
+      - endpoint: API endpoint to fetch GeoJSON data
+    """
+    return _LAYER_CATALOG
+
+
+@router.get("/layers/power")
+async def get_power_lines(
+    lat: float = Query(..., description="Center latitude"),
+    lng: float = Query(..., description="Center longitude"),
+    radius: float = Query(500.0, description="Search radius in meters", ge=50, le=2000),
+):
+    """Fetch power lines and towers from OpenStreetMap.
+
+    Returns a GeoJSON FeatureCollection with:
+      - LineString features for power lines
+      - Point features for power towers/poles
+    """
+    query = (
+        f'[out:json];'
+        f'('
+        f'  way["power"="line"](around:{radius},{lat},{lng});'
+        f'  way["power"="minor_line"](around:{radius},{lat},{lng});'
+        f'  node["power"="tower"](around:{radius},{lat},{lng});'
+        f'  node["power"="pole"](around:{radius},{lat},{lng});'
+        f');'
+        f'out geom;'
+    )
+    cache_key = f"power_{lat:.6f}_{lng:.6f}_{radius:.0f}"
+    return await _fetch_overpass_geojson(query, cache_key)
+
+
+@router.get("/layers/traffic")
+async def get_traffic_signals(
+    lat: float = Query(..., description="Center latitude"),
+    lng: float = Query(..., description="Center longitude"),
+    radius: float = Query(500.0, description="Search radius in meters", ge=50, le=2000),
+):
+    """Fetch traffic signals and stop signs from OpenStreetMap.
+
+    Returns a GeoJSON FeatureCollection with Point features.
+    """
+    query = (
+        f'[out:json];'
+        f'('
+        f'  node["highway"="traffic_signals"](around:{radius},{lat},{lng});'
+        f'  node["highway"="stop"](around:{radius},{lat},{lng});'
+        f'  node["highway"="crossing"](around:{radius},{lat},{lng});'
+        f');'
+        f'out;'
+    )
+    cache_key = f"traffic_{lat:.6f}_{lng:.6f}_{radius:.0f}"
+    return await _fetch_overpass_geojson(query, cache_key)
+
+
+@router.get("/layers/water")
+async def get_water_infrastructure(
+    lat: float = Query(..., description="Center latitude"),
+    lng: float = Query(..., description="Center longitude"),
+    radius: float = Query(500.0, description="Search radius in meters", ge=50, le=2000),
+):
+    """Fetch water infrastructure from OpenStreetMap.
+
+    Returns a GeoJSON FeatureCollection with:
+      - LineString features for waterways (streams, rivers, canals)
+      - Point features for water towers
+    """
+    query = (
+        f'[out:json];'
+        f'('
+        f'  way["waterway"](around:{radius},{lat},{lng});'
+        f'  node["man_made"="water_tower"](around:{radius},{lat},{lng});'
+        f'  way["man_made"="pipeline"]["substance"="water"](around:{radius},{lat},{lng});'
+        f');'
+        f'out geom;'
+    )
+    cache_key = f"water_{lat:.6f}_{lng:.6f}_{radius:.0f}"
+    return await _fetch_overpass_geojson(query, cache_key)
+
+
+@router.get("/layers/cable")
+async def get_cable_lines(
+    lat: float = Query(..., description="Center latitude"),
+    lng: float = Query(..., description="Center longitude"),
+    radius: float = Query(500.0, description="Search radius in meters", ge=50, le=2000),
+):
+    """Fetch telecom and utility cable lines from OpenStreetMap.
+
+    Returns a GeoJSON FeatureCollection with LineString features.
+    """
+    query = (
+        f'[out:json];'
+        f'('
+        f'  way["utility"](around:{radius},{lat},{lng});'
+        f'  way["communication"="line"](around:{radius},{lat},{lng});'
+        f'  way["telecom"="line"](around:{radius},{lat},{lng});'
+        f');'
+        f'out geom;'
+    )
+    cache_key = f"cable_{lat:.6f}_{lng:.6f}_{radius:.0f}"
+    return await _fetch_overpass_geojson(query, cache_key)
+
+
+@router.get("/layers/building-heights")
+async def get_building_heights(
+    lat: float = Query(..., description="Center latitude"),
+    lng: float = Query(..., description="Center longitude"),
+    radius: float = Query(500.0, description="Search radius in meters", ge=50, le=2000),
+):
+    """Fetch buildings with height data from OpenStreetMap.
+
+    Returns a GeoJSON FeatureCollection with Polygon features.
+    Each feature has `height` and `levels` in its properties.
+    Height is derived from `building:height` tag or estimated from
+    `building:levels` * 3m.
+    """
+    query = (
+        f'[out:json];'
+        f'('
+        f'  way["building"]["building:height"](around:{radius},{lat},{lng});'
+        f'  way["building"]["building:levels"](around:{radius},{lat},{lng});'
+        f');'
+        f'out geom;'
+    )
+    cache_key = f"bldg_heights_{lat:.6f}_{lng:.6f}_{radius:.0f}"
+    geojson = await _fetch_overpass_geojson(query, cache_key, as_polygon=True)
+
+    # Enrich features with numeric height/levels
+    for feat in geojson.get("features", []):
+        props = feat.get("properties", {})
+        height = None
+        levels = None
+
+        # Parse height
+        raw_height = props.get("building:height", "")
+        if raw_height:
+            try:
+                height = float(str(raw_height).replace("m", "").strip())
+            except (ValueError, TypeError):
+                pass
+
+        # Parse levels
+        raw_levels = props.get("building:levels", "")
+        if raw_levels:
+            try:
+                levels = int(str(raw_levels).strip())
+            except (ValueError, TypeError):
+                pass
+
+        # Estimate height from levels if no explicit height
+        if height is None and levels is not None:
+            height = levels * _METERS_PER_LEVEL
+
+        props["height"] = height or 0.0
+        props["levels"] = levels or 0
+
+    return geojson
+
+
+# ---------------------------------------------------------------------------
+# GIS Interoperability Protocol Endpoints
+# ---------------------------------------------------------------------------
+
+class KMLImportRequest(BaseModel):
+    """Import KML text to GeoJSON."""
+    kml: str
+
+
+class KMLExportRequest(BaseModel):
+    """Export GeoJSON to KML text."""
+    geojson: dict
+
+
+class WMSValidateRequest(BaseModel):
+    """Validate a WMS/WMTS URL template."""
+    url: str
+
+
+@router.post("/import/kml")
+async def import_kml(body: KMLImportRequest):
+    """Parse KML XML text and return a GeoJSON FeatureCollection.
+
+    Supports Point, LineString, and Polygon Placemarks.
+    Useful for importing TAK markers, Google Earth overlays, etc.
+    """
+    from engine.tactical.geo_protocols import kml_to_geojson
+
+    if not body.kml.strip():
+        raise HTTPException(status_code=400, detail="KML text is required")
+
+    try:
+        return kml_to_geojson(body.kml)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid KML: {e}")
+
+
+@router.post("/export/kml")
+async def export_kml(body: KMLExportRequest):
+    """Convert a GeoJSON FeatureCollection to KML XML string.
+
+    Supports Point, LineString, and Polygon features.
+    Useful for exporting to TAK, Google Earth, etc.
+    """
+    from engine.tactical.geo_protocols import geojson_to_kml
+
+    try:
+        kml_text = geojson_to_kml(body.geojson)
+        return {"kml": kml_text}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"KML export failed: {e}")
+
+
+@router.get("/convert/mgrs")
+async def convert_mgrs(
+    lat: Optional[float] = Query(None, description="Latitude (for lat/lng -> MGRS)"),
+    lng: Optional[float] = Query(None, description="Longitude (for lat/lng -> MGRS)"),
+    mgrs: Optional[str] = Query(None, description="MGRS string (for MGRS -> lat/lng)"),
+    precision: int = Query(5, description="MGRS precision (1-5)", ge=1, le=5),
+):
+    """Convert between lat/lng and MGRS coordinates.
+
+    Provide either:
+      - lat + lng: returns MGRS string
+      - mgrs: returns lat/lng
+
+    MGRS (Military Grid Reference System) is used by TAK, NATO, and
+    military operations worldwide.
+    """
+    from engine.tactical.geo_protocols import latlng_to_mgrs, mgrs_to_latlng
+
+    if mgrs is not None:
+        try:
+            lat_out, lng_out = mgrs_to_latlng(mgrs)
+            return {"lat": lat_out, "lng": lng_out, "mgrs": mgrs}
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    if lat is not None and lng is not None:
+        try:
+            mgrs_str = latlng_to_mgrs(lat, lng, precision=precision)
+            return {"lat": lat, "lng": lng, "mgrs": mgrs_str}
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    raise HTTPException(
+        status_code=400,
+        detail="Provide either lat+lng or mgrs parameter",
+    )
+
+
+@router.get("/convert/utm")
+async def convert_utm(
+    lat: Optional[float] = Query(None, description="Latitude (for lat/lng -> UTM)"),
+    lng: Optional[float] = Query(None, description="Longitude (for lat/lng -> UTM)"),
+    zone: Optional[int] = Query(None, description="UTM zone (for UTM -> lat/lng)"),
+    easting: Optional[float] = Query(None, description="UTM easting"),
+    northing: Optional[float] = Query(None, description="UTM northing"),
+    band: Optional[str] = Query(None, description="UTM band letter"),
+):
+    """Convert between lat/lng and UTM coordinates.
+
+    Provide either:
+      - lat + lng: returns UTM zone, easting, northing, band
+      - zone + easting + northing + band: returns lat/lng
+    """
+    from engine.tactical.geo_protocols import latlng_to_utm, utm_to_latlng
+
+    if zone is not None and easting is not None and northing is not None and band is not None:
+        try:
+            lat_out, lng_out = utm_to_latlng(zone, easting, northing, band)
+            return {
+                "lat": lat_out,
+                "lng": lng_out,
+                "zone": zone,
+                "easting": easting,
+                "northing": northing,
+                "band": band,
+            }
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    if lat is not None and lng is not None:
+        try:
+            z, e, n, b = latlng_to_utm(lat, lng)
+            return {
+                "lat": lat,
+                "lng": lng,
+                "zone": z,
+                "easting": e,
+                "northing": n,
+                "band": b,
+            }
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    raise HTTPException(
+        status_code=400,
+        detail="Provide either lat+lng or zone+easting+northing+band parameters",
+    )
+
+
+@router.post("/validate-wms")
+async def validate_wms(body: WMSValidateRequest):
+    """Validate a WMS/WMTS/TMS tile URL template.
+
+    Returns validation result with detected service type.
+    Useful for the frontend to verify user-configured tile sources
+    before adding them to the map.
+    """
+    from engine.tactical.geo_protocols import validate_wms_url
+
+    if not body.url.strip():
+        raise HTTPException(status_code=400, detail="URL is required")
+
+    return validate_wms_url(body.url)
