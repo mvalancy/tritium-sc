@@ -1,0 +1,106 @@
+{
+  "scenario_id": "riot",
+  "name": "Riot Control",
+  "description": "Many drones vs 200 human enemies across a city district. Drone swarm must contain massive crowds with occasional vehicle and leader threats. Stress tests the system at city scale.",
+  "map_bounds": 500.0,
+  "max_hostiles": 200,
+  "waves": [
+    {
+      "name": "Agitators",
+      "groups": [
+        {"asset_type": "person", "count": 10, "speed": 1.5, "health": 60.0}
+      ],
+      "speed_mult": 1.0,
+      "health_mult": 0.8
+    },
+    {
+      "name": "Crowd Surge",
+      "groups": [
+        {"asset_type": "person", "count": 15, "speed": 1.5, "health": 60.0}
+      ],
+      "speed_mult": 1.1,
+      "health_mult": 0.8
+    },
+    {
+      "name": "Ringleaders Appear",
+      "groups": [
+        {"asset_type": "person", "count": 15, "speed": 1.5, "health": 60.0},
+        {"asset_type": "hostile_leader", "count": 2, "speed": 1.8, "health": 120.0}
+      ],
+      "speed_mult": 1.0,
+      "health_mult": 1.0
+    },
+    {
+      "name": "Molotov Wave",
+      "groups": [
+        {"asset_type": "person", "count": 20, "speed": 1.8, "health": 60.0}
+      ],
+      "speed_mult": 1.3,
+      "health_mult": 0.7
+    },
+    {
+      "name": "Barricade Breakers",
+      "groups": [
+        {"asset_type": "person", "count": 18, "speed": 1.5, "health": 60.0},
+        {"asset_type": "hostile_vehicle", "count": 2, "speed": 4.0, "health": 300.0}
+      ],
+      "speed_mult": 1.0,
+      "health_mult": 1.2
+    },
+    {
+      "name": "Human Tide",
+      "groups": [
+        {"asset_type": "person", "count": 25, "speed": 1.5, "health": 55.0}
+      ],
+      "speed_mult": 1.2,
+      "health_mult": 0.9
+    },
+    {
+      "name": "Full Riot",
+      "groups": [
+        {"asset_type": "person", "count": 25, "speed": 1.5, "health": 60.0},
+        {"asset_type": "hostile_leader", "count": 3, "speed": 1.8, "health": 150.0}
+      ],
+      "speed_mult": 1.2,
+      "health_mult": 1.0
+    },
+    {
+      "name": "Vehicular Chaos",
+      "groups": [
+        {"asset_type": "person", "count": 20, "speed": 1.8, "health": 60.0},
+        {"asset_type": "hostile_vehicle", "count": 3, "speed": 5.0, "health": 250.0}
+      ],
+      "speed_mult": 1.3,
+      "health_mult": 1.1
+    },
+    {
+      "name": "Overwhelming Force",
+      "groups": [
+        {"asset_type": "person", "count": 30, "speed": 2.0, "health": 65.0},
+        {"asset_type": "hostile_leader", "count": 2, "speed": 2.0, "health": 150.0}
+      ],
+      "speed_mult": 1.4,
+      "health_mult": 1.2
+    },
+    {
+      "name": "STAMPEDE",
+      "groups": [
+        {"asset_type": "person", "count": 30, "speed": 2.0, "health": 50.0},
+        {"asset_type": "hostile_vehicle", "count": 3, "speed": 5.0, "health": 250.0},
+        {"asset_type": "hostile_leader", "count": 4, "speed": 2.0, "health": 180.0}
+      ],
+      "speed_mult": 1.5,
+      "health_mult": 1.0
+    }
+  ],
+  "defenders": [
+    {"asset_type": "drone", "position": [0.0, 50.0], "name": "Drone-Alpha"},
+    {"asset_type": "drone", "position": [50.0, 0.0], "name": "Drone-Bravo"},
+    {"asset_type": "drone", "position": [0.0, -50.0], "name": "Drone-Charlie"},
+    {"asset_type": "drone", "position": [-50.0, 0.0], "name": "Drone-Delta"},
+    {"asset_type": "scout_drone", "position": [30.0, 30.0], "name": "Scout-1"},
+    {"asset_type": "scout_drone", "position": [-30.0, -30.0], "name": "Scout-2"},
+    {"asset_type": "turret", "position": [0.0, 0.0], "name": "Base-Turret"},
+    {"asset_type": "missile_turret", "position": [0.0, -80.0], "name": "Missile-1"}
+  ]
+}

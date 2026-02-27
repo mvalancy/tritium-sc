@@ -1,0 +1,36 @@
+{
+  "scenario_id": "stress_test",
+  "name": "Render Stress Test",
+  "description": "No defenders, mass hostile spawn for visual render testing. 200 hostiles across 3 waves, no combat, pure rendering stress test.",
+  "map_bounds": 300.0,
+  "max_hostiles": 200,
+  "waves": [
+    {
+      "name": "First Wave",
+      "groups": [
+        {"asset_type": "person", "count": 80, "speed": 1.2, "health": 999.0}
+      ],
+      "speed_mult": 1.0,
+      "health_mult": 1.0
+    },
+    {
+      "name": "Second Wave",
+      "groups": [
+        {"asset_type": "person", "count": 60, "speed": 1.5, "health": 999.0},
+        {"asset_type": "hostile_vehicle", "count": 10, "speed": 3.0, "health": 999.0}
+      ],
+      "speed_mult": 1.0,
+      "health_mult": 1.0
+    },
+    {
+      "name": "Third Wave",
+      "groups": [
+        {"asset_type": "person", "count": 40, "speed": 1.8, "health": 999.0},
+        {"asset_type": "hostile_leader", "count": 10, "speed": 2.0, "health": 999.0}
+      ],
+      "speed_mult": 1.0,
+      "health_mult": 1.0
+    }
+  ],
+  "defenders": []
+}
