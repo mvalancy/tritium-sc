@@ -16,6 +16,12 @@ import { UnitsPanelDef } from './panels/units.js';
 import { AlertsPanelDef } from './panels/alerts.js';
 import { GameHudPanelDef } from './panels/game-hud.js';
 import { MeshPanelDef } from './panels/mesh.js';
+import { AudioPanelDef } from './panels/audio.js';
+import { EscalationPanelDef } from './panels/escalation.js';
+import { EventsPanelDef } from './panels/events.js';
+import { PatrolPanelDef } from './panels/patrol.js';
+import { ScenariosPanelDef } from './panels/scenarios.js';
+import { SystemPanelDef } from './panels/system.js';
 
 // Make available on window for console debugging
 window.TritiumStore = TritiumStore;
@@ -324,6 +330,12 @@ function initPanelSystem(container) {
     panelManager.register(AlertsPanelDef);
     panelManager.register(GameHudPanelDef);
     panelManager.register(MeshPanelDef);
+    panelManager.register(AudioPanelDef);
+    panelManager.register(EscalationPanelDef);
+    panelManager.register(EventsPanelDef);
+    panelManager.register(PatrolPanelDef);
+    panelManager.register(ScenariosPanelDef);
+    panelManager.register(SystemPanelDef);
 
     // Try loading saved layout; if none, open defaults
     if (!panelManager.loadLayout()) {
