@@ -1,10 +1,9 @@
 """Combat scenario tests using SimulationTestHarness.
 
-Note on combat distances: CombatSystem marks projectiles as missed when
-they are more than MISS_OVERSHOOT (3.0) units from their target_pos.
-This means hits only register at close range (within ~5 units).  These
-tests account for that by placing units close together or running enough
-ticks for hostiles to walk into close range.
+Note on combat distances: Projectiles are semi-guided (track target's
+current position) with HIT_RADIUS of 5.0 units.  Misses occur after
+5 seconds of flight time.  Tests place units within weapon range and
+run enough ticks for projectiles to reach targets.
 """
 
 from __future__ import annotations
@@ -29,10 +28,10 @@ class TestCombatScenarios:
         h.assert_event("projectile_fired")
 
     def test_turret_no_fire_outside_range(self):
-        """Turret at origin range=20, hostile at (25,0) -> no fire."""
+        """Turret at origin range=80, hostile at (85,0) -> no fire."""
         h = SimulationTestHarness()
         h.place_friendly("turret-1", 0, 0, "turret")
-        h.spawn_hostile("hostile-1", 25, 0)
+        h.spawn_hostile("hostile-1", 85, 0)
         h.run_ticks(20)
         h.assert_no_event("projectile_fired")
 
@@ -146,21 +145,20 @@ class TestCombatScenarios:
         assert hostile.health < initial_health, "Hostile should have taken damage"
 
     def test_elimination_streak_event(self):
-        """Turret eliminates 3 close-range hostiles -> elimination_streak event with streak >= 3."""
+        """Turret eliminates 3 hostiles -> elimination_streak event with streak >= 3."""
         h = SimulationTestHarness()
         h.place_friendly("turret-1", 0, 0, "turret")
-        # Spawn 3 hostiles near the turret.  Each walks toward origin at
-        # 1.5 u/s but starts close enough that projectile hits land before
-        # the hostile reaches its waypoint and "escapes".
-        # Turret range is 20, HIT_RADIUS is 1.5, projectile speed is 25 u/s.
-        # The turret fires at the nearest hostile each tick, so hostiles
-        # are eliminated sequentially: ~6 hits each (80hp / 15dmg).
-        # Stagger them so only one is in close range at a time.
+        # Spawn 3 hostiles staggered: first close, others beyond hostile
+        # weapon range (40m) but within turret range (80m).  This prevents
+        # the turret from being overwhelmed by return fire.
+        # Turret range=80, hostile range=40, projectile speed=80 m/s.
+        # The turret fires at the nearest hostile each tick (cooldown reset).
+        # ~6 hits each (80hp / 15dmg) plus projectile flight time.
         h.spawn_hostile("hostile-1", 2, 0)
-        h.spawn_hostile("hostile-2", 8, 0)
-        h.spawn_hostile("hostile-3", 14, 0)
-        # 300 ticks = 30s sim time.  Hostile-2 reaches close range at ~4s,
-        # hostile-3 at ~8s.  Each needs ~6 ticks to die once in close range.
+        h.spawn_hostile("hostile-2", 45, 0)
+        h.spawn_hostile("hostile-3", 55, 0)
+        # 300 ticks = 30s sim time.  Turret kills hostile-1 by tick ~6,
+        # hostile-2 by tick ~19, hostile-3 by tick ~31.
         h.run_ticks(300)
         # All 3 hostiles should be eliminated
         h.assert_target_eliminated("hostile-1")
@@ -182,13 +180,13 @@ class TestCombatScenarios:
         h = SimulationTestHarness()
         turret = h.place_friendly("t1", 0, 0, "turret")
         assert turret.health == 200.0
-        assert turret.weapon_range == 20.0
+        assert turret.weapon_range == 80.0
         assert turret.weapon_damage == 15.0
         assert turret.is_combatant is True
 
         hostile = h.spawn_hostile("h1", 5, 0)
         assert hostile.health == 80.0  # person_hostile profile
-        assert hostile.weapon_range == 8.0
+        assert hostile.weapon_range == 40.0
         assert hostile.is_combatant is True
 
 

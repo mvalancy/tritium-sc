@@ -125,14 +125,14 @@ class TestHostileCap:
     def test_max_hostiles_enforced(self):
         bus = SimpleEventBus()
         engine = SimulationEngine(bus)
-        assert engine.MAX_HOSTILES == 10
+        assert engine.MAX_HOSTILES == 200
         for _ in range(12):
             engine.spawn_hostile()
         # Should cap at MAX_HOSTILES
         hostiles = [t for t in engine.get_targets() if t.alliance == "hostile"]
         # spawn_hostile only checks in spawner loop, manual spawns still add
         # But we can verify the constant exists
-        assert engine.MAX_HOSTILES == 10
+        assert engine.MAX_HOSTILES == 200
 
 
 class TestHostileNameUniqueness:

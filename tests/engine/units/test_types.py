@@ -78,7 +78,7 @@ class TestRover:
         assert get_type("rover").combat.health == 150
 
     def test_weapon_range(self):
-        assert get_type("rover").combat.weapon_range == 10.0
+        assert get_type("rover").combat.weapon_range == 60.0
 
     def test_weapon_damage(self):
         assert get_type("rover").combat.weapon_damage == 12
@@ -110,7 +110,7 @@ class TestDrone:
         assert get_type("drone").combat.health == 60
 
     def test_weapon_range(self):
-        assert get_type("drone").combat.weapon_range == 12.0
+        assert get_type("drone").combat.weapon_range == 50.0
 
     def test_weapon_damage(self):
         assert get_type("drone").combat.weapon_damage == 8
@@ -159,7 +159,7 @@ class TestTurret:
         assert get_type("turret").combat.health == 200
 
     def test_weapon_range(self):
-        assert get_type("turret").combat.weapon_range == 20.0
+        assert get_type("turret").combat.weapon_range == 80.0
 
     def test_weapon_damage(self):
         assert get_type("turret").combat.weapon_damage == 15
@@ -179,7 +179,7 @@ class TestHeavyTurret:
         assert get_type("heavy_turret").combat.health == 350
 
     def test_weapon_range(self):
-        assert get_type("heavy_turret").combat.weapon_range == 30.0
+        assert get_type("heavy_turret").combat.weapon_range == 120.0
 
     def test_weapon_damage(self):
         assert get_type("heavy_turret").combat.weapon_damage == 25
@@ -193,7 +193,7 @@ class TestMissileTurret:
         assert get_type("missile_turret").combat.health == 200
 
     def test_weapon_range(self):
-        assert get_type("missile_turret").combat.weapon_range == 35.0
+        assert get_type("missile_turret").combat.weapon_range == 150.0
 
     def test_weapon_damage(self):
         assert get_type("missile_turret").combat.weapon_damage == 50

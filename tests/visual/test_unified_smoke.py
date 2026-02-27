@@ -83,15 +83,17 @@ class TestUnifiedSmoke:
     def test_02_canvas_visible_and_sized(self):
         name = "smoke_02_canvas_visible_and_sized"
         try:
-            # Try Three.js 3D canvas first (primary renderer), fall back to 2D
-            canvas = self.page.locator("#tactical-3d-canvas")
+            # Try MapLibre GL container first, then Three.js, then legacy Canvas 2D
+            canvas = self.page.locator("#maplibre-map")
+            if canvas.count() == 0 or not canvas.is_visible():
+                canvas = self.page.locator("#tactical-3d-canvas")
             if canvas.count() == 0 or not canvas.is_visible():
                 canvas = self.page.locator("#tactical-canvas")
-            assert canvas.is_visible(), "No visible tactical canvas found"
+            assert canvas.is_visible(), "No visible map container found"
             box = canvas.bounding_box()
-            assert box is not None, "Canvas has no bounding box"
-            assert box["width"] > 100, f"Canvas width too small: {box['width']}"
-            assert box["height"] > 100, f"Canvas height too small: {box['height']}"
+            assert box is not None, "Map container has no bounding box"
+            assert box["width"] > 100, f"Map width too small: {box['width']}"
+            assert box["height"] > 100, f"Map height too small: {box['height']}"
             self._record(name, True, {"width": box["width"], "height": box["height"]})
         except Exception as exc:
             self._record(name, False, {"error": str(exc)})
@@ -101,19 +103,25 @@ class TestUnifiedSmoke:
         name = "smoke_03_canvas_has_content"
         try:
             has_content = self.page.evaluate("""() => {
-                // Try Three.js WebGL canvas first (id=tactical-3d-canvas)
+                // Try MapLibre GL canvas first (inside #maplibre-map)
+                const mlMap = document.getElementById('maplibre-map');
+                if (mlMap && mlMap.offsetWidth > 0) {
+                    // MapLibre creates a canvas.maplibregl-canvas inside the container
+                    const mlCanvas = mlMap.querySelector('canvas.maplibregl-canvas');
+                    if (mlCanvas && mlCanvas.width > 0 && mlCanvas.height > 0) {
+                        return 100;  // MapLibre rendered
+                    }
+                    // Container exists and is sized = map is initializing
+                    return mlMap.offsetWidth > 100 && mlMap.offsetHeight > 100 ? 1 : 0;
+                }
+                // Try Three.js WebGL canvas (id=tactical-3d-canvas)
                 const webglCanvas = document.getElementById('tactical-3d-canvas');
                 if (webglCanvas && webglCanvas.offsetWidth > 0) {
-                    // Three.js preserveDrawingBuffer may be false, so readPixels
-                    // can return all zeros. Instead check that the canvas exists,
-                    // is sized, and has a valid WebGL context as proof of rendering.
                     const gl = webglCanvas.getContext('webgl2', {failIfMajorPerformanceCaveat: false})
                         || webglCanvas.getContext('webgl', {failIfMajorPerformanceCaveat: false});
                     if (gl) {
-                        // GL context exists and canvas is sized = Three.js is rendering
                         return Math.max(1, webglCanvas.width * webglCanvas.height > 0 ? 100 : 0);
                     }
-                    // WebGL context unavailable but canvas is sized
                     return webglCanvas.width > 100 && webglCanvas.height > 100 ? 1 : 0;
                 }
                 // Fall back to 2D canvas

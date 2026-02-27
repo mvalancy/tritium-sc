@@ -292,3 +292,80 @@ class TestPlaceUnitModel:
     def test_missing_required_field(self):
         with pytest.raises(Exception):
             PlaceUnit(asset_type="turret", position={"x": 0, "y": 0})
+
+
+@pytest.mark.unit
+class TestListBattleScenarios:
+    """GET /api/game/scenarios"""
+
+    def test_lists_scenarios(self):
+        engine = _mock_engine()
+        client = TestClient(_make_app(engine=engine))
+        resp = client.get("/api/game/scenarios")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert isinstance(data, list)
+        names = [s["name"] for s in data]
+        assert "street_combat" in names
+        assert "riot" in names
+
+    def test_scenario_fields(self):
+        engine = _mock_engine()
+        client = TestClient(_make_app(engine=engine))
+        resp = client.get("/api/game/scenarios")
+        for s in resp.json():
+            assert "name" in s
+            assert "description" in s
+            assert "map_bounds" in s
+            assert "wave_count" in s
+            assert s["wave_count"] > 0
+
+
+@pytest.mark.unit
+class TestStartBattleScenario:
+    """POST /api/game/battle/{scenario_name}"""
+
+    def test_start_street_combat(self):
+        engine = _mock_engine(state="setup")
+        client = TestClient(_make_app(engine=engine))
+        resp = client.post("/api/game/battle/street_combat")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["scenario"] == "street_combat"
+        assert data["status"] == "scenario_started"
+        assert data["defender_count"] >= 1
+        assert data["wave_count"] >= 5
+        engine.reset_game.assert_called_once()
+        engine.begin_war.assert_called_once()
+
+    def test_start_riot(self):
+        engine = _mock_engine(state="setup")
+        client = TestClient(_make_app(engine=engine))
+        resp = client.post("/api/game/battle/riot")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["scenario"] == "riot"
+        assert data["max_hostiles"] >= 100
+        assert data["wave_count"] >= 7
+
+    def test_404_unknown_scenario(self):
+        engine = _mock_engine(state="setup")
+        client = TestClient(_make_app(engine=engine))
+        resp = client.post("/api/game/battle/nonexistent")
+        assert resp.status_code == 404
+
+    def test_places_defenders(self):
+        engine = _mock_engine(state="setup")
+        client = TestClient(_make_app(engine=engine))
+        resp = client.post("/api/game/battle/street_combat")
+        assert resp.status_code == 200
+        # Should have called add_target for each defender
+        assert engine.add_target.call_count == resp.json()["defender_count"]
+
+    def test_scenario_resets_first(self):
+        """Starting a scenario resets any existing game state."""
+        engine = _mock_engine(state="active")
+        client = TestClient(_make_app(engine=engine))
+        resp = client.post("/api/game/battle/street_combat")
+        assert resp.status_code == 200
+        engine.reset_game.assert_called_once()

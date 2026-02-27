@@ -73,21 +73,21 @@ class TestEventBusBasics:
 class TestEventBusOverflow:
     """Queue overflow behavior — drop oldest message when full."""
 
-    def test_queue_maxsize_is_100(self):
+    def test_queue_maxsize_is_1000(self):
         bus = EventBus()
         q = bus.subscribe()
-        assert q.maxsize == 100
+        assert q.maxsize == 1000
 
     def test_overflow_drops_oldest(self):
         bus = EventBus()
         q = bus.subscribe()
         # Fill the queue
-        for i in range(100):
+        for i in range(1000):
             bus.publish("fill", {"seq": i})
         assert q.full()
 
         # Publish one more — should drop oldest and add new
-        bus.publish("overflow", {"seq": 100})
+        bus.publish("overflow", {"seq": 1000})
 
         # Oldest should be seq=1 (seq=0 was dropped)
         first = q.get_nowait()

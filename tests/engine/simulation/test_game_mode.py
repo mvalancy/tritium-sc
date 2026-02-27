@@ -315,7 +315,7 @@ class TestGameModeScoring:
         assert gm.total_eliminations == 1
         assert gm.score == 100
 
-    def test_scoring_ignores_non_wave_targets(self):
+    def test_non_wave_targets_score_but_dont_count_wave_elims(self):
         bus = SimpleEventBus()
         engine = SimulationEngine(bus)
         combat = CombatSystem(bus)
@@ -331,10 +331,11 @@ class TestGameModeScoring:
         gm.begin_war()
         gm.tick(_COUNTDOWN_DURATION + 1.0)
 
-        # Eliminate a non-wave target
+        # Eliminate a non-wave target — scores points but no wave elimination
         gm.on_target_eliminated("random_id")
         assert gm.wave_eliminations == 0
-        assert gm.score == 0
+        assert gm.total_eliminations == 1
+        assert gm.score == 100
 
     def test_scoring_only_in_active_state(self):
         bus = SimpleEventBus()
@@ -460,6 +461,197 @@ class TestEngineGameModeIntegration:
         h = engine.spawn_hostile()
         # Should have hostile person combat profile
         assert h.health == 80.0
-        assert h.weapon_range == 8.0
+        assert h.weapon_range == 40.0
         assert h.weapon_cooldown == 2.5
         assert h.is_combatant is True
+
+
+# --------------------------------------------------------------------------
+# New feature: begin_war resets friendly health
+# --------------------------------------------------------------------------
+
+class TestBeginWarResetsHealth:
+    def test_begin_resets_friendly_health(self):
+        """begin_war() should reset all friendly combatants to full health."""
+        bus = SimpleEventBus()
+        engine = SimulationEngine(bus)
+        combat = CombatSystem(bus)
+        gm = GameMode(bus, engine, combat)
+
+        # Add damaged friendlies
+        turret = SimulationTarget(
+            target_id="t1", name="Turret", alliance="friendly",
+            asset_type="turret", position=(0.0, 0.0),
+            is_combatant=True, status="stationary",
+            health=30.0, max_health=100.0,
+        )
+        rover = SimulationTarget(
+            target_id="r1", name="Rover", alliance="friendly",
+            asset_type="rover", position=(5.0, 0.0),
+            is_combatant=True, status="active",
+            health=50.0, max_health=120.0,
+        )
+        engine.add_target(turret)
+        engine.add_target(rover)
+
+        gm.begin_war()
+
+        assert turret.health == turret.max_health, "Turret health should be reset to max"
+        assert rover.health == rover.max_health, "Rover health should be reset to max"
+
+    def test_begin_resets_friendly_battery(self):
+        """begin_war() should reset battery to 1.0."""
+        bus = SimpleEventBus()
+        engine = SimulationEngine(bus)
+        combat = CombatSystem(bus)
+        gm = GameMode(bus, engine, combat)
+
+        drone = SimulationTarget(
+            target_id="d1", name="Drone", alliance="friendly",
+            asset_type="drone", position=(0.0, 0.0),
+            is_combatant=True, status="active",
+            battery=0.3,
+        )
+        engine.add_target(drone)
+
+        gm.begin_war()
+        assert drone.battery == 1.0, "Battery should be reset to 1.0"
+
+    def test_begin_reactivates_low_battery_units(self):
+        """begin_war() should reactivate low_battery/idle friendly units."""
+        bus = SimpleEventBus()
+        engine = SimulationEngine(bus)
+        combat = CombatSystem(bus)
+        gm = GameMode(bus, engine, combat)
+
+        unit = SimulationTarget(
+            target_id="r1", name="Rover", alliance="friendly",
+            asset_type="rover", position=(0.0, 0.0),
+            is_combatant=True, status="low_battery",
+            health=50.0, max_health=100.0, battery=0.1,
+        )
+        engine.add_target(unit)
+
+        gm.begin_war()
+        assert unit.status == "active", "low_battery unit should be reactivated"
+        assert unit.health == 100.0
+        assert unit.battery == 1.0
+
+    def test_begin_does_not_reset_non_combatants(self):
+        """begin_war() should only reset combatant friendlies, not civilians."""
+        bus = SimpleEventBus()
+        engine = SimulationEngine(bus)
+        combat = CombatSystem(bus)
+        gm = GameMode(bus, engine, combat)
+
+        civilian = SimulationTarget(
+            target_id="c1", name="Neighbor", alliance="friendly",
+            asset_type="person", position=(0.0, 0.0),
+            is_combatant=False, status="active",
+            health=50.0, max_health=100.0,
+        )
+        engine.add_target(civilian)
+
+        gm.begin_war()
+        assert civilian.health == 50.0, "Non-combatant health unchanged"
+
+
+# --------------------------------------------------------------------------
+# New feature: low_battery counts as alive for defeat check
+# --------------------------------------------------------------------------
+
+class TestLowBatteryDefeatCheck:
+    def test_low_battery_unit_prevents_defeat(self):
+        """A low_battery friendly should prevent defeat condition."""
+        bus = SimpleEventBus()
+        engine = SimulationEngine(bus)
+        combat = CombatSystem(bus)
+        gm = GameMode(bus, engine, combat)
+
+        unit = SimulationTarget(
+            target_id="r1", name="Rover", alliance="friendly",
+            asset_type="rover", position=(0.0, 0.0),
+            is_combatant=True, status="low_battery",
+        )
+        engine.add_target(unit)
+
+        gm.begin_war()
+        gm.tick(_COUNTDOWN_DURATION + 1.0)
+        assert gm.state == "active"
+
+        gm._spawn_thread = None
+        gm.tick(0.1)
+        # low_battery is still alive — should NOT be defeat
+        assert gm.state != "defeat", "low_battery unit should prevent defeat"
+
+    def test_eliminated_friendly_allows_defeat(self):
+        """When all friendlies are eliminated (not low_battery), defeat triggers."""
+        bus = SimpleEventBus()
+        engine = SimulationEngine(bus)
+        combat = CombatSystem(bus)
+        gm = GameMode(bus, engine, combat)
+
+        unit = SimulationTarget(
+            target_id="r1", name="Rover", alliance="friendly",
+            asset_type="rover", position=(0.0, 0.0),
+            is_combatant=True, status="eliminated",
+        )
+        engine.add_target(unit)
+
+        gm.begin_war()
+        gm.tick(_COUNTDOWN_DURATION + 1.0)
+        gm._spawn_thread = None
+        gm.tick(0.1)
+        assert gm.state == "defeat"
+
+
+# --------------------------------------------------------------------------
+# Non-wave hostile scoring
+# --------------------------------------------------------------------------
+
+class TestNonWaveHostileScoring:
+    def test_non_wave_hostile_scores_100_points(self):
+        """Non-wave hostiles (ambient) score points when eliminated."""
+        bus = SimpleEventBus()
+        engine = SimulationEngine(bus)
+        combat = CombatSystem(bus)
+        gm = GameMode(bus, engine, combat)
+
+        friendly = SimulationTarget(
+            target_id="t1", name="Turret", alliance="friendly",
+            asset_type="turret", position=(0.0, 0.0),
+            is_combatant=True, status="stationary",
+        )
+        engine.add_target(friendly)
+
+        gm.begin_war()
+        gm.tick(_COUNTDOWN_DURATION + 1.0)
+
+        # Eliminate a non-wave hostile
+        gm.on_target_eliminated("ambient_hostile_1")
+        assert gm.total_eliminations == 1
+        assert gm.score == 100
+        assert gm.wave_eliminations == 0  # not a wave hostile
+
+    def test_wave_hostile_counts_for_both_score_and_wave(self):
+        """Wave hostiles count toward both score AND wave completion."""
+        bus = SimpleEventBus()
+        engine = SimulationEngine(bus)
+        combat = CombatSystem(bus)
+        gm = GameMode(bus, engine, combat)
+
+        friendly = SimulationTarget(
+            target_id="t1", name="Turret", alliance="friendly",
+            asset_type="turret", position=(0.0, 0.0),
+            is_combatant=True, status="stationary",
+        )
+        engine.add_target(friendly)
+
+        gm.begin_war()
+        gm.tick(_COUNTDOWN_DURATION + 1.0)
+
+        gm._wave_hostile_ids.add("wave_h1")
+        gm.on_target_eliminated("wave_h1")
+        assert gm.total_eliminations == 1
+        assert gm.score == 100
+        assert gm.wave_eliminations == 1  # IS a wave hostile

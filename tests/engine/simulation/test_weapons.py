@@ -442,14 +442,14 @@ class TestBackwardCompat:
         proj = combat.fire(source, target)
         assert proj is not None
         assert proj.damage == 15.0
-        assert proj.speed == 25.0  # Default speed
+        assert proj.speed == 80.0  # Projectile speed
 
         targets = {"t1": source, "h1": target}
         combat.tick(0.1, targets)
         assert target.health == 85.0
 
     def test_combat_without_weapon_system_uses_default_speed(self):
-        """Without weapon_system, projectile speed should be 25.0 (default)."""
+        """Without weapon_system, projectile speed should be 80.0."""
         from engine.simulation.combat import CombatSystem
 
         bus = SimpleEventBus()
@@ -467,4 +467,4 @@ class TestBackwardCompat:
         )
 
         proj = combat.fire(source, target)
-        assert proj.speed == 25.0
+        assert proj.speed == 80.0

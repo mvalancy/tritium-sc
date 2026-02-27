@@ -110,7 +110,7 @@ class TestTurretBehavior:
         behaviors = UnitBehaviors(combat)
 
         turret = _make_turret((0.0, 0.0))
-        hostile = _make_hostile("h1", (25.0, 0.0))  # beyond 20 range
+        hostile = _make_hostile("h1", (85.0, 0.0))  # beyond 80 range
         targets = {"turret1": turret, "h1": hostile}
 
         behaviors.tick(0.1, targets)
@@ -195,7 +195,7 @@ class TestDroneBehavior:
         behaviors = UnitBehaviors(combat)
 
         drone = _make_drone((0.0, 0.0))
-        hostile = _make_hostile("h1", (15.0, 0.0))  # beyond 12 range
+        hostile = _make_hostile("h1", (55.0, 0.0))  # beyond 50 range
         targets = {"drone1": drone, "h1": hostile}
 
         behaviors.tick(0.1, targets)
@@ -242,7 +242,7 @@ class TestRoverBehavior:
         behaviors = UnitBehaviors(combat)
 
         rover = _make_rover((0.0, 0.0))
-        hostile = _make_hostile("h1", (15.0, 0.0))  # beyond 10 range
+        hostile = _make_hostile("h1", (65.0, 0.0))  # beyond 60 range
         targets = {"rover1": rover, "h1": hostile}
 
         behaviors.tick(0.1, targets)
@@ -280,12 +280,12 @@ class TestHostileKidBehavior:
         fired_sub = bus.subscribe("projectile_fired")
 
         turret = _make_turret((0.0, 0.0))
-        hostile = _make_hostile("h1", (20.0, 0.0))  # beyond 8 range
+        hostile = _make_hostile("h1", (50.0, 0.0))  # beyond hostile 40 range, within turret 80
         targets = {"turret1": turret, "h1": hostile}
 
         behaviors.tick(0.1, targets)
 
-        # Turret should fire (range 20), hostile should not (range 8)
+        # Turret should fire (range 80), hostile should not (range 40)
         events = []
         while not fired_sub.empty():
             events.append(fired_sub.get_nowait())
@@ -363,22 +363,31 @@ class TestBehaviorFiltering:
 
 class TestNearestInRange:
     def test_returns_none_no_enemies(self):
+        bus = SimpleEventBus()
+        combat = CombatSystem(bus)
+        behaviors = UnitBehaviors(combat)
         unit = _make_turret()
-        result = UnitBehaviors._nearest_in_range(unit, {})
+        result = behaviors._nearest_in_range(unit, {})
         assert result is None
 
     def test_returns_nearest(self):
+        bus = SimpleEventBus()
+        combat = CombatSystem(bus)
+        behaviors = UnitBehaviors(combat)
         unit = _make_turret((0.0, 0.0))
         far = _make_hostile("far", (18.0, 0.0))
         near = _make_hostile("near", (5.0, 0.0))
-        result = UnitBehaviors._nearest_in_range(unit, {"far": far, "near": near})
+        result = behaviors._nearest_in_range(unit, {"far": far, "near": near})
         assert result is near
 
     def test_respects_range_limit(self):
+        bus = SimpleEventBus()
+        combat = CombatSystem(bus)
+        behaviors = UnitBehaviors(combat)
         unit = _make_turret((0.0, 0.0))
         unit.weapon_range = 10.0
         far = _make_hostile("far", (15.0, 0.0))
-        result = UnitBehaviors._nearest_in_range(unit, {"far": far})
+        result = behaviors._nearest_in_range(unit, {"far": far})
         assert result is None
 
 
@@ -391,3 +400,89 @@ class TestClearDodgeState:
         behaviors._last_dodge["h2"] = time.time()
         behaviors.clear_dodge_state()
         assert len(behaviors._last_dodge) == 0
+
+
+# --------------------------------------------------------------------------
+# Weapon type dispatch per unit type
+# --------------------------------------------------------------------------
+
+class TestWeaponTypeDispatch:
+    """Verify each unit type fires the correct projectile type via _WEAPON_TYPES."""
+
+    def test_turret_fires_nerf_turret_gun(self):
+        bus = SimpleEventBus()
+        combat = CombatSystem(bus)
+        behaviors = UnitBehaviors(combat)
+        fired_sub = bus.subscribe("projectile_fired")
+
+        turret = _make_turret((0.0, 0.0))
+        hostile = _make_hostile("h1", (5.0, 0.0))
+        targets = {"turret1": turret, "h1": hostile}
+        behaviors.tick(0.1, targets)
+
+        event = fired_sub.get(timeout=1.0)
+        assert event["projectile_type"] == "nerf_turret_gun"
+
+    def test_drone_fires_nerf_dart_gun(self):
+        bus = SimpleEventBus()
+        combat = CombatSystem(bus)
+        behaviors = UnitBehaviors(combat)
+        fired_sub = bus.subscribe("projectile_fired")
+
+        drone = _make_drone((0.0, 0.0))
+        hostile = _make_hostile("h1", (8.0, 0.0))
+        targets = {"drone1": drone, "h1": hostile}
+        behaviors.tick(0.1, targets)
+
+        event = fired_sub.get(timeout=1.0)
+        assert event["projectile_type"] == "nerf_dart_gun"
+
+    def test_rover_fires_nerf_cannon(self):
+        bus = SimpleEventBus()
+        combat = CombatSystem(bus)
+        behaviors = UnitBehaviors(combat)
+        fired_sub = bus.subscribe("projectile_fired")
+
+        rover = _make_rover((0.0, 0.0))
+        hostile = _make_hostile("h1", (5.0, 0.0))
+        targets = {"rover1": rover, "h1": hostile}
+        behaviors.tick(0.1, targets)
+
+        event = fired_sub.get(timeout=1.0)
+        assert event["projectile_type"] == "nerf_cannon"
+
+    def test_hostile_person_fires_nerf_pistol(self):
+        bus = SimpleEventBus()
+        combat = CombatSystem(bus)
+        behaviors = UnitBehaviors(combat)
+        fired_sub = bus.subscribe("projectile_fired")
+
+        turret = _make_turret((0.0, 0.0))
+        hostile = _make_hostile("h1", (5.0, 0.0))
+        targets = {"turret1": turret, "h1": hostile}
+        behaviors.tick(0.1, targets)
+
+        events = []
+        while not fired_sub.empty():
+            events.append(fired_sub.get_nowait())
+        hostile_events = [e for e in events if e["source_id"] == "h1"]
+        assert len(hostile_events) > 0
+        assert hostile_events[0]["projectile_type"] == "nerf_pistol"
+
+    def test_weapon_types_map_completeness(self):
+        """Verify _WEAPON_TYPES covers all combatant unit types."""
+        from engine.simulation.behaviors import _WEAPON_TYPES
+        expected_types = {
+            "turret", "heavy_turret", "missile_turret",
+            "drone", "scout_drone", "rover", "tank", "apc",
+            "person", "hostile_person", "hostile_leader", "hostile_vehicle",
+        }
+        for t in expected_types:
+            assert t in _WEAPON_TYPES, f"Missing weapon type for {t}"
+
+    def test_weapon_types_values_non_empty(self):
+        """All weapon type values should be non-empty strings."""
+        from engine.simulation.behaviors import _WEAPON_TYPES
+        for unit_type, weapon in _WEAPON_TYPES.items():
+            assert isinstance(weapon, str) and len(weapon) > 0, \
+                f"Weapon type for {unit_type} is invalid: {weapon!r}"

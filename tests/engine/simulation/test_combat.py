@@ -62,7 +62,7 @@ class TestTargetCombatFields:
         t.apply_combat_profile()
         assert t.health == 200.0
         assert t.max_health == 200.0
-        assert t.weapon_range == 20.0
+        assert t.weapon_range == 80.0
         assert t.weapon_cooldown == 1.5
         assert t.weapon_damage == 15.0
         assert t.is_combatant is True
@@ -74,7 +74,7 @@ class TestTargetCombatFields:
         )
         t.apply_combat_profile()
         assert t.health == 60.0
-        assert t.weapon_range == 12.0
+        assert t.weapon_range == 50.0
         assert t.weapon_cooldown == 1.0
         assert t.weapon_damage == 8.0
 
@@ -85,7 +85,7 @@ class TestTargetCombatFields:
         )
         t.apply_combat_profile()
         assert t.health == 150.0
-        assert t.weapon_range == 10.0
+        assert t.weapon_range == 60.0
         assert t.weapon_damage == 12.0
 
     def test_apply_combat_profile_hostile_person(self):
@@ -95,7 +95,7 @@ class TestTargetCombatFields:
         )
         t.apply_combat_profile()
         assert t.health == 80.0
-        assert t.weapon_range == 8.0
+        assert t.weapon_range == 40.0
         assert t.weapon_cooldown == 2.5
         assert t.weapon_damage == 10.0
         assert t.is_combatant is True
@@ -640,6 +640,272 @@ class TestCombatSystemClear:
         assert combat.projectile_count == 1
         combat.clear()
         assert combat.projectile_count == 0
+
+
+class TestSemiGuidedProjectiles:
+    """Tests for semi-guided projectile tracking (projectiles follow moving targets)."""
+
+    def test_projectile_tracks_moving_target(self):
+        """Projectile adjusts aim toward target's CURRENT position."""
+        bus = SimpleEventBus()
+        combat = CombatSystem(bus)
+
+        source = SimulationTarget(
+            target_id="t1", name="Turret", alliance="friendly",
+            asset_type="turret", position=(0.0, 0.0),
+            weapon_range=50.0, weapon_damage=15.0,
+            weapon_cooldown=1.0, last_fired=0.0,
+        )
+        target = SimulationTarget(
+            target_id="h1", name="Hostile", alliance="hostile",
+            asset_type="person", position=(40.0, 0.0), health=100.0,
+        )
+        proj = combat.fire(source, target)
+        assert proj is not None
+        original_target_pos = proj.target_pos
+
+        # Move target perpendicular
+        target.position = (40.0, 20.0)
+        targets = {"t1": source, "h1": target}
+
+        # Tick once — projectile should aim toward (40, 20) not (40, 0)
+        combat.tick(0.1, targets)
+        # If projectile is tracking, its y should be > 0 (moving toward new target position)
+        assert proj.position[1] > 0.0 or proj.hit, \
+            f"Projectile should track moving target, y={proj.position[1]}"
+
+    def test_projectile_falls_back_to_target_pos_for_eliminated(self):
+        """When target is eliminated, projectile falls back to original target_pos."""
+        bus = SimpleEventBus()
+        combat = CombatSystem(bus)
+
+        source = SimulationTarget(
+            target_id="t1", name="Turret", alliance="friendly",
+            asset_type="turret", position=(0.0, 0.0),
+            weapon_range=50.0, weapon_damage=15.0,
+            weapon_cooldown=1.0, last_fired=0.0,
+        )
+        target = SimulationTarget(
+            target_id="h1", name="Hostile", alliance="hostile",
+            asset_type="person", position=(40.0, 0.0), health=100.0,
+        )
+        proj = combat.fire(source, target)
+
+        # Eliminate target before projectile arrives
+        target.status = "eliminated"
+        target.position = (40.0, 30.0)  # target moved before dying
+        targets = {"t1": source, "h1": target}
+
+        # Tick — should aim at original target_pos since target is eliminated
+        combat.tick(0.1, targets)
+        # Projectile should move along x axis (toward original target_pos at 40,0)
+        assert proj.position[0] > 0.0, "Projectile should move toward original target_pos"
+
+    def test_projectile_falls_back_when_target_missing(self):
+        """When target no longer exists in targets dict, uses original target_pos."""
+        bus = SimpleEventBus()
+        combat = CombatSystem(bus)
+
+        source = SimulationTarget(
+            target_id="t1", name="Turret", alliance="friendly",
+            asset_type="turret", position=(0.0, 0.0),
+            weapon_range=50.0, weapon_damage=15.0,
+            weapon_cooldown=1.0, last_fired=0.0,
+        )
+        target = SimulationTarget(
+            target_id="h1", name="Hostile", alliance="hostile",
+            asset_type="person", position=(40.0, 0.0), health=100.0,
+        )
+        proj = combat.fire(source, target)
+
+        # Remove target from dict (despawned)
+        targets = {"t1": source}  # h1 missing
+        combat.tick(0.1, targets)
+
+        # Projectile should still move toward original target_pos
+        assert proj.position[0] > 0.0, "Projectile moves toward target_pos when target missing"
+
+    def test_guided_projectile_hits_dodging_target(self):
+        """Semi-guided projectile can hit a target that moved slightly."""
+        bus = SimpleEventBus()
+        combat = CombatSystem(bus)
+        hit_sub = bus.subscribe("projectile_hit")
+
+        source = SimulationTarget(
+            target_id="t1", name="Turret", alliance="friendly",
+            asset_type="turret", position=(0.0, 0.0),
+            weapon_range=50.0, weapon_damage=15.0,
+            weapon_cooldown=1.0, last_fired=0.0,
+        )
+        target = SimulationTarget(
+            target_id="h1", name="Hostile", alliance="hostile",
+            asset_type="person", position=(10.0, 0.0), health=100.0,
+        )
+        combat.fire(source, target)
+
+        # Move target slightly — guided projectile should still track
+        target.position = (10.0, 2.0)
+        targets = {"t1": source, "h1": target}
+
+        for _ in range(20):
+            combat.tick(0.1, targets)
+
+        # Should have hit despite target moving
+        assert not hit_sub.empty(), "Guided projectile should hit slightly-moved target"
+
+
+class TestProjectileSpeed:
+    """Tests for projectile speed (80.0 m/s in CombatSystem.fire)."""
+
+    def test_fire_creates_projectile_at_speed_80(self):
+        bus = SimpleEventBus()
+        combat = CombatSystem(bus)
+
+        source = SimulationTarget(
+            target_id="t1", name="Turret", alliance="friendly",
+            asset_type="turret", position=(0.0, 0.0),
+            weapon_range=50.0, weapon_damage=15.0,
+            weapon_cooldown=1.0, last_fired=0.0,
+        )
+        target = SimulationTarget(
+            target_id="h1", name="Hostile", alliance="hostile",
+            asset_type="person", position=(40.0, 0.0), health=100.0,
+        )
+        proj = combat.fire(source, target)
+        assert proj.speed == 80.0, f"Projectile speed should be 80.0, got {proj.speed}"
+
+
+class TestFireEventFields:
+    """Tests for new fields in projectile_fired event."""
+
+    def test_fire_event_includes_source_type(self):
+        bus = SimpleEventBus()
+        combat = CombatSystem(bus)
+        sub = bus.subscribe("projectile_fired")
+
+        source = SimulationTarget(
+            target_id="t1", name="Turret", alliance="friendly",
+            asset_type="turret", position=(0.0, 0.0),
+            weapon_range=20.0, weapon_damage=15.0,
+            weapon_cooldown=1.0, last_fired=0.0,
+        )
+        target = SimulationTarget(
+            target_id="h1", name="Hostile", alliance="hostile",
+            asset_type="person", position=(10.0, 0.0),
+        )
+        combat.fire(source, target)
+        event = sub.get(timeout=1.0)
+        assert event["source_type"] == "turret"
+
+    def test_fire_event_includes_target_id(self):
+        bus = SimpleEventBus()
+        combat = CombatSystem(bus)
+        sub = bus.subscribe("projectile_fired")
+
+        source = SimulationTarget(
+            target_id="t1", name="Turret", alliance="friendly",
+            asset_type="turret", position=(0.0, 0.0),
+            weapon_range=20.0, weapon_damage=15.0,
+            weapon_cooldown=1.0, last_fired=0.0,
+        )
+        target = SimulationTarget(
+            target_id="h1", name="Hostile", alliance="hostile",
+            asset_type="person", position=(10.0, 0.0),
+        )
+        combat.fire(source, target)
+        event = sub.get(timeout=1.0)
+        assert event["target_id"] == "h1"
+
+    def test_fire_event_includes_damage(self):
+        bus = SimpleEventBus()
+        combat = CombatSystem(bus)
+        sub = bus.subscribe("projectile_fired")
+
+        source = SimulationTarget(
+            target_id="t1", name="Turret", alliance="friendly",
+            asset_type="turret", position=(0.0, 0.0),
+            weapon_range=20.0, weapon_damage=25.0,
+            weapon_cooldown=1.0, last_fired=0.0,
+        )
+        target = SimulationTarget(
+            target_id="h1", name="Hostile", alliance="hostile",
+            asset_type="person", position=(10.0, 0.0),
+        )
+        combat.fire(source, target)
+        event = sub.get(timeout=1.0)
+        assert event["damage"] == 25.0
+
+    def test_fire_with_custom_projectile_type(self):
+        bus = SimpleEventBus()
+        combat = CombatSystem(bus)
+        sub = bus.subscribe("projectile_fired")
+
+        source = SimulationTarget(
+            target_id="t1", name="Tank", alliance="friendly",
+            asset_type="tank", position=(0.0, 0.0),
+            weapon_range=30.0, weapon_damage=40.0,
+            weapon_cooldown=1.0, last_fired=0.0,
+        )
+        target = SimulationTarget(
+            target_id="h1", name="Hostile", alliance="hostile",
+            asset_type="person", position=(10.0, 0.0),
+        )
+        combat.fire(source, target, projectile_type="nerf_tank_cannon")
+        event = sub.get(timeout=1.0)
+        assert event["projectile_type"] == "nerf_tank_cannon"
+
+    def test_elimination_method_uses_projectile_type(self):
+        """Elimination event should use the projectile_type as the method."""
+        bus = SimpleEventBus()
+        combat = CombatSystem(bus)
+        elim_sub = bus.subscribe("target_eliminated")
+
+        source = SimulationTarget(
+            target_id="t1", name="Tank", alliance="friendly",
+            asset_type="tank", position=(0.0, 0.0),
+            weapon_range=20.0, weapon_damage=200.0,
+            weapon_cooldown=1.0, last_fired=0.0,
+        )
+        target = SimulationTarget(
+            target_id="h1", name="Hostile", alliance="hostile",
+            asset_type="person", position=(1.0, 0.0), health=10.0,
+        )
+        combat.fire(source, target, projectile_type="nerf_tank_cannon")
+        combat.tick(0.1, {"t1": source, "h1": target})
+
+        event = elim_sub.get(timeout=1.0)
+        assert event["method"] == "nerf_tank_cannon"
+
+
+class TestHitRadiusAndMissOvershoot:
+    """Tests verifying HIT_RADIUS=5.0 and MISS_OVERSHOOT=8.0."""
+
+    def test_hit_radius_value(self):
+        assert HIT_RADIUS == 5.0
+
+    def test_miss_overshoot_value(self):
+        assert MISS_OVERSHOOT == 8.0
+
+    def test_hit_within_5_meters(self):
+        """Projectile at 4.9m from target should register as hit."""
+        bus = SimpleEventBus()
+        combat = CombatSystem(bus)
+        hit_sub = bus.subscribe("projectile_hit")
+
+        source = SimulationTarget(
+            target_id="t1", name="Turret", alliance="friendly",
+            asset_type="turret", position=(0.0, 0.0),
+            weapon_range=20.0, weapon_damage=15.0,
+            weapon_cooldown=1.0, last_fired=0.0,
+        )
+        target = SimulationTarget(
+            target_id="h1", name="Hostile", alliance="hostile",
+            asset_type="person", position=(4.9, 0.0), health=100.0,
+        )
+        combat.fire(source, target)
+        combat.tick(0.1, {"t1": source, "h1": target})
+
+        assert not hit_sub.empty(), "Projectile should hit target within HIT_RADIUS"
 
 
 class TestCombatSystemStreakName:

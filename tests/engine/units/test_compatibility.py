@@ -37,20 +37,20 @@ class TestExpectedCombatProfiles:
     """Verify combat profiles match the old _COMBAT_PROFILES dict."""
 
     _EXPECTED = {
-        "turret":           (200, 200, 20.0, 1.5, 15, True),
-        "drone":            (60,  60,  12.0, 1.0,  8, True),
-        "rover":            (150, 150, 10.0, 2.0, 12, True),
-        "person_hostile":   (80,  80,   8.0, 2.5, 10, True),
-        "person_neutral":   (50,  50,   0.0, 0.0,  0, False),
-        "vehicle":          (300, 300,  0.0, 0.0,  0, False),
-        "animal":           (30,  30,   0.0, 0.0,  0, False),
-        "tank":             (400, 400, 25.0, 3.0, 30, True),
-        "apc":              (300, 300, 15.0, 1.0,  8, True),
-        "heavy_turret":     (350, 350, 30.0, 2.5, 25, True),
-        "missile_turret":   (200, 200, 35.0, 5.0, 50, True),
-        "scout_drone":      (40,  40,   8.0, 1.5,  5, True),
-        "hostile_vehicle":  (200, 200, 12.0, 2.0, 15, True),
-        "hostile_leader":   (150, 150, 10.0, 2.0, 12, True),
+        "turret":           (200, 200,  80.0, 1.5, 15, True),
+        "drone":            (60,  60,   50.0, 1.0,  8, True),
+        "rover":            (150, 150,  60.0, 2.0, 12, True),
+        "person_hostile":   (80,  80,   40.0, 2.5, 10, True),
+        "person_neutral":   (50,  50,    0.0, 0.0,  0, False),
+        "vehicle":          (300, 300,   0.0, 0.0,  0, False),
+        "animal":           (30,  30,    0.0, 0.0,  0, False),
+        "tank":             (400, 400, 100.0, 3.0, 30, True),
+        "apc":              (300, 300,  60.0, 1.0,  8, True),
+        "heavy_turret":     (350, 350, 120.0, 2.5, 25, True),
+        "missile_turret":   (200, 200, 150.0, 5.0, 50, True),
+        "scout_drone":      (40,  40,   40.0, 1.5,  5, True),
+        "hostile_vehicle":  (200, 200,  70.0, 2.0, 15, True),
+        "hostile_leader":   (150, 150,  50.0, 2.0, 12, True),
     }
 
     def test_all_combat_profiles_present(self):

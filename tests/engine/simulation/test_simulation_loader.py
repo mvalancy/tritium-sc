@@ -267,6 +267,59 @@ class TestLoadZones:
         assert zone_names == {"Play Area", "No-Go Zone"}
 
 
+class TestLoadedTargetsHaveCombatProfile:
+    """Loader must call apply_combat_profile() on all loaded targets."""
+
+    def test_turret_has_combat_profile(self, tmp_path):
+        bus = SimpleEventBus()
+        engine = SimulationEngine(bus)
+        path = _write_layout(tmp_path, [
+            {"type": "turret", "position": {"x": 0.0, "y": 0.0, "z": 0.0},
+             "properties": {"name": "Sentry"}},
+        ])
+        load_layout(path, engine)
+        t = engine.get_targets()[0]
+        # Turret profile from target.py: weapon_range=80, weapon_cooldown=1.5
+        assert t.weapon_range > 0, "Turret should have weapon_range from combat profile"
+        assert t.is_combatant is True
+
+    def test_rover_has_combat_profile(self, tmp_path):
+        bus = SimpleEventBus()
+        engine = SimulationEngine(bus)
+        path = _write_layout(tmp_path, [
+            {"type": "rover", "position": {"x": 0.0, "y": 0.0, "z": 0.0},
+             "properties": {"name": "Scout"}},
+        ])
+        load_layout(path, engine)
+        t = engine.get_targets()[0]
+        assert t.weapon_range > 0, "Rover should have weapon_range from combat profile"
+        assert t.is_combatant is True
+
+    def test_drone_has_combat_profile(self, tmp_path):
+        bus = SimpleEventBus()
+        engine = SimulationEngine(bus)
+        path = _write_layout(tmp_path, [
+            {"type": "drone", "position": {"x": 0.0, "y": 0.0, "z": 0.0},
+             "properties": {"name": "Recon"}},
+        ])
+        load_layout(path, engine)
+        t = engine.get_targets()[0]
+        assert t.weapon_range > 0, "Drone should have weapon_range from combat profile"
+        assert t.is_combatant is True
+
+    def test_hostile_has_combat_profile(self, tmp_path):
+        bus = SimpleEventBus()
+        engine = SimulationEngine(bus)
+        path = _write_layout(tmp_path, [
+            {"type": "person", "position": {"x": 10.0, "y": 0.0, "z": 0.0},
+             "properties": {"name": "Intruder"}},
+        ])
+        load_layout(path, engine)
+        t = engine.get_targets()[0]
+        assert t.is_combatant is True
+        assert t.weapon_range > 0, "Hostile should have weapon_range from combat profile"
+
+
 class TestSampleLayout:
     """Validate the sample neighborhood layout shipped with the project."""
 

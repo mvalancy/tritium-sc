@@ -46,13 +46,13 @@ class TestEventBus:
         """Publishing to a full queue silently drops the message."""
         bus = EventBus()
         q = bus.subscribe()
-        # Fill the queue (maxsize=100)
-        for i in range(100):
+        # Fill the queue (maxsize=1000)
+        for i in range(1000):
             bus.publish("fill", {"i": i})
         assert q.full()
         # This should not raise
         bus.publish("overflow", {"extra": True})
-        assert q.qsize() == 100
+        assert q.qsize() == 1000
 
     def test_unsubscribe_stops_delivery(self):
         """After unsubscribe, the queue no longer receives messages."""

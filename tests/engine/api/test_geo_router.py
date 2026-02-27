@@ -253,3 +253,98 @@ class TestBuildingsEndpoint:
         client = TestClient(_make_app())
         resp = client.get("/api/geo/buildings")
         assert resp.status_code == 422  # Missing lat/lng
+
+
+# ---------------------------------------------------------------------------
+# Terrain Tile Endpoint
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+class TestTerrainTileEndpoint:
+    """GET /api/geo/terrain-tile/{z}/{x}/{y}.png — terrain DEM tile proxy."""
+
+    def test_invalid_zoom_low(self):
+        client = TestClient(_make_app())
+        resp = client.get("/api/geo/terrain-tile/-1/0/0.png")
+        assert resp.status_code == 400
+        assert "zoom" in resp.json()["detail"].lower()
+
+    def test_invalid_zoom_high(self):
+        client = TestClient(_make_app())
+        resp = client.get("/api/geo/terrain-tile/16/0/0.png")
+        assert resp.status_code == 400
+
+    def test_cached_terrain_tile_served(self):
+        """If terrain tile is in disk cache, serve it directly."""
+        with tempfile.TemporaryDirectory() as td:
+            terrain_cache = Path(td) / "tiles" / "terrain"
+            tile_path = terrain_cache / "10" / "163" / "395.png"
+            tile_path.parent.mkdir(parents=True)
+            # Write a fake PNG header
+            tile_path.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 50)
+            with patch("app.routers.geo._TERRAIN_CACHE", terrain_cache):
+                client = TestClient(_make_app())
+                resp = client.get("/api/geo/terrain-tile/10/163/395.png")
+                assert resp.status_code == 200
+                assert resp.headers["content-type"] == "image/png"
+                assert "max-age" in resp.headers.get("cache-control", "")
+
+    def test_terrain_tile_fetch_failure(self):
+        """When S3 is down, return 502."""
+        import httpx
+        with tempfile.TemporaryDirectory() as td:
+            terrain_cache = Path(td) / "tiles" / "terrain"
+            terrain_cache.mkdir(parents=True)
+            mock_req = httpx.Request("GET", "https://example.com")
+            mock_response = httpx.Response(503, request=mock_req)
+
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(side_effect=httpx.HTTPStatusError(
+                "503", request=mock_req, response=mock_response,
+            ))
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            with patch("app.routers.geo._TERRAIN_CACHE", terrain_cache), \
+                 patch("app.routers.geo.httpx.AsyncClient", return_value=mock_client):
+                client = TestClient(_make_app())
+                resp = client.get("/api/geo/terrain-tile/10/163/395.png")
+                assert resp.status_code == 502
+
+
+# ---------------------------------------------------------------------------
+# Microsoft Buildings Endpoint
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+class TestMsftBuildingsEndpoint:
+    """GET /api/geo/msft-buildings — Microsoft Building Footprints."""
+
+    def test_missing_params(self):
+        client = TestClient(_make_app())
+        resp = client.get("/api/geo/msft-buildings")
+        assert resp.status_code == 422  # Missing lat/lng
+
+    def test_radius_too_small(self):
+        client = TestClient(_make_app())
+        resp = client.get("/api/geo/msft-buildings?lat=37.77&lng=-122.42&radius=10")
+        assert resp.status_code == 422  # Below ge=50
+
+    def test_radius_too_large(self):
+        client = TestClient(_make_app())
+        resp = client.get("/api/geo/msft-buildings?lat=37.77&lng=-122.42&radius=2000")
+        assert resp.status_code == 422  # Above le=1000
+
+    def test_no_mapbox_vector_tile_returns_501(self):
+        """Without mapbox_vector_tile package, should return 501."""
+        import builtins
+        real_import = builtins.__import__
+
+        def mock_import(name, *args, **kwargs):
+            if name == "mapbox_vector_tile":
+                raise ImportError("No module named 'mapbox_vector_tile'")
+            return real_import(name, *args, **kwargs)
+
+        with patch("builtins.__import__", side_effect=mock_import):
+            client = TestClient(_make_app())
+            resp = client.get("/api/geo/msft-buildings?lat=37.77&lng=-122.42&radius=100")
+            assert resp.status_code == 501
