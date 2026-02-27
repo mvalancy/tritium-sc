@@ -209,7 +209,49 @@ export const UnitsPanelDef = {
                     <span class="panel-stat-label">POSITION</span>
                     <span class="panel-stat-value">(${(pos.x || 0).toFixed(1)}, ${(pos.y || 0).toFixed(1)})</span>
                 </div>
+                ${u.squadId ? `
+                <div class="panel-stat-row">
+                    <span class="panel-stat-label">SQUAD</span>
+                    <span class="panel-stat-value">${_esc(u.squadId)}</span>
+                </div>` : ''}
+                ${alliance === 'friendly' ? `
+                <div style="margin-top:8px;padding-top:6px;border-top:1px solid var(--border)">
+                    <div class="panel-section-label">SEND COMMAND</div>
+                    <div style="display:flex;gap:4px;margin-top:4px">
+                        <input class="panel-cmd-input" type="text" placeholder="Lua command..."
+                            style="flex:1;font-family:var(--font-mono);font-size:0.55rem;color:var(--text-primary);background:var(--surface-3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px 6px;outline:none">
+                        <button class="panel-action-btn panel-action-btn-primary panel-cmd-send"
+                            style="flex-shrink:0">SEND</button>
+                    </div>
+                    <div class="panel-cmd-status" style="font-size:0.45rem;color:var(--text-ghost);margin-top:2px;min-height:12px"></div>
+                </div>` : ''}
             `;
+
+            // Wire command send button
+            const cmdInput = detailEl.querySelector('.panel-cmd-input');
+            const cmdSend = detailEl.querySelector('.panel-cmd-send');
+            const cmdStatus = detailEl.querySelector('.panel-cmd-status');
+            if (cmdInput && cmdSend) {
+                const sendCmd = () => {
+                    const cmd = cmdInput.value.trim();
+                    if (!cmd) return;
+                    if (cmdStatus) cmdStatus.textContent = 'Sending...';
+                    fetch('/api/amy/command', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ action: cmd, target_id: selectedId }),
+                    }).then(r => {
+                        if (cmdStatus) cmdStatus.textContent = r.ok ? 'Sent' : 'Failed';
+                        if (r.ok) cmdInput.value = '';
+                    }).catch(() => {
+                        if (cmdStatus) cmdStatus.textContent = 'Error';
+                    });
+                };
+                cmdSend.addEventListener('click', sendCmd);
+                cmdInput.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') sendCmd();
+                });
+            }
         }
 
         // Subscribe

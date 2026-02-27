@@ -997,3 +997,145 @@
     min-width: 0;
     font-size: 0.6rem;
 }
+
+
+/* ========================================
+   Map Context Menu
+   ======================================== */
+
+.map-context-menu {
+    background: linear-gradient(135deg, rgba(10, 10, 14, 0.95) 0%, rgba(6, 6, 9, 0.98) 100%);
+    border: 1px solid rgba(0, 240, 255, 0.2);
+    border-radius: var(--radius-sm);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6), 0 0 8px rgba(0, 240, 255, 0.05);
+    min-width: 160px;
+    padding: 4px 0;
+    pointer-events: auto;
+    z-index: 9999;
+}
+
+.map-ctx-item {
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    letter-spacing: 0.06em;
+    color: var(--text-dim);
+    padding: 6px 12px;
+    cursor: pointer;
+    transition: color 0.12s ease, background 0.12s ease;
+    white-space: nowrap;
+}
+
+.map-ctx-item:hover {
+    color: var(--cyan);
+    background: rgba(0, 240, 255, 0.06);
+}
+
+.map-ctx-item:active {
+    background: rgba(0, 240, 255, 0.1);
+}
+
+
+/* ========================================
+   Unit Command Modal
+   ======================================== */
+
+.unit-command-modal {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: linear-gradient(135deg, var(--surface-2) 0%, var(--surface-1) 100%);
+    border: 1px solid rgba(0, 240, 255, 0.2);
+    border-radius: var(--radius-md);
+    box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5), 0 0 12px rgba(0, 240, 255, 0.08);
+    padding: 16px;
+    min-width: 320px;
+    max-width: 440px;
+    z-index: 10000;
+    pointer-events: auto;
+}
+
+.unit-command-modal .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+}
+
+.unit-command-modal .modal-title {
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-primary);
+}
+
+.unit-command-modal .modal-close {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    color: var(--text-ghost);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 2px 6px;
+}
+
+.unit-command-modal .modal-close:hover {
+    color: var(--magenta);
+}
+
+.unit-command-modal .modal-stat-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px 12px;
+    margin-bottom: 12px;
+}
+
+.unit-command-modal .cmd-input-row {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.unit-command-modal .cmd-input {
+    flex: 1;
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    color: var(--text-primary);
+    background: var(--surface-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 6px 8px;
+    outline: none;
+}
+
+.unit-command-modal .cmd-input:focus {
+    border-color: rgba(0, 240, 255, 0.3);
+}
+
+.unit-command-modal .cmd-send {
+    font-family: var(--font-mono);
+    font-size: 0.55rem;
+    letter-spacing: 0.06em;
+    color: var(--cyan);
+    background: rgba(0, 240, 255, 0.06);
+    border: 1px solid rgba(0, 240, 255, 0.2);
+    border-radius: var(--radius-sm);
+    padding: 6px 12px;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.unit-command-modal .cmd-send:hover {
+    background: rgba(0, 240, 255, 0.12);
+}
+
+.unit-command-modal .cmd-status {
+    font-family: var(--font-mono);
+    font-size: 0.5rem;
+    color: var(--text-ghost);
+    margin-top: 4px;
+    min-height: 14px;
+}
