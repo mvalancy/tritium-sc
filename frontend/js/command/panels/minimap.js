@@ -249,21 +249,34 @@ export function drawMinimapContent(opts) {
     }
 
     // Camera viewport rectangle
-    const cam = opts?.cam;
-    const mainCanvas = opts?.canvas;
-    const dpr = opts?.dpr || 1;
-    if (cam && mainCanvas && mainCanvas.width > 0) {
-        const cssW = mainCanvas.width / dpr;
-        const cssH = mainCanvas.height / dpr;
-        const halfW = (cssW / 2) / cam.zoom;
-        const halfH = (cssH / 2) / cam.zoom;
-        const vpTL = wToMM(cam.x - halfW, cam.y + halfH);
-        const vpBR = wToMM(cam.x + halfW, cam.y - halfH);
+    // Option A: viewportBounds in game coords (from MapLibre map.getBounds())
+    const vpBounds = opts?.viewportBounds;
+    if (vpBounds) {
+        const vpTL = wToMM(vpBounds.minX, vpBounds.maxY);
+        const vpBR = wToMM(vpBounds.maxX, vpBounds.minY);
         const vpW = vpBR.x - vpTL.x;
         const vpH = vpBR.y - vpTL.y;
-
         ctx.strokeStyle = 'rgba(0, 240, 255, 0.6)';
         ctx.lineWidth = 1.5;
         ctx.strokeRect(vpTL.x, vpTL.y, vpW, vpH);
+    }
+    // Option B: legacy Canvas 2D cam + canvas
+    else {
+        const cam = opts?.cam;
+        const mainCanvas = opts?.canvas;
+        const dpr = opts?.dpr || 1;
+        if (cam && mainCanvas && mainCanvas.width > 0) {
+            const cssW = mainCanvas.width / dpr;
+            const cssH = mainCanvas.height / dpr;
+            const halfW = (cssW / 2) / cam.zoom;
+            const halfH = (cssH / 2) / cam.zoom;
+            const vpTL = wToMM(cam.x - halfW, cam.y + halfH);
+            const vpBR = wToMM(cam.x + halfW, cam.y - halfH);
+            const vpW = vpBR.x - vpTL.x;
+            const vpH = vpBR.y - vpTL.y;
+            ctx.strokeStyle = 'rgba(0, 240, 255, 0.6)';
+            ctx.lineWidth = 1.5;
+            ctx.strokeRect(vpTL.x, vpTL.y, vpW, vpH);
+        }
     }
 }

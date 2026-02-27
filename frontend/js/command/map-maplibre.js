@@ -18,6 +18,7 @@
 
 import { TritiumStore } from './store.js';
 import { EventBus } from './events.js';
+import { drawMinimapContent } from './panels/minimap.js';
 
 // ============================================================
 // Constants
@@ -257,6 +258,7 @@ function _createMap(mapDiv) {
         TritiumStore.on('map.selectedUnitId', _onSelectionChanged);
         EventBus.on('units:updated', _onUnitsUpdated);
         EventBus.on('unit:dispatched', _onDispatched);
+        EventBus.on('minimap:pan', _onMinimapPan);
 
         // Listen for map mode changes
         EventBus.on('map:mode', (data) => {
@@ -594,12 +596,63 @@ function _gameToLngLat(gx, gy) {
     return [_state.geoCenter.lng + dLng, _state.geoCenter.lat + dLat];
 }
 
+/**
+ * Convert lng/lat back to game coordinates (meters from geo reference).
+ */
+function _lngLatToGame(lng, lat) {
+    if (!_state.geoCenter) return { x: 0, y: 0 };
+    const R = 6378137;
+    const latRad = _state.geoCenter.lat * Math.PI / 180;
+    const gx = (lng - _state.geoCenter.lng) * (Math.PI / 180) * R * Math.cos(latRad);
+    const gy = (lat - _state.geoCenter.lat) * (Math.PI / 180) * R;
+    return { x: gx, y: gy };
+}
+
+// ============================================================
+// Minimap Integration
+// ============================================================
+
+/**
+ * Draw minimap panel content — called from the 10Hz unit update loop.
+ * Computes MapLibre viewport bounds in game coordinates and passes to
+ * drawMinimapContent() which renders zones, units, and camera rectangle.
+ */
+function _drawMinimap() {
+    if (!_state.map || !_state.initialized) return;
+
+    // Compute MapLibre viewport bounds in game coordinates
+    const bounds = _state.map.getBounds();
+    const sw = _lngLatToGame(bounds.getWest(), bounds.getSouth());
+    const ne = _lngLatToGame(bounds.getEast(), bounds.getNorth());
+
+    drawMinimapContent({
+        viewportBounds: {
+            minX: sw.x,
+            maxX: ne.x,
+            minY: sw.y,
+            maxY: ne.y,
+        },
+    });
+}
+
+/**
+ * Handle minimap click-to-pan: receive game coordinates, pan MapLibre map.
+ */
+function _onMinimapPan(data) {
+    if (!_state.map || !data) return;
+    const lngLat = _gameToLngLat(data.x, data.y);
+    _state.map.panTo(lngLat, { duration: 300 });
+}
+
 // ============================================================
 // Unit Rendering (MapLibre markers with DOM elements)
 // ============================================================
 
 function _startUnitLoop() {
-    setInterval(_updateUnits, 100); // 10 Hz update
+    setInterval(() => {
+        _updateUnits();
+        _drawMinimap();
+    }, 100); // 10 Hz update
 }
 
 function _updateUnits() {
@@ -1583,6 +1636,7 @@ function _pointMinZoom(layerId) {
         case 'street-lights': return 17;  // 5000+ points, only show close-up
         case 'trees': return 16;          // 1000+ points
         case 'traffic-signals': return 14;
+        case 'water-towers': return 12;   // sparse, show early
         case 'schools': return 12;
         case 'fire-stations': return 12;
         default: return 14;
@@ -1592,6 +1646,7 @@ function _pointMinZoom(layerId) {
 function _pointRadius(layerId) {
     switch (layerId) {
         case 'traffic-signals': return 4;
+        case 'water-towers': return 5;
         case 'street-lights': return 2;
         case 'trees': return 2;
         case 'schools': return 6;
@@ -1602,6 +1657,9 @@ function _pointRadius(layerId) {
 
 function _lineWidth(layerId) {
     switch (layerId) {
+        case 'power-lines': return 2;
+        case 'telecom-lines': return 1.2;
+        case 'waterways': return 1.5;
         case 'streams': return 1;
         case 'water': return 1.2;
         default: return 1.5;
@@ -1610,6 +1668,9 @@ function _lineWidth(layerId) {
 
 function _lineOpacity(layerId) {
     switch (layerId) {
+        case 'power-lines': return 0.6;
+        case 'telecom-lines': return 0.4;
+        case 'waterways': return 0.5;
         case 'streams': return 0.25;
         case 'water': return 0.25;
         default: return 0.7;
