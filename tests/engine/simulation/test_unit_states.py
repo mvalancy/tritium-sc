@@ -1342,26 +1342,35 @@ class TestCreateFSMForType:
         assert sm is not None
         assert sm.current_state == "spawning"
 
-    # --- No FSM types ---
-    def test_person_neutral_returns_none(self):
-        assert create_fsm_for_type("person", alliance="neutral") is None
+    # --- NPC types now get FSMs from npc_intelligence plugin ---
+    def test_person_neutral_gets_npc_fsm(self):
+        sm = create_fsm_for_type("person", alliance="neutral")
+        assert sm is not None
+        assert sm.current_state == "walking"
 
-    def test_person_friendly_returns_none(self):
-        assert create_fsm_for_type("person", alliance="friendly") is None
+    def test_person_friendly_gets_npc_fsm(self):
+        sm = create_fsm_for_type("person", alliance="friendly")
+        assert sm is not None
+        assert sm.current_state == "walking"
 
-    def test_person_default_alliance_is_not_hostile(self):
-        """Default alliance for 'person' is friendly — should return None."""
+    def test_person_default_alliance_gets_npc_fsm(self):
+        """Default alliance for 'person' is friendly — gets pedestrian FSM."""
         sm = create_fsm_for_type("person")
-        assert sm is None
+        assert sm is not None
+        assert sm.current_state == "walking"
 
     def test_unknown_type_returns_none(self):
         assert create_fsm_for_type("unicorn") is None
 
-    def test_animal_returns_none(self):
-        assert create_fsm_for_type("animal") is None
+    def test_animal_gets_npc_fsm(self):
+        sm = create_fsm_for_type("animal")
+        assert sm is not None
+        assert sm.current_state == "wandering"
 
-    def test_vehicle_returns_none(self):
-        assert create_fsm_for_type("vehicle") is None
+    def test_vehicle_gets_npc_fsm(self):
+        sm = create_fsm_for_type("vehicle")
+        assert sm is not None
+        assert sm.current_state == "driving"
 
     def test_empty_string_returns_none(self):
         assert create_fsm_for_type("") is None

@@ -92,13 +92,15 @@ class TestRobotFSMBridgeCreation:
         assert bridge.get_fsm("unknown-bot") is None
         assert bridge.get_fsm_state("unknown-bot") is None
 
-    def test_unsupported_type_returns_no_fsm(self):
-        """Types without FSM (e.g. person/neutral) register but have no FSM."""
+    def test_neutral_person_gets_npc_fsm(self):
+        """Neutral persons now get NPC intelligence FSMs."""
         from engine.comms.robot_fsm_bridge import RobotFSMBridge
         bus = EventBus()
         bridge = RobotFSMBridge(bus)
         bridge.register_robot("civilian-01", asset_type="person", alliance="neutral")
-        assert bridge.get_fsm("civilian-01") is None
+        fsm = bridge.get_fsm("civilian-01")
+        assert fsm is not None
+        assert fsm.current_state == "walking"
 
     def test_list_robots(self):
         """Bridge tracks all registered robot IDs."""

@@ -288,17 +288,20 @@ class TestCreateFSMForType:
         assert fsm is not None
         assert "approaching" in fsm.state_names
 
-    def test_neutral_person_no_fsm(self):
+    def test_neutral_person_gets_npc_fsm(self):
         fsm = create_fsm_for_type("person", "neutral")
-        assert fsm is None
+        assert fsm is not None
+        assert fsm.current_state == "walking"
 
-    def test_vehicle_no_fsm(self):
+    def test_vehicle_gets_npc_fsm(self):
         fsm = create_fsm_for_type("vehicle", "neutral")
-        assert fsm is None
+        assert fsm is not None
+        assert fsm.current_state == "driving"
 
-    def test_animal_no_fsm(self):
+    def test_animal_gets_npc_fsm(self):
         fsm = create_fsm_for_type("animal", "neutral")
-        assert fsm is None
+        assert fsm is not None
+        assert fsm.current_state == "wandering"
 
 
 # -- Test: FSM + Engine integration --

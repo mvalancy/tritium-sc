@@ -206,19 +206,21 @@ class TestFSMCreation:
         engine.add_target(t)
         assert "hostile-1" in engine._fsms
 
-    def test_neutral_person_no_fsm(self):
+    def test_neutral_person_gets_npc_fsm(self):
         engine = _make_engine()
         t = _make_target("civ-1", "neutral", "person", speed=1.0)
         t.is_combatant = False
         engine.add_target(t)
-        assert "civ-1" not in engine._fsms
+        assert "civ-1" in engine._fsms
+        assert engine._fsms["civ-1"].current_state == "walking"
 
-    def test_vehicle_no_fsm(self):
+    def test_vehicle_gets_npc_fsm(self):
         engine = _make_engine()
         t = _make_target("car-1", "neutral", "vehicle", speed=5.0)
         t.is_combatant = False
         engine.add_target(t)
-        assert "car-1" not in engine._fsms
+        assert "car-1" in engine._fsms
+        assert engine._fsms["car-1"].current_state == "driving"
 
     def test_fsm_removed_on_remove_target(self):
         engine = _make_engine()

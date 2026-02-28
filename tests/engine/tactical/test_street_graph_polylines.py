@@ -453,10 +453,10 @@ class TestRoundTrip:
         assert len(output) == 1
 
     def test_roundtrip_with_custom_height(self) -> None:
-        input_data = [{"polygon": [(0, 0), (5, 0), (5, 5)]}]
+        input_data = [{"polygon": [(0, 0), (5, 0), (5, 5)], "height": 20.0}]
         obs = BuildingObstacles()
         obs.load_from_overture(input_data)
-        output = obs.to_dicts(default_height=20.0)
+        output = obs.to_dicts()
         assert output[0]["height"] == 20.0
 
     def test_double_load_replaces(self) -> None:
