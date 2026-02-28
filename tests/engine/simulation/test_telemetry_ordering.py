@@ -84,12 +84,12 @@ class TestTelemetryBatchOrdering:
         # Patch combat.tick to apply known damage
         original_combat_tick = engine.combat.tick
 
-        def damaging_combat_tick(dt, targets_dict):
+        def damaging_combat_tick(dt, targets_dict, **kwargs):
             # Apply 30 damage to our hostile
             t = targets_dict.get("h-order-1")
             if t and t.health > 50:
                 t.apply_damage(30.0)
-            original_combat_tick(dt, targets_dict)
+            original_combat_tick(dt, targets_dict, **kwargs)
 
         with patch.object(engine.combat, 'tick', side_effect=damaging_combat_tick):
             engine._do_tick(0.1)
@@ -137,11 +137,11 @@ class TestTelemetryBatchOrdering:
 
         original_combat_tick = engine.combat.tick
 
-        def eliminating_combat_tick(dt, targets_dict):
+        def eliminating_combat_tick(dt, targets_dict, **kwargs):
             t = targets_dict.get("h-elim-1")
             if t and t.status not in ("eliminated", "destroyed"):
                 t.apply_damage(100.0)  # Overkill
-            original_combat_tick(dt, targets_dict)
+            original_combat_tick(dt, targets_dict, **kwargs)
 
         with patch.object(engine.combat, 'tick', side_effect=eliminating_combat_tick):
             engine._do_tick(0.1)

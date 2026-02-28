@@ -655,3 +655,158 @@ class TestNonWaveHostileScoring:
         assert gm.total_eliminations == 1
         assert gm.score == 100
         assert gm.wave_eliminations == 1  # IS a wave hostile
+
+
+# --------------------------------------------------------------------------
+# Mixed-type wave composition
+# --------------------------------------------------------------------------
+
+class TestMixedWaveComposition:
+    """Test that waves with composition field spawn diverse unit types."""
+
+    def test_early_waves_have_no_composition(self):
+        """Waves 1-2 should have no composition (all person)."""
+        assert WAVE_CONFIGS[0].composition is None
+        assert WAVE_CONFIGS[1].composition is None
+
+    def test_later_waves_have_composition(self):
+        """Waves 3+ should have mixed-type compositions."""
+        for i in range(2, len(WAVE_CONFIGS)):
+            config = WAVE_CONFIGS[i]
+            assert config.composition is not None, (
+                f"Wave {i+1} ({config.name}) should have composition"
+            )
+
+    def test_composition_counts_sum_to_total(self):
+        """Composition type counts should sum to config.count."""
+        for i, config in enumerate(WAVE_CONFIGS):
+            if config.composition is not None:
+                comp_total = sum(c for _, c in config.composition)
+                assert comp_total == config.count, (
+                    f"Wave {i+1} ({config.name}): composition sum {comp_total} "
+                    f"!= count {config.count}"
+                )
+
+    def test_composition_has_valid_types(self):
+        """All asset types in compositions should be valid hostile types."""
+        valid_types = {
+            "person", "hostile_vehicle", "hostile_leader",
+            "swarm_drone", "hostile_person",
+        }
+        for i, config in enumerate(WAVE_CONFIGS):
+            if config.composition is not None:
+                for asset_type, count in config.composition:
+                    assert asset_type in valid_types, (
+                        f"Wave {i+1}: invalid type '{asset_type}'"
+                    )
+                    assert count > 0, f"Wave {i+1}: count must be > 0"
+
+    def test_final_wave_has_most_types(self):
+        """FINAL STAND should have the most unit type variety."""
+        final = WAVE_CONFIGS[-1]
+        assert final.composition is not None
+        types_in_final = {t for t, _ in final.composition}
+        assert len(types_in_final) >= 3, "Final wave should have 3+ unit types"
+
+    def test_spawn_mixed_wave_creates_typed_hostiles(self):
+        """_spawn_mixed_wave() should create units of each specified type."""
+        bus = SimpleEventBus()
+        engine = SimulationEngine(bus, map_bounds=200)
+        combat = CombatSystem(bus)
+        gm = GameMode(bus, engine, combat)
+
+        config = WaveConfig(
+            name="Test Mixed",
+            count=5,
+            speed_mult=1.0,
+            health_mult=1.0,
+            composition=[("person", 3), ("hostile_vehicle", 2)],
+        )
+
+        gm.state = "active"
+        gm._spawn_mixed_wave(config)
+
+        targets = engine.get_targets()
+        types = [t.asset_type for t in targets if t.alliance == "hostile"]
+        assert types.count("person") == 3
+        assert types.count("hostile_vehicle") == 2
+        assert len(gm._wave_hostile_ids) == 5
+
+    def test_spawn_mixed_wave_applies_speed_mult(self):
+        """Speed multiplier should be applied to mixed wave units."""
+        bus = SimpleEventBus()
+        engine = SimulationEngine(bus, map_bounds=200)
+        combat = CombatSystem(bus)
+        gm = GameMode(bus, engine, combat)
+
+        config = WaveConfig(
+            name="Fast Mix",
+            count=2,
+            speed_mult=1.5,
+            health_mult=1.0,
+            composition=[("person", 1), ("hostile_vehicle", 1)],
+        )
+
+        gm.state = "active"
+        gm._spawn_mixed_wave(config)
+
+        targets = engine.get_targets()
+        for t in targets:
+            if t.alliance == "hostile":
+                # Base speed should be multiplied by 1.5
+                assert t.speed > 1.0, f"{t.asset_type} speed should be > 1.0"
+
+    def test_spawn_mixed_wave_applies_health_mult(self):
+        """Health multiplier should be applied to mixed wave units."""
+        bus = SimpleEventBus()
+        engine = SimulationEngine(bus, map_bounds=200)
+        combat = CombatSystem(bus)
+        gm = GameMode(bus, engine, combat)
+
+        config = WaveConfig(
+            name="Tough Mix",
+            count=2,
+            speed_mult=1.0,
+            health_mult=2.0,
+            composition=[("person", 1), ("hostile_vehicle", 1)],
+        )
+
+        gm.state = "active"
+        gm._spawn_mixed_wave(config)
+
+        for t in engine.get_targets():
+            if t.alliance == "hostile":
+                # Health should be 2x base
+                assert t.health > 80.0 or t.asset_type != "person", (
+                    f"{t.asset_type} health {t.health} should reflect 2x mult"
+                )
+
+    def test_no_composition_falls_back_to_person(self):
+        """Waves without composition should spawn all person type."""
+        bus = SimpleEventBus()
+        engine = SimulationEngine(bus, map_bounds=200)
+        combat = CombatSystem(bus)
+        gm = GameMode(bus, engine, combat)
+
+        config = WaveConfig(
+            name="All Person",
+            count=3,
+            speed_mult=1.0,
+            health_mult=1.0,
+            composition=None,
+        )
+
+        gm.state = "active"
+        gm._spawn_wave_hostiles(config)
+        time.sleep(1.5)  # wait for staggered spawning
+
+        targets = engine.get_targets()
+        hostiles = [t for t in targets if t.alliance == "hostile"]
+        assert len(hostiles) == 3
+        for h in hostiles:
+            assert h.asset_type == "person"
+
+    def test_wave_config_composition_field_default_none(self):
+        """WaveConfig.composition should default to None."""
+        config = WaveConfig("Test", count=5, speed_mult=1.0, health_mult=1.0)
+        assert config.composition is None

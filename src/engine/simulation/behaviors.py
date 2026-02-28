@@ -33,6 +33,8 @@ if TYPE_CHECKING:
     from .combat import CombatSystem
     from .target import SimulationTarget
 
+from .degradation import can_fire_degraded
+
 # Drone strafe parameters
 _DRONE_RETREAT_RANGE = 15.0  # pull back to this distance after firing
 
@@ -78,6 +80,8 @@ class UnitBehaviors:
         self._base_speeds: dict[str, float] = {}   # original speeds before rush boost
         self._obstacles = None                      # obstacle geometry for cover-seeking
         self._spatial_grid = None                   # SpatialGrid for O(1) neighbor queries
+        self._terrain_map = None                    # TerrainMap for LOS checks when firing
+        self._comms = None                             # UnitComms for inter-unit signals
 
         # Sensor awareness tracking
         self._detected_base_speeds: dict[str, float] = {}  # speeds before detection boost
@@ -100,7 +104,20 @@ class UnitBehaviors:
         """
         self._spatial_grid = grid
 
-    def tick(self, dt: float, targets: dict[str, SimulationTarget]) -> None:
+    def set_terrain_map(self, terrain_map) -> None:
+        """Set the TerrainMap for LOS checks when firing.
+
+        When set, combat.fire() receives terrain_map and checks
+        line_of_sight() before creating a projectile.
+        """
+        self._terrain_map = terrain_map
+
+    def set_comms(self, comms) -> None:
+        """Set the UnitComms for inter-unit signal broadcasting."""
+        self._comms = comms
+
+    def tick(self, dt: float, targets: dict[str, SimulationTarget],
+             vision_state=None) -> None:
         """For each active combatant, run its type-specific behavior."""
         friendlies = {
             k: v for k, v in targets.items()
@@ -115,17 +132,17 @@ class UnitBehaviors:
 
         for tid, t in friendlies.items():
             if t.asset_type == "turret":
-                self._turret_behavior(t, hostiles)
+                self._turret_behavior(t, hostiles, vision_state=vision_state)
             elif t.asset_type in ("heavy_turret", "missile_turret"):
-                self._turret_behavior(t, hostiles)
+                self._turret_behavior(t, hostiles, vision_state=vision_state)
             elif t.asset_type == "drone":
-                self._drone_behavior(t, hostiles)
+                self._drone_behavior(t, hostiles, vision_state=vision_state)
             elif t.asset_type in ("scout_drone",):
-                self._drone_behavior(t, hostiles)
+                self._drone_behavior(t, hostiles, vision_state=vision_state)
             elif t.asset_type == "rover":
-                self._rover_behavior(t, hostiles)
+                self._rover_behavior(t, hostiles, vision_state=vision_state)
             elif t.asset_type in ("tank", "apc"):
-                self._rover_behavior(t, hostiles)
+                self._rover_behavior(t, hostiles, vision_state=vision_state)
 
         # Detect group rushes before individual hostile ticks
         self._detect_group_rush(hostiles)
@@ -137,62 +154,124 @@ class UnitBehaviors:
         self,
         turret: SimulationTarget,
         hostiles: dict[str, SimulationTarget],
+        vision_state=None,
     ) -> None:
-        """Stationary. Rotate toward nearest hostile in range. Fire when aimed."""
-        target = self._nearest_in_range(turret, hostiles)
+        """Stationary. Rotate toward nearest hostile in range. Fire when aimed.
+
+        FSM-aware: in cooldown state, waits for weapon to reset.  All other
+        combat-capable states (idle, scanning, tracking, engaging) allow firing
+        so the turret is always combat-ready when enemies appear.
+        """
+        fsm = getattr(turret, "fsm_state", None)
+
+        # In cooldown, wait for weapon reset (FSM handles transition back)
+        if fsm == "cooldown":
+            return
+
+        # Degradation: too damaged to fire
+        if not can_fire_degraded(turret):
+            return
+
+        # Turrets rotate toward nearest enemy (regardless of vision cone)
+        # because they're stationary platforms with sensors — heading drives
+        # the vision cone NEXT tick.  Only firing requires vision confirmation.
+        any_target = self._nearest_in_range(turret, hostiles)
+        if any_target is not None:
+            dx = any_target.position[0] - turret.position[0]
+            dy = any_target.position[1] - turret.position[1]
+            turret.heading = math.degrees(math.atan2(dx, dy))
+
+        # Only fire at targets confirmed visible by vision system
+        target = self._nearest_in_range(turret, hostiles, vision_state=vision_state)
         if target is None:
             return
 
-        # Update heading to face target
-        dx = target.position[0] - turret.position[0]
-        dy = target.position[1] - turret.position[1]
-        turret.heading = math.degrees(math.atan2(dx, dy))
-
-        # Fire with weapon-specific projectile type
+        # Fire with weapon-specific projectile type (terrain LOS check)
         ptype = _WEAPON_TYPES.get(turret.asset_type, "nerf_dart")
-        self._combat.fire(turret, target, projectile_type=ptype)
+        self._combat.fire(turret, target, projectile_type=ptype,
+                          terrain_map=self._terrain_map)
 
     def _drone_behavior(
         self,
         drone: SimulationTarget,
         hostiles: dict[str, SimulationTarget],
+        vision_state=None,
     ) -> None:
-        """Fast, fragile. Strafe runs -- approach, fire burst, retreat."""
-        target = self._nearest_in_range(drone, hostiles)
-        if target is None:
-            # No hostiles in range -- if not on a patrol, just hold position
+        """Fast, fragile. Strafe runs -- approach, fire burst, retreat.
+
+        FSM-aware: in scouting state, observes but doesn't fire.  In orbiting,
+        maintains distance without engaging.  In rtb, ignores enemies.
+        Only fires in engaging state.
+        """
+        fsm = getattr(drone, "fsm_state", None)
+
+        # In rtb, ignore hostiles entirely (heading home)
+        if fsm == "rtb":
             return
 
-        dx = target.position[0] - drone.position[0]
-        dy = target.position[1] - drone.position[1]
-        dist = math.hypot(dx, dy)
+        # Degradation: too damaged to fire
+        if not can_fire_degraded(drone):
+            return
 
-        # Update heading to face target
-        drone.heading = math.degrees(math.atan2(dx, dy))
+        # Track nearest enemy for heading (vision cone follows heading)
+        any_target = self._nearest_in_range(drone, hostiles)
+        if any_target is not None:
+            dx = any_target.position[0] - drone.position[0]
+            dy = any_target.position[1] - drone.position[1]
+            drone.heading = math.degrees(math.atan2(dx, dy))
 
-        # Fire if in range
+        # In scouting or orbiting, observe but don't fire
+        if fsm in ("scouting", "orbiting"):
+            return
+
+        # Only fire at vision-confirmed targets
+        target = self._nearest_in_range(drone, hostiles, vision_state=vision_state)
+        if target is None:
+            return
+
+        # Fire if in range (engaging state, or no FSM set, terrain LOS check)
         ptype = _WEAPON_TYPES.get(drone.asset_type, "nerf_dart")
-        self._combat.fire(drone, target, projectile_type=ptype)
+        self._combat.fire(drone, target, projectile_type=ptype,
+                          terrain_map=self._terrain_map)
 
     def _rover_behavior(
         self,
         rover: SimulationTarget,
         hostiles: dict[str, SimulationTarget],
+        vision_state=None,
     ) -> None:
-        """Tanky. Move toward nearest hostile, engage at range."""
-        target = self._nearest_in_range(rover, hostiles)
+        """Tanky. Move toward nearest hostile, engage at range.
+
+        FSM-aware: in retreating state, does not engage.  In rtb state,
+        ignores enemies and heads home.  In patrolling, fires at targets
+        of opportunity but doesn't pursue beyond patrol route.
+        """
+        fsm = getattr(rover, "fsm_state", None)
+
+        # In rtb or retreating, do not engage (heading home or withdrawing)
+        if fsm in ("rtb", "retreating"):
+            return
+
+        # Degradation: too damaged to fire
+        if not can_fire_degraded(rover):
+            return
+
+        # Track nearest enemy for heading (vision cone follows heading)
+        any_target = self._nearest_in_range(rover, hostiles)
+        if any_target is not None:
+            dx = any_target.position[0] - rover.position[0]
+            dy = any_target.position[1] - rover.position[1]
+            rover.heading = math.degrees(math.atan2(dx, dy))
+
+        # Only fire at vision-confirmed targets
+        target = self._nearest_in_range(rover, hostiles, vision_state=vision_state)
         if target is None:
             return
 
-        dx = target.position[0] - rover.position[0]
-        dy = target.position[1] - rover.position[1]
-
-        # Update heading to face target
-        rover.heading = math.degrees(math.atan2(dx, dy))
-
-        # Fire if in range
+        # Fire if in range (terrain LOS check)
         ptype = _WEAPON_TYPES.get(rover.asset_type, "nerf_dart")
-        self._combat.fire(rover, target, projectile_type=ptype)
+        self._combat.fire(rover, target, projectile_type=ptype,
+                          terrain_map=self._terrain_map)
 
     def _hostile_kid_behavior(
         self,
@@ -205,8 +284,19 @@ class UnitBehaviors:
         Enhanced: flanking turrets, group rush, cover-seeking, reconning,
         suppressing fire, retreating under fire.
         """
+        # React to comms signals from allies
+        if self._comms is not None:
+            self._react_to_signals(kid)
+
         # FSM state-specific behavior modifiers
         fsm_state = getattr(kid, "fsm_state", None)
+
+        # Morale effects — broken units flee, suppressed units don't fire
+        morale = getattr(kid, "morale", 1.0)
+        if morale < 0.1:
+            # Broken: flee, no combat
+            return
+        morale_suppressed = morale < 0.3
 
         # Reconning: reduce speed (cautious scouting)
         if fsm_state == "reconning":
@@ -220,11 +310,23 @@ class UnitBehaviors:
         if fsm_state == "retreating_under_fire":
             self._retreating_under_fire_behavior(kid, friendlies)
 
-        # Fire at nearest defender in range (always, regardless of state)
-        target = self._nearest_in_range(kid, friendlies)
-        if target is not None:
-            ptype = _WEAPON_TYPES.get(kid.asset_type, "nerf_pistol")
-            self._combat.fire(kid, target, projectile_type=ptype)
+        # Emit retreat signal when fleeing
+        if fsm_state == "fleeing" and self._comms is not None:
+            self._comms.emit_retreat(kid.target_id, kid.position, kid.alliance)
+
+        # Fire at nearest defender in range (skip if morale-suppressed or too degraded)
+        if not morale_suppressed and can_fire_degraded(kid):
+            target = self._nearest_in_range(kid, friendlies)
+            if target is not None:
+                # Emit contact signal for allies
+                if self._comms is not None:
+                    self._comms.emit_contact(
+                        kid.target_id, kid.position, kid.alliance,
+                        enemy_pos=target.position,
+                    )
+                ptype = _WEAPON_TYPES.get(kid.asset_type, "nerf_pistol")
+                self._combat.fire(kid, target, projectile_type=ptype,
+                                  terrain_map=self._terrain_map)
 
         # Cover-seeking: damaged hostile moves toward nearest building edge
         # When seeking cover, skip flanking and dodge (cover takes priority)
@@ -253,6 +355,55 @@ class UnitBehaviors:
                 kid.position[0] + math.cos(heading_rad) * offset,
                 kid.position[1] - math.sin(heading_rad) * offset,
             )
+
+    # -- Comms signal reaction ---------------------------------------------------
+
+    def _react_to_signals(self, kid: SimulationTarget) -> None:
+        """React to comms signals from nearby allies.
+
+        - distress: insert sender position as priority waypoint (converge)
+        - contact: insert enemy position as priority waypoint (hunt)
+        """
+        if self._comms is None:
+            return
+
+        # Only react for advancing/reconning hostiles (not fleeing/engaging)
+        fsm = getattr(kid, "fsm_state", None)
+        if fsm in ("fleeing", "spawning", "engaging", "suppressing"):
+            return
+
+        signals = self._comms.get_signals_for_unit(kid)
+        if not signals:
+            return
+
+        # React to highest priority signal
+        # Priority: distress > contact > retreat
+        distress = [s for s in signals if s.signal_type == "distress"]
+        contact = [s for s in signals if s.signal_type == "contact"]
+
+        target_pos = None
+        if distress:
+            # Converge on the nearest distress call
+            nearest = min(distress, key=lambda s: math.hypot(
+                s.position[0] - kid.position[0],
+                s.position[1] - kid.position[1],
+            ))
+            target_pos = nearest.position
+        elif contact:
+            # Move toward reported enemy position
+            for sig in contact:
+                if sig.target_position is not None:
+                    target_pos = sig.target_position
+                    break
+
+        if target_pos is not None:
+            # Insert as first waypoint (priority destination)
+            if kid.waypoints:
+                kid.waypoints.insert(0, target_pos)
+                kid._waypoint_index = 0
+            else:
+                kid.waypoints = [target_pos]
+                kid._waypoint_index = 0
 
     # -- Flanking ---------------------------------------------------------------
 
@@ -520,11 +671,20 @@ class UnitBehaviors:
         self,
         unit: SimulationTarget,
         enemies: dict[str, SimulationTarget],
+        vision_state=None,
     ) -> SimulationTarget | None:
         """Find the nearest enemy within weapon_range.
 
         Uses SpatialGrid when available for O(k) lookup instead of O(n).
+        When vision_state is provided, pre-filters to only targets visible
+        to this unit. When None (backward compat), all enemies in range
+        are valid.
         """
+        # Pre-filter to visible targets when vision is available
+        if vision_state is not None:
+            visible_targets = set(vision_state.can_see.get(unit.target_id, []))
+            enemies = {k: v for k, v in enemies.items() if k in visible_targets}
+
         best: SimulationTarget | None = None
         best_dist = float("inf")
 

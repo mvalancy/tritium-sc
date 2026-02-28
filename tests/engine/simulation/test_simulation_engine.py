@@ -156,8 +156,8 @@ class TestHostileMultiWaypoints:
         bus = SimpleEventBus()
         engine = SimulationEngine(bus)
         h = engine.spawn_hostile()
-        # Should have 4 waypoints: approach, objective, loiter, escape
-        assert len(h.waypoints) == 4
+        # Should have 2 waypoints: objective + escape_edge
+        assert len(h.waypoints) == 2
 
 
 class TestBatteryDeadCleanup:

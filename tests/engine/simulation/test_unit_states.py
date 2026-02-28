@@ -907,14 +907,14 @@ class TestHostileFSMTransitions:
         assert sm.current_state == "retreating_under_fire"
 
     def test_engaging_to_fleeing_low_health_no_cover(self):
-        """Engaging hostile flees when low health and no cover available."""
+        """Engaging hostile flees when critically low health and no cover."""
         sm = create_hostile_fsm()
         _advance_past_spawning(sm)
         sm.tick(0.1, {"health_pct": 1.0, "enemies_in_range": [{"id": "t1"}],
                        "enemy_in_weapon_range": True, "nearest_enemy_stationary": False,
                        "cover_available": False, "ally_is_flanking": False, "detected": False})
         assert sm.current_state == "engaging"
-        sm.tick(0.1, {"health_pct": 0.2, "enemies_in_range": [{"id": "t1"}],
+        sm.tick(0.1, {"health_pct": 0.1, "enemies_in_range": [{"id": "t1"}],
                        "enemy_in_weapon_range": True, "nearest_enemy_stationary": False,
                        "cover_available": False, "ally_is_flanking": False, "detected": False})
         assert sm.current_state == "fleeing"

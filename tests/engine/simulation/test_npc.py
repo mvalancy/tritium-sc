@@ -441,15 +441,15 @@ class TestPopulationDensity:
         from engine.simulation.npc import NPCManager
 
         mgr = NPCManager(engine)
-        assert mgr.max_vehicles >= 15, "Default max vehicles should be >= 15"
-        assert mgr.max_vehicles <= 50, "Default max vehicles should be <= 50"
+        assert mgr.max_vehicles >= 100, "Default max vehicles should be >= 100"
+        assert mgr.max_vehicles <= 300, "Default max vehicles should be <= 300"
 
     def test_default_max_pedestrians(self, engine: MockEngine) -> None:
         from engine.simulation.npc import NPCManager
 
         mgr = NPCManager(engine)
-        assert mgr.max_pedestrians >= 20, "Default max pedestrians should be >= 20"
-        assert mgr.max_pedestrians <= 60, "Default max pedestrians should be <= 60"
+        assert mgr.max_pedestrians >= 100, "Default max pedestrians should be >= 100"
+        assert mgr.max_pedestrians <= 400, "Default max pedestrians should be <= 400"
 
     def test_configurable_max_vehicles(self, engine: MockEngine) -> None:
         from engine.simulation.npc import NPCManager

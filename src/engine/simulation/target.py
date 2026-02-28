@@ -136,6 +136,8 @@ class SimulationTarget:
     degradation: float = 0.0          # Equipment degradation 0.0 = pristine, 1.0 = broken
     detected: bool = False            # Whether this unit has been spotted by enemies
     detected_at: float = 0.0          # Timestamp when first detected
+    visible: bool = True              # Whether this target is visible to friendlies
+    detected_by: list[str] = field(default_factory=list)  # IDs of units that can see this target
     is_leader: bool = False           # Whether this unit is the squad leader
     _fleeing: bool = False            # Internal fleeing state (unit is retreating)
 
@@ -297,6 +299,11 @@ class SimulationTarget:
                 if mc._waypoint_index >= len(mc._waypoints):
                     if mc._patrol_loop:
                         mc._waypoint_index = 0
+                    elif self.alliance == "hostile":
+                        # Hostiles blocked by buildings should NOT escape —
+                        # stay active at current position to participate in combat.
+                        # Rewind to last waypoint so they can retry or get engaged.
+                        mc._waypoint_index = max(0, len(mc._waypoints) - 1)
                     else:
                         mc.arrived = True
                         mc.speed = 0.0
@@ -343,7 +350,8 @@ class SimulationTarget:
                 if self.alliance == "neutral":
                     self.status = "despawned"
                 elif self.alliance == "hostile":
-                    self.status = "escaped"
+                    # Don't escape — stay active to participate in combat
+                    pass
                 else:
                     self.status = "idle"
                 return
@@ -388,7 +396,8 @@ class SimulationTarget:
                 if self.alliance == "neutral":
                     self.status = "despawned"
                 elif self.alliance == "hostile":
-                    self.status = "escaped"
+                    # Don't escape — stay active to participate in combat
+                    pass
                 else:
                     self.status = "idle"
                 return
@@ -433,5 +442,7 @@ class SimulationTarget:
             "morale": round(self.morale, 2),
             "degradation": round(self.degradation, 2),
             "detected": self.detected,
+            "visible": self.visible,
+            "detected_by": self.detected_by,
             "weapon_range": round(self.weapon_range, 1),
         }

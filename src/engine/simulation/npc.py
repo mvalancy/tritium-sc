@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import math
 import random
+import threading
 import uuid
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Optional
@@ -169,13 +170,21 @@ def traffic_density(hour: int) -> float:
 # ---------------------------------------------------------------------------
 
 class NPCManager:
-    """Manages NPC vehicles and pedestrians with missions and road-following."""
+    """Manages NPC vehicles and pedestrians with missions and road-following.
+
+    When started, runs an auto-spawn loop on a daemon thread that continuously
+    fills the world up to capacity (scaled by time-of-day traffic density).
+    """
+
+    # Auto-spawn loop timing
+    SPAWN_INTERVAL = 3.0   # seconds between spawn ticks
+    BATCH_SIZE = 5         # entities spawned per tick
 
     def __init__(
         self,
         engine: SimulationEngine,
-        max_vehicles: int = 30,
-        max_pedestrians: int = 40,
+        max_vehicles: int = 150,
+        max_pedestrians: int = 200,
     ) -> None:
         self._engine = engine
         self.max_vehicles = max_vehicles
@@ -188,10 +197,88 @@ class NPCManager:
         self._used_names: set[str] = set()
         self._npc_ids: set[str] = set()  # all NPC target_ids we manage
 
+        # Auto-spawn thread state
+        self._running = False
+        self._thread: threading.Thread | None = None
+
     @property
     def npc_count(self) -> int:
         """Number of active NPCs we're managing."""
         return len(self._npc_ids)
+
+    # -- Auto-spawn lifecycle -----------------------------------------------
+
+    def start(self) -> None:
+        """Start the auto-spawn loop on a daemon thread."""
+        if self._running:
+            return
+        self._running = True
+        self._thread = threading.Thread(
+            target=self._spawn_loop, name="npc-spawner", daemon=True
+        )
+        self._thread.start()
+
+    def stop(self) -> None:
+        """Stop the auto-spawn loop."""
+        self._running = False
+        if self._thread is not None:
+            self._thread.join(timeout=2.0)
+            self._thread = None
+
+    def _spawn_loop(self) -> None:
+        """Continuously spawn NPCs up to capacity, scaled by traffic density."""
+        import time as _time
+        from datetime import datetime as _dt
+
+        while self._running:
+            elapsed = 0.0
+            while elapsed < self.SPAWN_INTERVAL and self._running:
+                _time.sleep(0.5)
+                elapsed += 0.5
+
+            if not self._running:
+                break
+
+            # Skip if engine has spawners paused
+            if getattr(self._engine, "spawners_paused", False):
+                continue
+
+            self._auto_spawn_tick()
+
+    def _auto_spawn_tick(self) -> None:
+        """Spawn a batch of NPCs up to capacity, scaled by traffic density."""
+        from datetime import datetime as _dt
+
+        hour = _dt.now().hour
+        density = traffic_density(hour)
+
+        # Scale caps by density
+        effective_vehicles = int(self.max_vehicles * density)
+        effective_peds = int(self.max_pedestrians * density)
+
+        vehicle_count = sum(1 for tid in self._npc_ids if tid in self._vehicle_types)
+        ped_count = sum(1 for tid in self._npc_ids if tid not in self._vehicle_types)
+
+        spawned = 0
+        for _ in range(self.BATCH_SIZE):
+            if spawned >= self.BATCH_SIZE:
+                break
+            # Alternate between vehicles and pedestrians
+            if vehicle_count < effective_vehicles and random.random() < 0.4:
+                result = self.spawn_vehicle()
+                if result is not None:
+                    vehicle_count += 1
+                    spawned += 1
+            elif ped_count < effective_peds:
+                result = self.spawn_pedestrian()
+                if result is not None:
+                    ped_count += 1
+                    spawned += 1
+            elif vehicle_count < effective_vehicles:
+                result = self.spawn_vehicle()
+                if result is not None:
+                    vehicle_count += 1
+                    spawned += 1
 
     # -- Spawning -----------------------------------------------------------
 

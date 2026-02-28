@@ -737,3 +737,69 @@ class TestBehaviorsIntegration:
         assert h1.squad_id is None
         assert h2.squad_id is None
         assert sm.get_squad(h1.squad_id) is None
+
+
+# --------------------------------------------------------------------------
+# Engine integration: SquadManager wired into tick loop
+# --------------------------------------------------------------------------
+
+class TestSquadEngineIntegration:
+    """Verify SquadManager is instantiated and ticked by SimulationEngine."""
+
+    def test_engine_has_squad_manager(self, event_bus):
+        from engine.simulation.engine import SimulationEngine
+        engine = SimulationEngine(event_bus, map_bounds=200)
+        assert hasattr(engine, "squad_manager")
+        assert engine.squad_manager is not None
+
+    def test_squads_form_during_game(self, event_bus):
+        """Two nearby hostiles should form a squad after game ticks."""
+        from engine.simulation.engine import SimulationEngine
+        engine = SimulationEngine(event_bus, map_bounds=200)
+
+        # Add a friendly so game doesn't end in defeat
+        friendly = SimulationTarget(
+            target_id="turret-1", name="Turret", alliance="friendly",
+            asset_type="turret", position=(0.0, 0.0),
+            speed=0.0, status="stationary", is_combatant=True,
+        )
+        friendly.apply_combat_profile()
+        engine.add_target(friendly)
+
+        # Add two nearby hostiles
+        h1 = _make_hostile("h1", pos=(50.0, 50.0))
+        h2 = _make_hostile("h2", pos=(53.0, 52.0))
+        engine.add_target(h1)
+        engine.add_target(h2)
+
+        # Start game and tick through countdown + some active ticks
+        engine.game_mode.begin_war()
+        engine.game_mode._countdown_remaining = 0
+        engine.game_mode.state = "active"
+        engine.game_mode._start_wave(1)
+        # Manual tick (not threaded)
+        for _ in range(5):
+            engine._do_tick(0.1)
+
+        # Hostiles should have been grouped into a squad
+        assert h1.squad_id is not None or h2.squad_id is not None, (
+            "Nearby hostiles should form a squad during game"
+        )
+
+    def test_squads_cleared_on_reset(self, event_bus):
+        """reset_game should clear all squads."""
+        from engine.simulation.engine import SimulationEngine
+        engine = SimulationEngine(event_bus, map_bounds=200)
+
+        h1 = _make_hostile("h1", pos=(50.0, 50.0))
+        h2 = _make_hostile("h2", pos=(53.0, 52.0))
+        engine.add_target(h1)
+        engine.add_target(h2)
+
+        # Manually form a squad
+        engine.squad_manager.tick(0.1, {"h1": h1, "h2": h2})
+        assert h1.squad_id is not None
+
+        engine.reset_game()
+        # After reset, squad manager should be empty
+        assert len(engine.squad_manager._squads) == 0

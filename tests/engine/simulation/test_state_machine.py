@@ -588,12 +588,12 @@ class TestHostileFSM:
                 "health_pct": 1.0,
                 "nearest_enemy_stationary": False,
             })
-        # Drop health
+        # Drop health to critically low (below 0.15 flee threshold)
         for _ in range(10):
             fsm.tick(0.1, {
                 "enemies_in_range": [enemy],
                 "enemy_in_weapon_range": True,
-                "health_pct": 0.2,
+                "health_pct": 0.1,
                 "nearest_enemy_stationary": False,
             })
         assert fsm.current_state == "fleeing"

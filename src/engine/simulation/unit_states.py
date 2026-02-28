@@ -396,10 +396,10 @@ def create_hostile_fsm() -> StateMachine:
         condition=lambda ctx: True,  # tick return handles timing
     )
 
-    # advancing -> fleeing when low health (highest priority)
+    # advancing -> fleeing when critically low health (highest priority)
     sm.add_transition(
         "advancing", "fleeing",
-        condition=lambda ctx: ctx.get("health_pct", 1.0) < 0.3,
+        condition=lambda ctx: ctx.get("health_pct", 1.0) < 0.15,
         priority=20,
     )
 
@@ -479,10 +479,10 @@ def create_hostile_fsm() -> StateMachine:
         priority=15,
     )
 
-    # engaging -> fleeing when low health (no cover)
+    # engaging -> fleeing when critically low health (no cover)
     sm.add_transition(
         "engaging", "fleeing",
-        condition=lambda ctx: ctx.get("health_pct", 1.0) < 0.3,
+        condition=lambda ctx: ctx.get("health_pct", 1.0) < 0.15,
         priority=10,
     )
 
@@ -512,10 +512,10 @@ def create_hostile_fsm() -> StateMachine:
         priority=20,
     )
 
-    # suppressing -> fleeing/retreating when low health (high priority)
+    # suppressing -> fleeing when critically low health (high priority)
     sm.add_transition(
         "suppressing", "fleeing",
-        condition=lambda ctx: ctx.get("health_pct", 1.0) < 0.3,
+        condition=lambda ctx: ctx.get("health_pct", 1.0) < 0.15,
         priority=15,
     )
 
@@ -538,12 +538,12 @@ def create_hostile_fsm() -> StateMachine:
         priority=5,
     )
 
-    # retreating_under_fire -> fleeing when no cover left
+    # retreating_under_fire -> fleeing when no cover and critically low
     sm.add_transition(
         "retreating_under_fire", "fleeing",
         condition=lambda ctx: (
             not ctx.get("cover_available", False)
-            and ctx.get("health_pct", 1.0) < 0.3
+            and ctx.get("health_pct", 1.0) < 0.15
         ),
         priority=3,
     )
@@ -556,10 +556,10 @@ def create_hostile_fsm() -> StateMachine:
         condition=lambda ctx: ctx.get("enemy_in_weapon_range", False),
     )
 
-    # flanking -> fleeing when low health (high priority)
+    # flanking -> fleeing when critically low health (high priority)
     sm.add_transition(
         "flanking", "fleeing",
-        condition=lambda ctx: ctx.get("health_pct", 1.0) < 0.3,
+        condition=lambda ctx: ctx.get("health_pct", 1.0) < 0.15,
         priority=10,
     )
 
