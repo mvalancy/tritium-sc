@@ -8,6 +8,7 @@ class Drone(UnitType):
     cot_type = "a-f-A-M-F-Q"  # Friendly air drone/RPV/UAV
     category = MovementCategory.AIR
     speed = 4.0
+    cruising_altitude = 15.0
     drain_rate = 0.002
     vision_radius = 60.0
     ambient_radius = 20.0

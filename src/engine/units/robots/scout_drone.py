@@ -8,6 +8,7 @@ class ScoutDrone(UnitType):
     cot_type = "a-f-A-M-F-Q"  # Friendly air drone/RPV/UAV (recon)
     category = MovementCategory.AIR
     speed = 5.0
+    cruising_altitude = 10.0
     drain_rate = 0.0025
     vision_radius = 60.0
     ambient_radius = 25.0

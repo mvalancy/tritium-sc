@@ -35,7 +35,7 @@ from __future__ import annotations
 import math
 import time as _time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import Callable, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .movement import MovementController
@@ -108,6 +108,7 @@ class SimulationTarget:
     asset_type: str  # "rover", "drone", "turret", "person", "vehicle", "animal"
     position: tuple[float, float]  # (x, y) on map — units are abstract map coords
     heading: float = 0.0  # degrees, 0 = north (+y), clockwise
+    altitude: float = 0.0  # meters above ground (0 = ground level)
     speed: float = 1.0  # units/second (0.0 for turrets)
     battery: float = 1.0  # 0.0-1.0 (persons/animals drain at 0.0)
     waypoints: list[tuple[float, float]] = field(default_factory=list)
@@ -144,6 +145,18 @@ class SimulationTarget:
     # Track waypoints version to detect external changes
     _waypoints_version: int = field(default=0, repr=False)
 
+    # Building collision check: callable(x, y) -> True if blocked.
+    # Set by engine.add_target() when obstacles are loaded.
+    # Flying units (drone, scout_drone, swarm_drone) are exempt.
+    _collision_check: Callable[[float, float], bool] | None = field(
+        default=None, repr=False
+    )
+
+    # Types that fly over buildings (exempt from collision)
+    _FLYING_TYPES: tuple[str, ...] = field(
+        default=("drone", "scout_drone", "swarm_drone"), init=False, repr=False
+    )
+
     def __post_init__(self) -> None:
         """Auto-create MovementController for mobile combatant types.
 
@@ -178,6 +191,32 @@ class SimulationTarget:
             return
         (self.health, self.max_health, self.weapon_range,
          self.weapon_cooldown, self.weapon_damage, self.is_combatant) = profile
+
+    def set_collision_check(
+        self,
+        check: Callable[[float, float], bool],
+        height_at: Callable[[float, float], float | None] | None = None,
+    ) -> None:
+        """Set the building collision checker.
+
+        For flying types with a *height_at* callable, collision is 3D-aware:
+        blocked only when ``height_at(x, y)`` is not None AND ``self.altitude
+        <= height``.  Without *height_at*, flying types are exempt (legacy).
+
+        Ground types always use the 2D ``check`` callable as-is.
+        """
+        if self.asset_type in self._FLYING_TYPES:
+            if height_at is not None:
+                # 3D-aware collision: blocked only when inside footprint AND
+                # altitude is at or below the roof height.
+                def _3d_check(x: float, y: float) -> bool:
+                    h = height_at(x, y)
+                    return h is not None and self.altitude <= h
+                self._collision_check = _3d_check
+            else:
+                self._collision_check = None
+            return
+        self._collision_check = check
 
     def apply_damage(self, amount: float) -> bool:
         """Apply *amount* damage. Returns True if this target is eliminated (health <= 0)."""
@@ -241,8 +280,26 @@ class SimulationTarget:
                 self.status = "stationary"
             return
 
+        # Save pre-tick position for collision rollback
+        pre_x, pre_y = mc.x, mc.y
+
         # Tick the controller
         mc.tick(dt)
+
+        # Building collision check: if new position is inside a building,
+        # revert to pre-tick position and advance past the blocking waypoint.
+        if self._collision_check is not None and self._collision_check(mc.x, mc.y):
+            mc.x = pre_x
+            mc.y = pre_y
+            # Advance waypoint index past the blocking segment
+            if mc._waypoints and mc._waypoint_index < len(mc._waypoints):
+                mc._waypoint_index += 1
+                if mc._waypoint_index >= len(mc._waypoints):
+                    if mc._patrol_loop:
+                        mc._waypoint_index = 0
+                    else:
+                        mc.arrived = True
+                        mc.speed = 0.0
 
         # Sync position and heading from controller.
         # MovementController uses math convention: 0=east, 90=north (atan2(dy,dx)).
@@ -277,6 +334,22 @@ class SimulationTarget:
             return
 
         tx, ty = self.waypoints[self._waypoint_index]
+
+        # Pre-check: if the current waypoint itself is inside a building,
+        # skip it immediately (path segment crosses a building).
+        if self._collision_check is not None and self._collision_check(tx, ty):
+            if self._waypoint_index >= len(self.waypoints) - 1:
+                # All remaining waypoints blocked — terminal status
+                if self.alliance == "neutral":
+                    self.status = "despawned"
+                elif self.alliance == "hostile":
+                    self.status = "escaped"
+                else:
+                    self.status = "idle"
+                return
+            self._waypoint_index += 1
+            return
+
         dx = tx - self.position[0]
         dy = ty - self.position[1]
         dist = math.hypot(dx, dy)
@@ -305,10 +378,24 @@ class SimulationTarget:
 
         # Move toward waypoint
         step = min(self.speed * dt, dist)
-        self.position = (
-            self.position[0] + (dx / dist) * step,
-            self.position[1] + (dy / dist) * step,
-        )
+        new_x = self.position[0] + (dx / dist) * step
+        new_y = self.position[1] + (dy / dist) * step
+
+        # Building collision check: reject moves into buildings
+        if self._collision_check is not None and self._collision_check(new_x, new_y):
+            # Movement would enter a building — skip to next waypoint
+            if self._waypoint_index >= len(self.waypoints) - 1:
+                if self.alliance == "neutral":
+                    self.status = "despawned"
+                elif self.alliance == "hostile":
+                    self.status = "escaped"
+                else:
+                    self.status = "idle"
+                return
+            self._waypoint_index += 1
+            return
+
+        self.position = (new_x, new_y)
 
     def to_dict(self) -> dict:
         """Serialize for EventBus / API consumption.
@@ -321,7 +408,7 @@ class SimulationTarget:
         ThreatClassifier and lives in ThreatRecord, not on the target.
         """
         from engine.tactical.geo import local_to_latlng
-        geo = local_to_latlng(self.position[0], self.position[1])
+        geo = local_to_latlng(self.position[0], self.position[1], self.altitude)
         return {
             "target_id": self.target_id,
             "name": self.name,
@@ -332,6 +419,7 @@ class SimulationTarget:
             "lng": geo["lng"],
             "alt": geo["alt"],
             "heading": self.heading,
+            "altitude": self.altitude,
             "speed": self.speed,
             "battery": round(self.battery, 4),
             "status": self.status,

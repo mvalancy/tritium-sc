@@ -202,7 +202,45 @@ class SimulationEngine:
 
     # -- Target management --------------------------------------------------
 
+    _FLYING_TYPES = {"drone", "scout_drone", "swarm_drone"}
+
     def add_target(self, target: SimulationTarget) -> None:
+        # Assign altitude from unit type registry for flying types
+        if target.asset_type in self._FLYING_TYPES:
+            try:
+                from engine.units import get_type
+                utype = get_type(target.asset_type)
+                if utype is not None:
+                    target.altitude = utype.cruising_altitude
+            except Exception:
+                pass
+
+        # Wire building collision check
+        if self._obstacles is not None:
+            if target.asset_type in self._FLYING_TYPES:
+                # 3D-aware collision for flying types
+                target.set_collision_check(
+                    self._obstacles.point_in_building,
+                    height_at=self._obstacles.building_height_at,
+                )
+            else:
+                target.set_collision_check(self._obstacles.point_in_building)
+                # Filter waypoints that land inside buildings
+                if target.waypoints:
+                    target.waypoints = [
+                        wp for wp in target.waypoints
+                        if not self._obstacles.point_in_building(wp[0], wp[1])
+                    ]
+                    target._waypoint_index = 0
+
+        # Assign roof altitude for stationary units inside buildings
+        if self._obstacles is not None and target.speed == 0:
+            h = self._obstacles.building_height_at(
+                target.position[0], target.position[1],
+            )
+            if h is not None:
+                target.altitude = h
+
         with self._lock:
             self._targets[target.target_id] = target
         # Create FSM for this target type

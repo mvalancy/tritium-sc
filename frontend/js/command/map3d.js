@@ -916,7 +916,7 @@ function _updateUnits(dt) {
 
         // Height: drones fly
         const assetType = (unit.type || '').toLowerCase();
-        group.position.y = assetType.includes('drone') ? 3 : 0;
+        group.position.y = unit.altitude || (assetType.includes('drone') ? 3 : 0);
 
         // Heading (smooth)
         if (unit.heading !== undefined) {

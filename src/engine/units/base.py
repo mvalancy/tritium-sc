@@ -55,6 +55,9 @@ class UnitType:
     # -- power --
     drain_rate: ClassVar[float]  # battery drain per second
 
+    # -- altitude --
+    cruising_altitude: ClassVar[float] = 0.0  # meters AGL for flying types
+
     # -- perception --
     vision_radius: ClassVar[float]
     ambient_radius: ClassVar[float] = 10.0
