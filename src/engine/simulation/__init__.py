@@ -29,6 +29,8 @@ from .terrain import TerrainCell, TerrainMap
 from .unit_states import create_turret_fsm, create_rover_fsm, create_drone_fsm, create_hostile_fsm, create_fsm_for_type
 from .upgrades import Upgrade, Ability, ActiveEffect, UpgradeSystem
 from .combat_bridge import CombatBridge
+from .poi_data import POI, MissionArea, fetch_pois, pick_mission_center, build_mission_area, get_poi_context_text, get_street_names, place_defenders_around_buildings, load_cached
+from .vision import SightingReport, VisibilityState, VisionSystem
 from .weapons import Weapon, WeaponSystem
 
 __all__ = [
@@ -81,6 +83,9 @@ __all__ = [
     "WaveRecord",
     "WaveStats",
     "WAVE_CONFIGS",
+    "SightingReport",
+    "VisibilityState",
+    "VisionSystem",
     "Weapon",
     "WeaponSystem",
     "create_turret_fsm",
@@ -96,4 +101,13 @@ __all__ = [
     "smooth_path",
     "target_velocity",
     "time_to_intercept",
+    "POI",
+    "MissionArea",
+    "fetch_pois",
+    "pick_mission_center",
+    "build_mission_area",
+    "get_poi_context_text",
+    "get_street_names",
+    "place_defenders_around_buildings",
+    "load_cached",
 ]

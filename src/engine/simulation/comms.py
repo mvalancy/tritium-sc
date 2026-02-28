@@ -130,6 +130,41 @@ class UnitComms:
         self._signals.append(sig)
         return sig
 
+    def emit_distress(
+        self,
+        sender_id: str,
+        position: tuple[float, float],
+        alliance: str,
+    ) -> Signal:
+        """Emit a distress signal ("I'm under fire")."""
+        return self.broadcast(
+            SIGNAL_DISTRESS, sender_id, alliance, position,
+        )
+
+    def emit_contact(
+        self,
+        sender_id: str,
+        position: tuple[float, float],
+        alliance: str,
+        enemy_pos: tuple[float, float] | None = None,
+    ) -> Signal:
+        """Emit a contact signal ("enemy spotted at enemy_pos")."""
+        return self.broadcast(
+            SIGNAL_CONTACT, sender_id, alliance, position,
+            target_position=enemy_pos,
+        )
+
+    def emit_retreat(
+        self,
+        sender_id: str,
+        position: tuple[float, float],
+        alliance: str,
+    ) -> Signal:
+        """Emit a retreat signal ("I'm pulling back")."""
+        return self.broadcast(
+            "retreat", sender_id, alliance, position,
+        )
+
     def get_signals_for_unit(
         self,
         unit: SimulationTarget,

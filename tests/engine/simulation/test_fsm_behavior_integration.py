@@ -383,3 +383,197 @@ class TestFSMEngineIntegration:
         # Simulate what the tick loop does
         t.fsm_state = fsm.current.name
         assert t.fsm_state == "engaging"
+
+
+# --------------------------------------------------------------------------
+# FSM-driven behavior: friendly units respect FSM state
+# --------------------------------------------------------------------------
+
+@pytest.mark.unit
+class TestFSMDrivenBehavior:
+    """Verify that friendly behaviors respect FSM state."""
+
+    def _make_combat(self):
+        """Create CombatSystem with mock EventBus."""
+        from engine.simulation.combat import CombatSystem
+        bus = _make_bus()
+        return CombatSystem(bus)
+
+    def _make_behaviors(self):
+        from engine.simulation.behaviors import UnitBehaviors
+        return UnitBehaviors(self._make_combat())
+
+    def test_turret_fires_in_engaging_state(self):
+        """Turret in engaging state should fire at hostiles."""
+        behaviors = self._make_behaviors()
+        turret = _make_target("t1", "friendly", "turret")
+        turret.fsm_state = "engaging"
+        turret.weapon_cooldown = 0.0
+        turret.last_fired = 0.0
+
+        hostile = _make_target("h1", "hostile", "person", position=(10.0, 0.0), speed=1.5)
+
+        targets = {"t1": turret, "h1": hostile}
+        behaviors.tick(0.1, targets)
+
+        # Turret should have fired (last_fired updated)
+        assert turret.last_fired > 0
+
+    def test_turret_does_not_fire_in_cooldown(self):
+        """Turret in cooldown state should not fire."""
+        behaviors = self._make_behaviors()
+        turret = _make_target("t1", "friendly", "turret")
+        turret.fsm_state = "cooldown"
+        turret.weapon_cooldown = 0.0
+        turret.last_fired = 0.0
+
+        hostile = _make_target("h1", "hostile", "person", position=(10.0, 0.0), speed=1.5)
+
+        targets = {"t1": turret, "h1": hostile}
+        behaviors.tick(0.1, targets)
+
+        # Turret should NOT have fired
+        assert turret.last_fired == 0.0
+
+    def test_turret_fires_in_idle(self):
+        """Turret in idle state should still fire (always combat-ready)."""
+        behaviors = self._make_behaviors()
+        turret = _make_target("t1", "friendly", "turret")
+        turret.fsm_state = "idle"
+        turret.weapon_cooldown = 0.0
+        turret.last_fired = 0.0
+
+        hostile = _make_target("h1", "hostile", "person", position=(10.0, 0.0), speed=1.5)
+
+        targets = {"t1": turret, "h1": hostile}
+        behaviors.tick(0.1, targets)
+
+        # Turret fires even in idle — always combat-ready
+        assert turret.last_fired > 0
+
+    def test_drone_does_not_fire_in_scouting(self):
+        """Drone in scouting state should observe but not engage."""
+        behaviors = self._make_behaviors()
+        drone = _make_target("d1", "friendly", "drone", speed=5.0)
+        drone.fsm_state = "scouting"
+        drone.weapon_cooldown = 0.0
+        drone.last_fired = 0.0
+
+        hostile = _make_target("h1", "hostile", "person", position=(10.0, 0.0), speed=1.5)
+
+        targets = {"d1": drone, "h1": hostile}
+        behaviors.tick(0.1, targets)
+
+        # Should NOT have fired in scouting
+        assert drone.last_fired == 0.0
+
+    def test_drone_fires_in_engaging(self):
+        """Drone in engaging state should fire normally."""
+        behaviors = self._make_behaviors()
+        drone = _make_target("d1", "friendly", "drone", speed=5.0)
+        drone.fsm_state = "engaging"
+        drone.weapon_cooldown = 0.0
+        drone.last_fired = 0.0
+
+        hostile = _make_target("h1", "hostile", "person", position=(10.0, 0.0), speed=1.5)
+
+        targets = {"d1": drone, "h1": hostile}
+        behaviors.tick(0.1, targets)
+
+        assert drone.last_fired > 0
+
+    def test_drone_ignores_hostiles_in_rtb(self):
+        """Drone in rtb state should ignore all hostiles."""
+        behaviors = self._make_behaviors()
+        drone = _make_target("d1", "friendly", "drone", speed=5.0)
+        drone.fsm_state = "rtb"
+        drone.weapon_cooldown = 0.0
+        drone.last_fired = 0.0
+        initial_heading = drone.heading
+
+        hostile = _make_target("h1", "hostile", "person", position=(10.0, 0.0), speed=1.5)
+
+        targets = {"d1": drone, "h1": hostile}
+        behaviors.tick(0.1, targets)
+
+        # Should not fire OR rotate toward hostile
+        assert drone.last_fired == 0.0
+        assert drone.heading == initial_heading
+
+    def test_rover_does_not_engage_in_retreating(self):
+        """Rover in retreating state should not fire."""
+        behaviors = self._make_behaviors()
+        rover = _make_target("r1", "friendly", "rover", speed=3.0)
+        rover.fsm_state = "retreating"
+        rover.weapon_cooldown = 0.0
+        rover.last_fired = 0.0
+        initial_heading = rover.heading
+
+        hostile = _make_target("h1", "hostile", "person", position=(10.0, 0.0), speed=1.5)
+
+        targets = {"r1": rover, "h1": hostile}
+        behaviors.tick(0.1, targets)
+
+        assert rover.last_fired == 0.0
+        assert rover.heading == initial_heading
+
+    def test_rover_does_not_engage_in_rtb(self):
+        """Rover in rtb state should not fire."""
+        behaviors = self._make_behaviors()
+        rover = _make_target("r1", "friendly", "rover", speed=3.0)
+        rover.fsm_state = "rtb"
+        rover.weapon_cooldown = 0.0
+        rover.last_fired = 0.0
+
+        hostile = _make_target("h1", "hostile", "person", position=(10.0, 0.0), speed=1.5)
+
+        targets = {"r1": rover, "h1": hostile}
+        behaviors.tick(0.1, targets)
+
+        assert rover.last_fired == 0.0
+
+    def test_rover_fires_in_engaging(self):
+        """Rover in engaging state should fire normally."""
+        behaviors = self._make_behaviors()
+        rover = _make_target("r1", "friendly", "rover", speed=3.0)
+        rover.fsm_state = "engaging"
+        rover.weapon_cooldown = 0.0
+        rover.last_fired = 0.0
+
+        hostile = _make_target("h1", "hostile", "person", position=(10.0, 0.0), speed=1.5)
+
+        targets = {"r1": rover, "h1": hostile}
+        behaviors.tick(0.1, targets)
+
+        assert rover.last_fired > 0
+
+    def test_no_fsm_state_fires_normally(self):
+        """Units with no FSM state (None) should fire normally for backward compat."""
+        behaviors = self._make_behaviors()
+        turret = _make_target("t1", "friendly", "turret")
+        turret.fsm_state = None  # no FSM set
+        turret.weapon_cooldown = 0.0
+        turret.last_fired = 0.0
+
+        hostile = _make_target("h1", "hostile", "person", position=(10.0, 0.0), speed=1.5)
+
+        targets = {"t1": turret, "h1": hostile}
+        behaviors.tick(0.1, targets)
+
+        # Should fire (backward compatible)
+        assert turret.last_fired > 0
+
+    def test_drone_orbiting_does_not_fire(self):
+        """Drone in orbiting state maintains distance but doesn't fire."""
+        behaviors = self._make_behaviors()
+        drone = _make_target("d1", "friendly", "drone", speed=5.0)
+        drone.fsm_state = "orbiting"
+        drone.weapon_cooldown = 0.0
+        drone.last_fired = 0.0
+
+        hostile = _make_target("h1", "hostile", "person", position=(10.0, 0.0), speed=1.5)
+
+        targets = {"d1": drone, "h1": hostile}
+        behaviors.tick(0.1, targets)
+
+        assert drone.last_fired == 0.0

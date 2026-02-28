@@ -641,12 +641,12 @@ class TestSuppressing:
             })
         assert fsm.current_state == "suppressing"
 
-        # Drop health
+        # Drop health below flee threshold (0.15)
         for _ in range(5):
             fsm.tick(0.1, {
                 "enemies_in_range": [enemy],
                 "enemy_in_weapon_range": True,
-                "health_pct": 0.2,
+                "health_pct": 0.1,
                 "nearest_enemy_stationary": True,
                 "ally_is_flanking": True,
             })
@@ -766,12 +766,12 @@ class TestRetreatingUnderFire:
             })
         assert fsm.current_state == "engaging"
 
-        # Take damage without cover — should flee straight
+        # Take damage without cover — should flee straight (below 0.15 threshold)
         for _ in range(5):
             fsm.tick(0.1, {
                 "enemies_in_range": [enemy],
                 "enemy_in_weapon_range": True,
-                "health_pct": 0.25,
+                "health_pct": 0.1,
                 "nearest_enemy_stationary": False,
                 "cover_available": False,
             })

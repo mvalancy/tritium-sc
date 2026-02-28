@@ -61,18 +61,23 @@ from .behaviors import UnitBehaviors
 from .combat import CombatSystem
 from .comms import UnitComms
 from .cover import CoverSystem
+from .hostile_commander import HostileCommander
 from .degradation import DegradationSystem
+from .unit_missions import UnitMissionSystem
 from .game_mode import GameMode
 from .morale import MoraleSystem
 from .npc import NPCManager
 from .pursuit import PursuitSystem
+from .replay import ReplayRecorder
 from .sensors import SensorSimulator
+from .squads import SquadManager
 from .stats import StatsTracker
 from .target import SimulationTarget
 from .terrain import TerrainMap
 from .unit_states import create_fsm_for_type
 from .upgrades import UpgradeSystem
 from .spatial import SpatialGrid
+from .vision import VisionSystem
 from .weapons import WeaponSystem
 
 if TYPE_CHECKING:
@@ -128,10 +133,18 @@ class SimulationEngine:
         # Spatial partitioning grid for O(1) neighbor queries
         self._spatial_grid = SpatialGrid()
 
+        # Stats tracker (created first so combat can record to it)
+        self.stats_tracker = StatsTracker()
+
         # Combat subsystems
-        self.combat = CombatSystem(event_bus)
+        self.weapon_system = WeaponSystem()
+        self.upgrade_system = UpgradeSystem()
+        self.combat = CombatSystem(event_bus, stats_tracker=self.stats_tracker,
+                                   weapon_system=self.weapon_system,
+                                   upgrade_system=self.upgrade_system)
         self.game_mode = GameMode(event_bus, self, self.combat)
         self.behaviors = UnitBehaviors(self.combat)
+        # Terrain map set below after terrain_map is created
 
         # Extended subsystems
         self.morale_system = MoraleSystem()
@@ -139,10 +152,15 @@ class SimulationEngine:
         self.degradation_system = DegradationSystem()
         self.pursuit_system = PursuitSystem()
         self.unit_comms = UnitComms()
-        self.stats_tracker = StatsTracker()
+        self.behaviors.set_comms(self.unit_comms)
+        # stats_tracker already created above (before CombatSystem)
         self.terrain_map = TerrainMap(map_bounds=self._map_bounds)
-        self.upgrade_system = UpgradeSystem()
-        self.weapon_system = WeaponSystem()
+        self.behaviors.set_terrain_map(self.terrain_map)
+        self.vision_system = VisionSystem(terrain_map=self.terrain_map)
+        self.squad_manager = SquadManager()
+        self.hostile_commander = HostileCommander()
+        self.unit_missions = UnitMissionSystem(map_bounds=self._map_bounds)
+        self.replay_recorder = ReplayRecorder(event_bus)
 
         # FSM per target (target_id -> StateMachine)
         self._fsms: dict[str, object] = {}
@@ -172,6 +190,10 @@ class SimulationEngine:
         self._idle_ticks: dict[str, int] = {}       # target_id -> consecutive idle ticks
         self._last_snapshot: dict[str, tuple] = {}  # target_id -> (pos_x, pos_y, heading, health, status)
         self._tick_counter: int = 0
+
+        # Stall detection — force-escape hostiles stuck against buildings
+        self._stall_positions: dict[str, tuple[float, float]] = {}  # target_id -> last_position
+        self._stall_ticks: dict[str, int] = {}  # target_id -> ticks stalled
 
     @property
     def event_bus(self) -> EventBus:
@@ -257,6 +279,18 @@ class SimulationEngine:
         # Equip weapon
         if target.is_combatant:
             self.weapon_system.assign_default_weapon(target.target_id, target.asset_type)
+        # Register with stats tracker
+        self.stats_tracker.register_unit(
+            target.target_id, target.name, target.alliance, target.asset_type
+        )
+
+        # Assign starter mission metadata + backstory
+        # Note: don't set waypoints here — the mission system tick() handles
+        # idle units, and the loader's second pass may add layout waypoints
+        # after add_target() returns.
+        self.unit_missions.assign_starter_mission(target)
+        self.unit_missions.generate_backstory_scripted(target)
+        self.unit_missions.request_llm_backstory(target)
 
         # Attach NPC brain for neutral units (person, vehicle, animal)
         if (
@@ -333,7 +367,39 @@ class SimulationEngine:
     # -- Game mode interface ------------------------------------------------
 
     def begin_war(self) -> None:
-        """Start a new game (delegates to GameMode)."""
+        """Start a new game (delegates to GameMode).
+
+        Uses MissionDirector if a scenario was pre-generated (from the modal),
+        otherwise falls back to ScenarioGenerator for backward compatibility.
+        Publishes scenario context on the event bus for the frontend.
+        """
+        # Check if MissionDirector has a pre-generated scenario
+        md = getattr(self, '_mission_director', None)
+        if md and md.get_current_scenario():
+            scenario = md.get_current_scenario()
+            self._event_bus.publish("scenario_generated", scenario)
+        else:
+            # Fallback: generate scenario inline (backward compatible)
+            from .scenario_gen import ScenarioGenerator
+            if not hasattr(self, '_scenario_gen'):
+                self._scenario_gen = ScenarioGenerator()
+            scenario = self._scenario_gen.generate_scripted(
+                wave=1, total_waves=10, score=0,
+            )
+            self._event_bus.publish("scenario_generated", scenario)
+
+            # Start async LLM upgrade in background
+            def _llm_gen():
+                try:
+                    llm_scenario = self._scenario_gen.generate_via_llm(wave=1, total_waves=10)
+                    if llm_scenario:
+                        self._event_bus.publish("scenario_generated", llm_scenario)
+                except Exception:
+                    pass
+            threading.Thread(target=_llm_gen, daemon=True, name="scenario-llm").start()
+
+        self.replay_recorder.clear()
+        self.replay_recorder.start()
         self.game_mode.begin_war()
 
     def dispatch_unit(self, target_id: str, destination: tuple[float, float]) -> None:
@@ -392,7 +458,13 @@ class SimulationEngine:
         self.terrain_map.reset()
         self.upgrade_system.reset()
         self.weapon_system.reset()
+        self.squad_manager.clear()
+        self.hostile_commander.reset()
+        self.unit_missions.reset()
+        self.replay_recorder.clear()
         self._fsms.clear()
+        self._stall_positions.clear()
+        self._stall_ticks.clear()
         with self._lock:
             # Remove all hostile targets
             to_remove = [
@@ -448,13 +520,14 @@ class SimulationEngine:
             npc_max_p = settings.npc_max_pedestrians
             npc_on = settings.npc_enabled
         except Exception:
-            npc_max_v = 30
-            npc_max_p = 40
+            npc_max_v = 150
+            npc_max_p = 200
             npc_on = True
         if npc_on:
             self._npc_manager = NPCManager(
                 self, max_vehicles=npc_max_v, max_pedestrians=npc_max_p
             )
+            self._npc_manager.start()
 
         # Start combat event listener
         self._combat_sub_thread = threading.Thread(
@@ -462,11 +535,17 @@ class SimulationEngine:
         )
         self._combat_sub_thread.start()
 
+        # Start replay event listener (captures combat/wave/game events)
+        self.replay_recorder.start_listener()
+
     def stop(self) -> None:
         self._running = False
+        self.replay_recorder.stop_listener()
         if self._ambient_spawner is not None:
             self._ambient_spawner.stop()
             self._ambient_spawner = None
+        if self._npc_manager is not None:
+            self._npc_manager.stop()
         if self._thread is not None:
             self._thread.join(timeout=2.0)
             self._thread = None
@@ -508,8 +587,17 @@ class SimulationEngine:
         if self.game_mode.state in ("countdown", "active", "wave_complete"):
             self.game_mode.tick(dt)
         if game_active:
-            self.combat.tick(dt, targets_dict)
-            self.behaviors.tick(dt, targets_dict)
+            # Vision: compute what each unit can see this tick
+            vision_state = self.vision_system.tick(dt, targets_dict, self._spatial_grid)
+            for tid, t in targets_dict.items():
+                if t.alliance == "hostile":
+                    t.visible = tid in vision_state.friendly_visible
+                    t.detected_by = list(vision_state.visible_to.get(tid, set()))
+            self.combat.tick(dt, targets_dict, cover_system=self.cover_system)
+            self.behaviors.tick(dt, targets_dict, vision_state=vision_state)
+            self.squad_manager.tick(dt, targets_dict)
+            self.squad_manager.tick_orders(dt, targets_dict)
+            self.hostile_commander.tick(dt, targets_dict)
         else:
             # Legacy interception check (non-game-mode)
             if self.game_mode.state == "setup":
@@ -517,12 +605,18 @@ class SimulationEngine:
 
         # Tick extended subsystems (always, regardless of game state)
         self.morale_system.tick(dt, targets_dict)
+        self._sync_morale(targets_dict)
         self.cover_system.tick(dt, targets_dict)
         self.degradation_system.tick(dt, targets_dict)
+        self._sync_degradation(targets)
         self.pursuit_system.tick(dt, targets_dict)
         self.unit_comms.tick(dt, targets_dict)
         self.stats_tracker.tick(dt, targets_dict)
         self.upgrade_system.tick(dt, targets_dict)
+        self.weapon_system.tick(dt)
+
+        # Tick unit missions (idle unit assignment, patrol loops)
+        self.unit_missions.tick(dt, targets_dict)
 
         # Tick NPC manager (mission lifecycle, cleanup)
         if self._npc_manager is not None:
@@ -552,6 +646,10 @@ class SimulationEngine:
                         tick_fn(dt)
                     except Exception:
                         pass  # Plugin tick errors don't crash the engine
+
+        # Record replay snapshot at 2Hz (every 5 ticks at 10Hz)
+        if self._tick_counter % 5 == 0 and self.replay_recorder.is_recording:
+            self.replay_recorder.record_snapshot(targets)
 
         # Tick FSMs with enriched context and sync state back to targets
         self._tick_fsms(dt, targets_dict)
@@ -624,6 +722,36 @@ class SimulationEngine:
                     self._despawned_at[target.target_id] = now
                 elif now - self._despawned_at[target.target_id] > 30:
                     to_remove.append(target.target_id)
+
+            # Map boundary escape: hostiles past the map edge have fled the AO
+            if target.alliance == "hostile" and target.status == "active":
+                x, y = target.position
+                if (abs(x) > self._map_bounds or abs(y) > self._map_bounds):
+                    target.status = "escaped"
+
+            # Stall detection: hostiles stuck or oscillating for 15+s escape.
+            # Uses distance-based check — if net displacement from the
+            # recorded position is < 3m, increment the stall counter.
+            # At 150 ticks (15s at 10Hz), the hostile is force-escaped.
+            if target.alliance == "hostile" and target.status == "active":
+                tid = target.target_id
+                pos = target.position
+                prev_pos = self._stall_positions.get(tid)
+                if prev_pos is not None:
+                    dx = pos[0] - prev_pos[0]
+                    dy = pos[1] - prev_pos[1]
+                    dist = (dx * dx + dy * dy) ** 0.5
+                    if dist < 3.0:
+                        ticks = self._stall_ticks.get(tid, 0) + 1
+                        self._stall_ticks[tid] = ticks
+                        if ticks >= 150:  # 15 seconds at 10Hz
+                            target.status = "escaped"
+                    else:
+                        # Moved significantly — reset stall tracking
+                        self._stall_positions[tid] = pos
+                        self._stall_ticks.pop(tid, None)
+                else:
+                    self._stall_positions[tid] = pos
 
         for tid in to_remove:
             with self._lock:
@@ -793,17 +921,73 @@ class SimulationEngine:
                     })
                     break
 
+    def _sync_morale(self, targets_dict: dict[str, SimulationTarget]) -> None:
+        """Sync morale values from MoraleSystem back to target.morale fields."""
+        for tid, t in targets_dict.items():
+            if t.status in ("eliminated", "destroyed", "neutralized"):
+                continue
+            t.morale = self.morale_system.get_morale(tid)
+
+    def _sync_degradation(self, targets: list[SimulationTarget]) -> None:
+        """Sync degradation values from health to target.degradation fields."""
+        from .degradation import apply_degradation
+        for t in targets:
+            if t.status in ("eliminated", "destroyed", "neutralized"):
+                continue
+            apply_degradation(t)
+
+    def _on_combat_elimination(
+        self, eliminated_id: str, targets_dict: dict[str, SimulationTarget]
+    ) -> None:
+        """Handle morale effects when a unit is eliminated.
+
+        Allies of the eliminated unit lose morale; enemies gain morale.
+        """
+        eliminated = targets_dict.get(eliminated_id)
+        if eliminated is None:
+            return
+
+        for tid, t in targets_dict.items():
+            if tid == eliminated_id:
+                continue
+            if t.status in ("eliminated", "destroyed", "neutralized"):
+                continue
+            if t.alliance == eliminated.alliance:
+                # Same team — ally eliminated, morale drops
+                self.morale_system.on_ally_eliminated(tid)
+            else:
+                # Enemy eliminated — morale boost
+                self.morale_system.on_enemy_eliminated(tid)
+
     def _combat_event_listener(self) -> None:
-        """Listen for target_eliminated events and forward to game mode."""
+        """Listen for combat events and forward to game mode + morale system."""
         sub = self._event_bus.subscribe()
         while self._running:
             try:
                 msg = sub.get(timeout=0.5)
-                if msg.get("type") == "target_eliminated":
-                    data = msg.get("data", {})
+                msg_type = msg.get("type")
+                data = msg.get("data", {})
+
+                if msg_type == "target_eliminated":
                     target_id = data.get("target_id")
                     if target_id:
                         self.game_mode.on_target_eliminated(target_id)
+                        # Morale effects from elimination
+                        with self._lock:
+                            targets_dict = dict(self._targets)
+                        self._on_combat_elimination(target_id, targets_dict)
+
+                elif msg_type == "projectile_hit":
+                    # Morale loss from taking damage
+                    target_id = data.get("target_id")
+                    damage = data.get("damage", 0)
+                    if target_id and damage > 0:
+                        self.morale_system.on_damage_taken(target_id, damage)
+
+                elif msg_type == "game_over":
+                    # Stop replay recording when game ends
+                    self.replay_recorder.stop()
+
             except Exception:
                 pass  # timeout or shutdown
 
@@ -816,7 +1000,9 @@ class SimulationEngine:
     ) -> SimulationTarget:
         """Create a hostile person target, optionally at a specific position."""
         if position is None:
-            position = self._random_edge_position()
+            # Use closer spawn during wave combat for faster engagement
+            combat = self.game_mode.state == "active"
+            position = self._random_edge_position(combat=combat)
 
         if name is None:
             base_name = random.choice(_HOSTILE_NAMES)
@@ -860,7 +1046,8 @@ class SimulationEngine:
         system to spawn mixed hostile waves.
         """
         if position is None:
-            position = self._random_edge_position()
+            combat = self.game_mode.state == "active"
+            position = self._random_edge_position(combat=combat)
 
         # Name generation
         if name is None:
@@ -908,18 +1095,26 @@ class SimulationEngine:
         self.add_target(target)
         return target
 
-    def _random_edge_position(self) -> tuple[float, float]:
-        """Return a random position on one of the four map edges."""
+    def _random_edge_position(self, combat: bool = False) -> tuple[float, float]:
+        """Return a random position on one of the four map edges.
+
+        When *combat* is True, spawns at 35% of map bounds (~70m on a
+        200m map) so wave hostiles reach engagement range in ~15-20s
+        instead of 60+s from the full edge.
+        """
+        frac = 0.35 if combat else 1.0
+        edge_max = self._map_max * frac
+        edge_min = self._map_min * frac
         edge = random.randint(0, 3)
-        coord = random.uniform(self._map_min, self._map_max)
+        coord = random.uniform(edge_min, edge_max)
         if edge == 0:  # north
-            return (coord, self._map_max)
+            return (coord, edge_max)
         elif edge == 1:  # south
-            return (coord, self._map_min)
+            return (coord, edge_min)
         elif edge == 2:  # east
-            return (self._map_max, coord)
+            return (edge_max, coord)
         else:  # west
-            return (self._map_min, coord)
+            return (edge_min, coord)
 
     def _generate_hostile_waypoints(
         self, position: tuple[float, float]
@@ -949,20 +1144,10 @@ class SimulationEngine:
             except Exception:
                 pass  # Fall through to legacy
 
-        # Legacy jitter-based waypoints
-        b = self._map_bounds
-        jitter = b * 0.025
-        loiter_jitter = b * 0.015
-        approach = (
-            position[0] * 0.5 + random.uniform(-jitter, jitter),
-            position[1] * 0.5 + random.uniform(-jitter, jitter),
-        )
-        loiter = (
-            objective[0] + random.uniform(-loiter_jitter, loiter_jitter),
-            objective[1] + random.uniform(-loiter_jitter, loiter_jitter),
-        )
+        # Legacy waypoints: direct to objective then escape.
+        # Fewer intermediate waypoints = fewer building collisions.
         escape_edge = self._random_edge_position()
-        return [approach, objective, loiter, escape_edge]
+        return [objective, escape_edge]
 
     def _count_active_hostiles(self) -> int:
         """Count hostiles that are still a threat (active, not neutralized/escaped/destroyed)."""

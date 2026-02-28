@@ -143,8 +143,8 @@ class TestHostileSpawningWithPathfinder:
         hostile = engine.spawn_hostile()
         assert hostile is not None
         assert len(hostile.waypoints) > 0
-        # Legacy pattern: approach, objective, loiter, escape = 4 waypoints
-        assert len(hostile.waypoints) >= 3
+        # Legacy pattern: objective + escape_edge = 2 waypoints
+        assert len(hostile.waypoints) >= 2
 
     def test_hostile_spawns_at_edge(self):
         """Hostiles should spawn at or near map edge."""

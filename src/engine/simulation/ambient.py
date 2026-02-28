@@ -157,9 +157,9 @@ _DELIVERY_NAMES = [
 class AmbientSpawner:
     """Spawns neutral targets at random intervals to simulate neighborhood life."""
 
-    MAX_NEUTRALS = 8
-    SPAWN_MIN = 15.0  # seconds
-    SPAWN_MAX = 45.0
+    MAX_NEUTRALS = 80
+    SPAWN_MIN = 5.0  # seconds
+    SPAWN_MAX = 15.0
 
     def __init__(self, engine: SimulationEngine) -> None:
         self._engine = engine

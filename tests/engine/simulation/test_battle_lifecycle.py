@@ -29,6 +29,7 @@ import pytest
 
 from engine.simulation.combat import CombatSystem, Projectile, HIT_RADIUS
 from engine.simulation.engine import SimulationEngine
+from engine.simulation.weapons import Weapon
 from engine.simulation.game_mode import (
     GameMode,
     WAVE_CONFIGS,
@@ -169,6 +170,13 @@ def _make_hostile(
     t.health = health
     t.max_health = health
     return t
+
+
+def _set_perfect_accuracy(engine: SimulationEngine, target_id: str) -> None:
+    """Override weapon accuracy to 1.0 so combat tests are deterministic."""
+    weapon = engine.weapon_system.get_weapon(target_id)
+    if weapon is not None:
+        weapon.accuracy = 1.0
 
 
 def _skip_countdown(gm: GameMode) -> None:
@@ -369,6 +377,7 @@ class TestCombatCycle:
         hostile = _make_hostile(position=(3.0, 0.0))
         engine.add_target(turret)
         engine.add_target(hostile)
+        _set_perfect_accuracy(engine, "turret-1")
 
         proj = engine.combat.fire(turret, hostile)
         assert proj is not None
@@ -381,6 +390,7 @@ class TestCombatCycle:
         hostile = _make_hostile(position=(2.0, 0.0), health=100.0)
         engine.add_target(turret)
         engine.add_target(hostile)
+        _set_perfect_accuracy(engine, "turret-1")
 
         engine.combat.fire(turret, hostile)
         targets_dict = {t.target_id: t for t in engine.get_targets()}
@@ -397,6 +407,7 @@ class TestCombatCycle:
         hostile = _make_hostile(position=(2.0, 0.0), health=80.0)
         engine.add_target(turret)
         engine.add_target(hostile)
+        _set_perfect_accuracy(engine, "turret-1")
 
         engine.combat.fire(turret, hostile)
         targets_dict = {t.target_id: t for t in engine.get_targets()}
@@ -411,6 +422,7 @@ class TestCombatCycle:
         hostile = _make_hostile(position=(10.0, 0.0))
         engine.add_target(turret)
         engine.add_target(hostile)
+        _set_perfect_accuracy(engine, "turret-1")
 
         engine.combat.fire(turret, hostile)
         event = fire_sub.get(timeout=1.0)
@@ -423,6 +435,7 @@ class TestCombatCycle:
         hostile = _make_hostile(position=(3.0, 0.0))
         engine.add_target(turret)
         engine.add_target(hostile)
+        _set_perfect_accuracy(engine, "turret-1")
 
         # First shot succeeds
         proj1 = engine.combat.fire(turret, hostile)
@@ -457,6 +470,7 @@ class TestKillTracking:
         hostile = _make_hostile(position=(2.0, 0.0), health=10.0)
         engine.add_target(turret)
         engine.add_target(hostile)
+        _set_perfect_accuracy(engine, "turret-1")
 
         engine.combat.fire(turret, hostile)  # 15 damage > 10 health
         targets_dict = {t.target_id: t for t in engine.get_targets()}
@@ -472,6 +486,7 @@ class TestKillTracking:
         hostile = _make_hostile(position=(2.0, 0.0), health=10.0)
         engine.add_target(turret)
         engine.add_target(hostile)
+        _set_perfect_accuracy(engine, "turret-1")
 
         engine.combat.fire(turret, hostile)
         targets_dict = {t.target_id: t for t in engine.get_targets()}
@@ -488,6 +503,7 @@ class TestKillTracking:
         hostile = _make_hostile(position=(2.0, 0.0), health=10.0)
         engine.add_target(turret)
         engine.add_target(hostile)
+        _set_perfect_accuracy(engine, "turret-1")
 
         engine.combat.fire(turret, hostile)
         targets_dict = {t.target_id: t for t in engine.get_targets()}
@@ -499,6 +515,7 @@ class TestKillTracking:
         bus, engine = _make_engine()
         turret = _make_turret()
         engine.add_target(turret)
+        _set_perfect_accuracy(engine, "turret-1")
 
         targets_dict = {"turret-1": turret}
         for i in range(3):
@@ -521,6 +538,7 @@ class TestKillTracking:
         streak_sub = bus.subscribe("elimination_streak")
         turret = _make_turret()
         engine.add_target(turret)
+        _set_perfect_accuracy(engine, "turret-1")
 
         targets_dict = {"turret-1": turret}
         for i in range(3):
@@ -1147,6 +1165,7 @@ class TestGameReset:
         hostile = _make_hostile(position=(10.0, 0.0))
         engine.add_target(turret)
         engine.add_target(hostile)
+        _set_perfect_accuracy(engine, "turret-1")
         engine.combat.fire(turret, hostile)
         assert engine.combat.projectile_count == 1
 
@@ -1269,6 +1288,7 @@ class TestBehaviorIntegration:
         hostile = _make_hostile(position=(20.0, 0.0))
         engine.add_target(turret)
         engine.add_target(hostile)
+        _set_perfect_accuracy(engine, "turret-1")
 
         targets_dict = {t.target_id: t for t in engine.get_targets()}
         engine.behaviors.tick(0.1, targets_dict)
@@ -1300,6 +1320,8 @@ class TestBehaviorIntegration:
         hostile = _make_hostile(position=(10.0, 0.0))
         engine.add_target(turret)
         engine.add_target(hostile)
+        _set_perfect_accuracy(engine, "turret-1")
+        _set_perfect_accuracy(engine, "hostile-1")
 
         targets_dict = {t.target_id: t for t in engine.get_targets()}
         engine.behaviors.tick(0.1, targets_dict)
@@ -1330,6 +1352,7 @@ class TestFullLifecycle:
         # Place a turret
         turret = _make_turret()
         engine.add_target(turret)
+        _set_perfect_accuracy(engine, "turret-1")
 
         # Begin war and skip countdown
         engine.begin_war()
@@ -1382,6 +1405,7 @@ class TestFullLifecycle:
         bus, engine = _make_engine()
         turret = _make_turret()
         engine.add_target(turret)
+        _set_perfect_accuracy(engine, "turret-1")
 
         engine.begin_war()
         _skip_countdown(engine.game_mode)

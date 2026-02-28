@@ -32,6 +32,7 @@ Events are published on the EventBus for the frontend and Amy's announcer:
 from __future__ import annotations
 
 import math
+import random
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -40,6 +41,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from engine.comms.event_bus import EventBus
     from .target import SimulationTarget
+    from .upgrades import UpgradeSystem
 
 # Hit detection radius — projectile is "close enough" to count as a hit.
 # Must be large enough to account for target movement during projectile flight.
@@ -93,10 +95,14 @@ class Projectile:
 class CombatSystem:
     """Manages projectiles, hit detection, and damage resolution."""
 
-    def __init__(self, event_bus: EventBus) -> None:
+    def __init__(self, event_bus: EventBus, stats_tracker=None,
+                 weapon_system=None, upgrade_system: UpgradeSystem | None = None) -> None:
         self._projectiles: dict[str, Projectile] = {}
         self._event_bus = event_bus
         self._elimination_streaks: dict[str, int] = {}
+        self._stats_tracker = stats_tracker
+        self._weapon_system = weapon_system
+        self._upgrade_system = upgrade_system
 
     @property
     def projectile_count(self) -> int:
@@ -107,23 +113,53 @@ class CombatSystem:
         source: SimulationTarget,
         target: SimulationTarget,
         projectile_type: str = "nerf_dart",
+        terrain_map=None,
     ) -> Projectile | None:
         """Fire a projectile from *source* at *target*.
 
         Returns the Projectile if fired, None if source cannot fire.
         Updates source.last_fired timestamp.
+        When terrain_map is provided, checks line_of_sight before firing.
         """
         if not source.can_fire():
             return None
 
-        # Check range
+        # Check range (with upgrade modifier)
         dx = target.position[0] - source.position[0]
         dy = target.position[1] - source.position[1]
         dist = math.hypot(dx, dy)
-        if dist > source.weapon_range:
+        effective_range = source.weapon_range
+        if self._upgrade_system is not None:
+            effective_range *= self._upgrade_system.get_stat_modifier(
+                source.target_id, "weapon_range"
+            )
+        if dist > effective_range:
             return None
 
+        # Check LOS if terrain map is available
+        if terrain_map is not None:
+            if not terrain_map.line_of_sight(source.position, target.position):
+                return None
+
+        # Weapon system integration: reload check, accuracy, ammo
+        if self._weapon_system is not None:
+            if self._weapon_system.is_reloading(source.target_id):
+                return None
+            weapon = self._weapon_system.get_weapon(source.target_id)
+            if weapon is not None:
+                if random.random() > weapon.accuracy:
+                    source.last_fired = time.time()
+                    return None  # missed due to weapon accuracy
+                self._weapon_system.consume_ammo(source.target_id)
+
         source.last_fired = time.time()
+
+        # Apply damage modifier from upgrades
+        effective_damage = source.weapon_damage
+        if self._upgrade_system is not None:
+            effective_damage *= self._upgrade_system.get_stat_modifier(
+                source.target_id, "weapon_damage"
+            )
 
         proj = Projectile(
             id=str(uuid.uuid4()),
@@ -133,7 +169,7 @@ class CombatSystem:
             position=source.position,
             target_pos=target.position,
             speed=80.0,
-            damage=source.weapon_damage,
+            damage=effective_damage,
             projectile_type=projectile_type,
         )
         self._projectiles[proj.id] = proj
@@ -149,10 +185,18 @@ class CombatSystem:
             "projectile_type": projectile_type,
             "damage": proj.damage,
         })
+        # Record shot in stats tracker
+        if self._stats_tracker is not None:
+            self._stats_tracker.on_shot_fired(source.target_id)
         return proj
 
-    def tick(self, dt: float, targets: dict[str, SimulationTarget]) -> None:
-        """Advance all projectiles, resolve hits and misses."""
+    def tick(self, dt: float, targets: dict[str, SimulationTarget],
+             cover_system=None) -> None:
+        """Advance all projectiles, resolve hits and misses.
+
+        When *cover_system* is provided, damage is reduced by the target's
+        cover bonus (0.0-0.8) on each hit.
+        """
         to_remove: list[str] = []
 
         for proj in self._projectiles.values():
@@ -185,17 +229,35 @@ class CombatSystem:
 
                 if dist_to_target <= HIT_RADIUS:
                     proj.hit = True
-                    eliminated = target.apply_damage(proj.damage)
+                    # Apply cover damage reduction
+                    effective_damage = proj.damage
+                    if cover_system is not None:
+                        cover_bonus = cover_system.get_cover_bonus(
+                            target.position, proj.position, target.target_id
+                        )
+                        effective_damage = proj.damage * (1.0 - cover_bonus)
+                    # Apply upgrade damage reduction
+                    if self._upgrade_system is not None:
+                        reduction = self._upgrade_system.get_stat_modifier(
+                            target.target_id, "damage_reduction"
+                        )
+                        effective_damage *= (1.0 - reduction)
+                    eliminated = target.apply_damage(effective_damage)
                     self._event_bus.publish("projectile_hit", {
                         "projectile_id": proj.id,
                         "target_id": target.target_id,
                         "target_name": target.name,
-                        "damage": proj.damage,
+                        "damage": effective_damage,
                         "remaining_health": target.health,
                         "source_id": proj.source_id,
                         "projectile_type": proj.projectile_type,
                         "position": {"x": target.position[0], "y": target.position[1]},
                     })
+                    # Record hit in stats tracker
+                    if self._stats_tracker is not None:
+                        self._stats_tracker.on_shot_hit(
+                            proj.source_id, target.target_id, effective_damage
+                        )
 
                     if eliminated:
                         # Increment interceptor stats
@@ -213,6 +275,11 @@ class CombatSystem:
                             "position": {"x": target.position[0], "y": target.position[1]},
                             "method": proj.projectile_type,
                         })
+                        # Record kill in stats tracker
+                        if self._stats_tracker is not None:
+                            self._stats_tracker.on_kill(
+                                proj.source_id, target.target_id
+                            )
 
                         # Elimination streak tracking
                         self._elimination_streaks[proj.source_id] = (

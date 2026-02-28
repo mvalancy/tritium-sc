@@ -36,6 +36,9 @@ class WaveDefinition:
     groups: list[SpawnGroup]
     speed_mult: float = 1.0
     health_mult: float = 1.0
+    briefing: str | None = None
+    threat_level: str | None = None
+    intel: str | None = None
 
     @property
     def total_count(self) -> int:
@@ -86,6 +89,9 @@ class BattleScenario:
                     ],
                     "speed_mult": w.speed_mult,
                     "health_mult": w.health_mult,
+                    **({"briefing": w.briefing} if w.briefing else {}),
+                    **({"threat_level": w.threat_level} if w.threat_level else {}),
+                    **({"intel": w.intel} if w.intel else {}),
                 }
                 for w in self.waves
             ],
@@ -117,6 +123,9 @@ class BattleScenario:
                 groups=groups,
                 speed_mult=w.get("speed_mult", 1.0),
                 health_mult=w.get("health_mult", 1.0),
+                briefing=w.get("briefing"),
+                threat_level=w.get("threat_level"),
+                intel=w.get("intel"),
             ))
 
         defenders = []

@@ -49,6 +49,10 @@ class WaveConfig:
     count: int
     speed_mult: float
     health_mult: float
+    # Mixed-type composition: list of (asset_type, count) tuples.
+    # When set, _spawn_wave_hostiles uses these instead of spawning all "person".
+    # Individual counts should sum to self.count.
+    composition: list[tuple[str, int]] | None = None
     # Extended fields for infinite mode
     has_elites: bool = False
     elite_count: int = 0
@@ -58,18 +62,28 @@ class WaveConfig:
     score_mult: float = 1.0
 
 
-# 10 waves of increasing difficulty
+# 10 waves of increasing difficulty with mixed unit compositions.
+# Early waves are all foot soldiers; later waves introduce vehicles, leaders,
+# and swarm drones for tactical variety.
 WAVE_CONFIGS: list[WaveConfig] = [
     WaveConfig("Scout Party",    count=3,  speed_mult=0.8, health_mult=0.7),
     WaveConfig("Raiding Party",  count=5,  speed_mult=1.0, health_mult=1.0),
-    WaveConfig("Assault Squad",  count=7,  speed_mult=1.0, health_mult=1.2),
-    WaveConfig("Heavy Assault",  count=8,  speed_mult=1.1, health_mult=1.5),
-    WaveConfig("Blitz Attack",   count=10, speed_mult=1.3, health_mult=1.2),
-    WaveConfig("Armored Push",   count=8,  speed_mult=0.9, health_mult=2.0),
-    WaveConfig("Swarm",          count=15, speed_mult=1.4, health_mult=0.8),
-    WaveConfig("Elite Strike",   count=6,  speed_mult=1.2, health_mult=2.5),
-    WaveConfig("Full Invasion",  count=20, speed_mult=1.3, health_mult=1.5),
-    WaveConfig("FINAL STAND",    count=25, speed_mult=1.5, health_mult=2.0),
+    WaveConfig("Assault Squad",  count=7,  speed_mult=1.0, health_mult=1.2,
+               composition=[("person", 5), ("hostile_vehicle", 2)]),
+    WaveConfig("Heavy Assault",  count=8,  speed_mult=1.1, health_mult=1.5,
+               composition=[("person", 6), ("hostile_vehicle", 2)]),
+    WaveConfig("Blitz Attack",   count=10, speed_mult=1.3, health_mult=1.2,
+               composition=[("person", 8), ("hostile_vehicle", 2)]),
+    WaveConfig("Armored Push",   count=8,  speed_mult=0.9, health_mult=2.0,
+               composition=[("person", 4), ("hostile_vehicle", 2), ("hostile_leader", 2)]),
+    WaveConfig("Swarm",          count=15, speed_mult=1.4, health_mult=0.8,
+               composition=[("person", 12), ("swarm_drone", 3)]),
+    WaveConfig("Elite Strike",   count=6,  speed_mult=1.2, health_mult=2.5,
+               composition=[("hostile_leader", 3), ("hostile_vehicle", 3)]),
+    WaveConfig("Full Invasion",  count=20, speed_mult=1.3, health_mult=1.5,
+               composition=[("person", 12), ("hostile_vehicle", 4), ("hostile_leader", 4)]),
+    WaveConfig("FINAL STAND",    count=25, speed_mult=1.5, health_mult=2.0,
+               composition=[("person", 15), ("hostile_vehicle", 5), ("hostile_leader", 3), ("swarm_drone", 2)]),
 ]
 
 # Time between staggered spawns within a wave
@@ -305,11 +319,18 @@ class GameMode:
         # Check if a scenario is loaded with custom wave definitions
         if self._scenario_waves is not None and 1 <= wave_num <= len(self._scenario_waves):
             wave_def = self._scenario_waves[wave_num - 1]
-            self._event_bus.publish("wave_start", {
+            event_data = {
                 "wave_number": wave_num,
                 "wave_name": wave_def.name,
                 "hostile_count": wave_def.total_count,
-            })
+            }
+            if wave_def.briefing:
+                event_data["briefing"] = wave_def.briefing
+            if wave_def.threat_level:
+                event_data["threat_level"] = wave_def.threat_level
+            if wave_def.intel:
+                event_data["intel"] = wave_def.intel
+            self._event_bus.publish("wave_start", event_data)
             self._spawn_thread = threading.Thread(
                 target=self._spawn_scenario_wave,
                 args=(wave_def,),
@@ -358,7 +379,15 @@ class GameMode:
                     time.sleep(_SPAWN_STAGGER)
 
     def _spawn_wave_hostiles(self, config: WaveConfig) -> None:
-        """Spawn hostiles with staggered timing."""
+        """Spawn hostiles with staggered timing.
+
+        When config.composition is set, spawns mixed unit types in the
+        specified quantities.  Otherwise falls back to all "person" type.
+        """
+        if config.composition:
+            self._spawn_mixed_wave(config)
+            return
+
         for i in range(config.count):
             if self.state not in ("active",):
                 break
@@ -374,6 +403,33 @@ class GameMode:
             self._wave_hostile_ids.add(hostile.target_id)
             if i < config.count - 1:
                 time.sleep(_SPAWN_STAGGER)
+
+    def _spawn_mixed_wave(self, config: WaveConfig) -> None:
+        """Spawn a wave with mixed hostile unit types from config.composition.
+
+        Each (asset_type, count) tuple in the composition list spawns that
+        many units of the given type, with wave speed/health multipliers
+        applied.  Units are spawned in the listed order with staggered timing.
+        """
+        spawn_index = 0
+        total = sum(c for _, c in config.composition)
+        for asset_type, type_count in config.composition:
+            for _ in range(type_count):
+                if self.state not in ("active",):
+                    return
+                hostile = self._engine.spawn_hostile_typed(
+                    asset_type=asset_type,
+                    speed=None,  # use default speed for type
+                    health=None,  # apply from profile
+                )
+                # Apply wave multipliers after profile is set by spawn_hostile_typed
+                hostile.speed *= config.speed_mult
+                hostile.health *= config.health_mult
+                hostile.max_health *= config.health_mult
+                self._wave_hostile_ids.add(hostile.target_id)
+                spawn_index += 1
+                if spawn_index < total:
+                    time.sleep(_SPAWN_STAGGER)
 
     def _is_spawning(self) -> bool:
         """Check if the wave spawner thread is still running."""

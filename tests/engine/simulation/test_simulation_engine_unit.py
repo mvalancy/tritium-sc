@@ -302,11 +302,11 @@ class TestSpawnHostile:
         h = engine.spawn_hostile()
         assert len(h.waypoints) >= 2  # At minimum approach + escape
 
-    def test_spawn_hostile_has_four_legacy_waypoints(self):
+    def test_spawn_hostile_has_legacy_waypoints(self):
         engine, bus = _make_engine()
-        # Without street graph, should get 4 waypoints: approach, objective, loiter, escape
+        # Without street graph, should get 2 waypoints: objective + escape_edge
         h = engine.spawn_hostile()
-        assert len(h.waypoints) == 4
+        assert len(h.waypoints) == 2
 
     def test_spawn_hostile_combat_profile_applied(self):
         engine, bus = _make_engine()
@@ -1259,7 +1259,7 @@ class TestEdgeCases:
         """Legacy waypoint generation (no street graph)."""
         engine, bus = _make_engine(map_bounds=100.0)
         wps = engine._generate_hostile_waypoints((100.0, 0.0))
-        assert len(wps) == 4
+        assert len(wps) == 2  # objective + escape_edge
         # Last waypoint should be on map edge
         ex, ey = wps[-1]
         on_edge = (

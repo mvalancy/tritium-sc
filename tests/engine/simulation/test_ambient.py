@@ -423,8 +423,8 @@ class TestSpawnRandom:
 
 
 class TestMaxNeutrals:
-    def test_max_neutrals_is_8(self) -> None:
-        assert AmbientSpawner.MAX_NEUTRALS == 8
+    def test_max_neutrals_is_80(self) -> None:
+        assert AmbientSpawner.MAX_NEUTRALS == 80
 
     def test_count_excludes_despawned(
         self, spawner: AmbientSpawner, engine: MockEngine
