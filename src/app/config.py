@@ -83,6 +83,10 @@ class Settings(BaseSettings):
     simulation_bounds: float = 200.0  # Half-extent in meters (±200 = 400m x 400m)
     simulation_max_hostiles: int = 200  # Maximum simultaneous hostile targets
 
+    # Plugin system
+    plugins_dir: str = "plugins"              # Directory for drop-in plugins
+    plugins_enabled: bool = True              # Enable plugin discovery and loading
+
     # NPC world population
     npc_enabled: bool = True
     npc_max_vehicles: int = 30       # Peak vehicle count (scaled by time-of-day)

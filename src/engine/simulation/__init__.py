@@ -28,10 +28,12 @@ from .target import SimulationTarget
 from .terrain import TerrainCell, TerrainMap
 from .unit_states import create_turret_fsm, create_rover_fsm, create_drone_fsm, create_hostile_fsm, create_fsm_for_type
 from .upgrades import Upgrade, Ability, ActiveEffect, UpgradeSystem
+from .combat_bridge import CombatBridge
 from .weapons import Weapon, WeaponSystem
 
 __all__ = [
     "AmbientSpawner",
+    "CombatBridge",
     "CombatSystem",
     "CoverObject",
     "CoverSystem",

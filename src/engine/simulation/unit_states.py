@@ -595,8 +595,15 @@ def create_fsm_for_type(asset_type: str, alliance: str = "friendly") -> StateMac
     if asset_type == "person" and alliance == "hostile":
         return create_hostile_fsm()
 
-    # Neutral persons get no FSM
-    if asset_type == "person" and alliance in ("neutral", "friendly"):
+    # Neutral NPC types — delegate to NPC intelligence plugin FSMs
+    if asset_type in ("person", "vehicle", "animal") and alliance in ("neutral", "friendly"):
+        try:
+            from engine.simulation.npc_intelligence.npc_fsm import create_npc_fsm
+            result = create_npc_fsm(asset_type, alliance)
+            if result is not None:
+                return result
+        except ImportError:
+            pass
         return None
 
     # Friendly/default types
@@ -607,5 +614,5 @@ def create_fsm_for_type(asset_type: str, alliance: str = "friendly") -> StateMac
     if asset_type in ("drone", "scout_drone"):
         return create_drone_fsm()
 
-    # No FSM for non-combatant types (vehicle, animal, unknown)
+    # No FSM for unknown types
     return None

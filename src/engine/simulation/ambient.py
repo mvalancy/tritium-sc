@@ -284,43 +284,75 @@ class AmbientSpawner:
 
         People walk along streets, not through houses.  The path makes an
         L-shaped turn at a street corner, producing the right-angle walking
-        pattern you see in real neighborhoods.
+        pattern you see in real neighborhoods.  Corner points validated
+        against building obstacles.
         """
         end = self._opposite_edge(start)
-        return _street_path(start, end)
+        path = _street_path(start, end)
+        # Validate all waypoints against buildings
+        return [self._safe_point(p[0], p[1]) for p in path]
 
     def _road_path(self, start: tuple[float, float]) -> list[tuple[float, float]]:
         """Generate a road path following the street grid.
 
         Cars follow streets.  Unlike the old straight-line path, this snaps
         to the nearest NS or EW street corridor so the car visibly drives
-        along a road.
+        along a road.  Corner points validated against building obstacles.
         """
         end = self._opposite_edge(start)
-        return _street_path(start, end)
+        path = _street_path(start, end)
+        return [self._safe_point(p[0], p[1]) for p in path]
+
+    def _point_in_building(self, x: float, y: float) -> bool:
+        """Check if a point is inside any building (if obstacles loaded)."""
+        obs = getattr(self._engine, '_obstacles', None)
+        if obs is None:
+            return False
+        return obs.point_in_building(x, y)
+
+    def _safe_point(self, x: float, y: float, max_attempts: int = 10) -> tuple[float, float]:
+        """Jitter a point until it's outside all buildings, or return an edge point."""
+        if not self._point_in_building(x, y):
+            return (x, y)
+        for _ in range(max_attempts):
+            jx = x + random.uniform(-5, 5)
+            jy = y + random.uniform(-5, 5)
+            jx = max(_MAP_MIN, min(_MAP_MAX, jx))
+            jy = max(_MAP_MIN, min(_MAP_MAX, jy))
+            if not self._point_in_building(jx, jy):
+                return (jx, jy)
+        # Fallback: edge point (always safe)
+        return self._random_edge()
 
     def _yard_wander(self) -> tuple[tuple[float, float], list[tuple[float, float]]]:
-        """Generate a start + wander path within a yard area."""
+        """Generate a start + wander path within a yard area.
+
+        All generated points are validated against building obstacles.
+        """
         # Pick a random yard area (not at edges)
         cx = random.uniform(-15, 15)
         cy = random.uniform(-15, 15)
-        start = (cx + random.uniform(-3, 3), cy + random.uniform(-3, 3))
+        start = self._safe_point(cx + random.uniform(-3, 3), cy + random.uniform(-3, 3))
         points = []
         for _ in range(random.randint(3, 5)):
-            points.append((
+            pt = self._safe_point(
                 self._clamp(cx + random.uniform(-5, 5)),
                 self._clamp(cy + random.uniform(-5, 5)),
-            ))
+            )
+            points.append(pt)
         # Exit toward nearest edge
         exit_point = self._random_edge()
         points.append(exit_point)
         return start, points
 
     def _delivery_path(self) -> tuple[tuple[float, float], list[tuple[float, float]]]:
-        """Generate delivery path: road edge -> front door -> pause -> back."""
+        """Generate delivery path: road edge -> front door -> pause -> back.
+
+        Front door position validated against building obstacles.
+        """
         start = self._random_edge()
-        # "Front door" somewhere in the interior
-        door = (random.uniform(-10, 10), random.uniform(-10, 10))
+        # "Front door" somewhere in the interior — avoid buildings
+        door = self._safe_point(random.uniform(-10, 10), random.uniform(-10, 10))
         # Path: approach -> door -> wait (same point, speed makes them pause) -> back to edge
         return_point = self._random_edge()
         return start, [door, door, return_point]

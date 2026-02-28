@@ -34,6 +34,7 @@ from app.routers.telemetry import router as telemetry_router
 from app.routers.mesh import router as mesh_router
 from app.routers.geodata import router as geodata_router
 from app.routers.npc import router as npc_router
+from app.routers.plugins import router as plugins_router
 
 
 # ---------------------------------------------------------------------------
@@ -208,6 +209,62 @@ def _start_mesh_web_source(amy_instance) -> object | None:
         return source
     except Exception as e:
         logger.warning(f"Mesh web source failed to start: {e}")
+        return None
+
+
+def _start_plugins(app, amy_instance, sim_engine) -> object | None:
+    """Discover, configure, and start all plugins. Returns PluginManager or None."""
+    try:
+        from engine.plugins.manager import PluginManager
+        from engine.plugins.base import PluginContext
+        import logging
+
+        mgr = PluginManager()
+
+        # Discover from plugins/ directory and env var
+        plugins_dir = Path(__file__).parent.parent.parent / "plugins"
+        scan_paths = []
+        if plugins_dir.exists():
+            scan_paths.append(str(plugins_dir))
+
+        found = mgr.discover(paths=scan_paths)
+        for p in found:
+            try:
+                mgr.register(p)
+            except ValueError:
+                pass  # Duplicate — already registered
+
+        if not mgr.list_plugins() and not found:
+            logger.info("No plugins found")
+            return mgr
+
+        # Build context factory
+        event_bus = amy_instance.event_bus if amy_instance else None
+        target_tracker = amy_instance.target_tracker if amy_instance else None
+
+        def ctx_factory(plugin_id: str) -> PluginContext:
+            return PluginContext(
+                event_bus=event_bus,
+                target_tracker=target_tracker,
+                simulation_engine=sim_engine,
+                settings={},
+                app=app,
+                logger=logging.getLogger(f"plugin.{plugin_id}"),
+                plugin_manager=mgr,
+            )
+
+        mgr.configure_all(ctx_factory)
+        results = mgr.start_all()
+
+        started = sum(1 for v in results.values() if v)
+        failed = sum(1 for v in results.values() if not v)
+        if started > 0 or failed > 0:
+            logger.info(f"Plugins: {started} started, {failed} failed")
+
+        return mgr
+
+    except Exception as e:
+        logger.warning(f"Plugin system failed to start: {e}")
         return None
 
 
@@ -508,11 +565,21 @@ async def lifespan(app: FastAPI):
                 )
                 logger.info("Headless simulation engine + event bridge started (no Amy)")
 
+    # Plugin system — discover, configure, and start all plugins
+    plugin_manager = _start_plugins(app, amy_instance, sim_engine)
+    if plugin_manager is not None:
+        app.state.plugin_manager = plugin_manager
+
     logger.info("=" * 60)
     logger.info("  TRITIUM-SC ONLINE")
     logger.info("=" * 60)
 
     yield
+
+    # Stop plugins first (they may depend on subsystems)
+    if plugin_manager is not None:
+        logger.info("Stopping plugins...")
+        plugin_manager.stop_all()
 
     _shutdown_subsystems(amy_instance, sim_engine, mqtt_bridge, app)
     logger.info("TRITIUM-SC shutting down...")
@@ -556,6 +623,7 @@ app.include_router(telemetry_router)
 app.include_router(mesh_router)
 app.include_router(geodata_router)
 app.include_router(npc_router)
+app.include_router(plugins_router)
 
 # Static files
 frontend_path = Path(__file__).parent.parent.parent / "frontend"
