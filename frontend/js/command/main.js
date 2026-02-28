@@ -26,6 +26,7 @@ import { PatrolPanelDef } from './panels/patrol.js';
 import { ScenariosPanelDef } from './panels/scenarios.js';
 import { SystemPanelDef } from './panels/system.js';
 import { MinimapPanelDef } from './panels/minimap.js';
+import { GraphlingsPanelDef } from './panels/graphlings.js';
 import { MissionModal, initMissionModal } from './mission-modal.js';
 
 // Make available on window for console debugging
@@ -353,6 +354,7 @@ function initPanelSystem(container) {
     panelManager.register(ScenariosPanelDef);
     panelManager.register(SystemPanelDef);
     panelManager.register(MinimapPanelDef);
+    panelManager.register(GraphlingsPanelDef);
 
     // Try loading saved layout; if none, open defaults
     if (!panelManager.loadLayout()) {

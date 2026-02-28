@@ -1398,3 +1398,168 @@
 .dc-npc-personality {
     margin: 4px 0;
 }
+
+
+/* ========================================
+   Graphlings Observer Panel
+   ======================================== */
+
+.gl-panel-inner {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    gap: 4px;
+}
+
+.gl-status-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+    border-bottom: 1px solid rgba(99, 102, 241, 0.2);
+}
+
+.gl-status-label {
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 10px;
+    text-transform: uppercase;
+}
+
+.gl-status-count {
+    color: var(--cyan, #00f0ff);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.gl-status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    margin-left: auto;
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.gl-dot-connected { background: var(--green, #22c55e); }
+.gl-dot-disconnected { background: var(--red, #ef4444); }
+
+.gl-agents-list {
+    max-height: 60px;
+    overflow-y: auto;
+}
+
+.gl-agent-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 0;
+    font-size: 11px;
+}
+
+.gl-agent-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--cyan, #00f0ff);
+    flex-shrink: 0;
+}
+
+.gl-agent-id {
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.gl-no-agents {
+    color: rgba(255, 255, 255, 0.3);
+    font-size: 10px;
+    padding: 4px 0;
+}
+
+.gl-divider {
+    height: 1px;
+    background: rgba(99, 102, 241, 0.15);
+    margin: 2px 0;
+}
+
+.gl-thought-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 2px 0;
+}
+
+.gl-thought-title {
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 10px;
+    text-transform: uppercase;
+}
+
+.gl-clear-btn {
+    background: none;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: rgba(255, 255, 255, 0.4);
+    font-size: 9px;
+    padding: 1px 6px;
+    cursor: pointer;
+    border-radius: 2px;
+}
+
+.gl-clear-btn:hover {
+    color: rgba(255, 255, 255, 0.8);
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+.gl-thought-stream {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+}
+
+.gl-thought-entry {
+    padding: 4px 0;
+    border-bottom: 1px solid rgba(99, 102, 241, 0.08);
+}
+
+.gl-thought-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+}
+
+.gl-thought-soul {
+    color: var(--cyan, #00f0ff);
+    font-weight: 600;
+}
+
+.gl-thought-emotion {
+    padding: 0 4px;
+    border-radius: 2px;
+    font-size: 9px;
+    text-transform: uppercase;
+}
+
+.gl-emotion-happy { color: #fbbf24; }
+.gl-emotion-curious { color: #60a5fa; }
+.gl-emotion-scared { color: #f87171; }
+.gl-emotion-sad { color: #a78bfa; }
+.gl-emotion-angry { color: #ef4444; }
+.gl-emotion-calm { color: #34d399; }
+.gl-emotion-excited { color: #fb923c; }
+
+.gl-thought-time {
+    color: rgba(255, 255, 255, 0.3);
+    margin-left: auto;
+    font-size: 9px;
+}
+
+.gl-thought-text {
+    color: rgba(255, 255, 255, 0.75);
+    font-size: 11px;
+    line-height: 1.4;
+    padding: 2px 0;
+}
+
+.gl-thought-action {
+    color: rgba(99, 102, 241, 0.7);
+    font-size: 10px;
+    padding-left: 8px;
+}
