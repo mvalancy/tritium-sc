@@ -17,6 +17,7 @@ import { TritiumStore } from './store.js';
 import { EventBus } from './events.js';
 import { resolveLabels } from './label-collision.js';
 import { drawUnit as drawUnitIcon } from './unit-icons.js';
+import { DeviceModalManager } from './device-modal.js';
 
 // ============================================================
 // Constants
@@ -285,6 +286,7 @@ export function initMap() {
         EventBus.on('unit:dispatched', _onDispatched),
         EventBus.on('mesh:center-on-node', _onMeshCenterOnNode),
         EventBus.on('minimap:pan', _onMinimapPan),
+        EventBus.on('device:open-modal', _onDeviceOpenModal),
     );
 
     // Subscribe to store for selectedUnitId changes (highlight sync)
@@ -504,6 +506,9 @@ function _draw() {
 
     // Layer 5.1: Unit labels (collision-resolved)
     _drawLabels(ctx);
+
+    // Layer 5.15: NPC thought bubbles
+    _drawThoughtBubbles(ctx);
 
     // Layer 5.2: Hovered unit tooltip
     _drawTooltip(ctx);
@@ -952,6 +957,174 @@ function _drawLabels(ctx) {
     ctx.restore();
 }
 
+// ============================================================
+// Thought bubble helpers (exported for testing)
+// ============================================================
+
+/**
+ * Word-wrap text to fit within maxWidth pixels.
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {string} text
+ * @param {number} maxWidth
+ * @returns {string[]} array of lines
+ */
+function _wrapText(ctx, text, maxWidth) {
+    const words = text.split(' ');
+    const lines = [];
+    let currentLine = '';
+
+    for (const word of words) {
+        const testLine = currentLine ? currentLine + ' ' + word : word;
+        const metrics = ctx.measureText(testLine);
+        if (metrics.width > maxWidth && currentLine) {
+            lines.push(currentLine);
+            currentLine = word;
+        } else {
+            currentLine = testLine;
+        }
+    }
+    if (currentLine) lines.push(currentLine);
+    return lines;
+}
+
+/**
+ * Map emotion name to a border color.
+ * @param {string} emotion
+ * @returns {string} CSS color
+ */
+function _emotionColor(emotion) {
+    const colors = {
+        curious: '#00f0ff',
+        afraid: '#fcee0a',
+        angry: '#ff2a6d',
+        happy: '#05ffa1',
+        neutral: '#888888',
+    };
+    return colors[emotion] || '#888888';
+}
+
+/**
+ * Draw NPC thought bubbles above units that have active thoughts.
+ * Iterates TritiumStore.units, renders speech bubble with emotion-colored border.
+ */
+function _drawThoughtBubbles(ctx) {
+    const units = TritiumStore.units;
+    if (!units || units.size === 0) return;
+
+    const now = Date.now();
+    const fontSize = Math.max(9, 10 * Math.min(_state.cam.zoom, 2));
+    const lineHeight = fontSize + 4;
+    const padding = 6;
+    const maxTextWidth = 120;
+    const tailHeight = 8;
+    const fadeInDuration = 300;
+    const fadeOutStart = 1000; // start fading 1s before expiry
+
+    ctx.save();
+    ctx.font = `${fontSize}px ${FONT_FAMILY}`;
+    ctx.textBaseline = 'top';
+    ctx.textAlign = 'left';
+
+    for (const [id, unit] of units) {
+        if (!unit.thoughtText || !unit.thoughtExpires) continue;
+        if (unit.thoughtExpires <= now) continue;
+
+        const pos = unit.position;
+        if (!pos || pos.x === undefined || pos.y === undefined) continue;
+
+        const screen = worldToScreen(pos.x, pos.y);
+        const text = unit.thoughtText;
+        const emotion = unit.thoughtEmotion || 'neutral';
+        const borderColor = _emotionColor(emotion);
+
+        // Compute opacity for fade-in / fade-out
+        const created = unit.thoughtExpires - ((unit.thoughtDuration || 5) * 1000);
+        const age = now - created;
+        const timeLeft = unit.thoughtExpires - now;
+        let alpha = 1.0;
+        if (age < fadeInDuration) {
+            alpha = age / fadeInDuration;
+        }
+        if (timeLeft < fadeOutStart) {
+            alpha = Math.min(alpha, timeLeft / fadeOutStart);
+        }
+        alpha = Math.max(0, Math.min(1, alpha));
+        if (alpha <= 0) continue;
+
+        // Word-wrap
+        const lines = _wrapText(ctx, text, maxTextWidth);
+        const textW = Math.min(
+            maxTextWidth,
+            Math.max(...lines.map(l => ctx.measureText(l).width))
+        );
+        const bubbleW = textW + padding * 2;
+        const bubbleH = lines.length * lineHeight + padding * 2;
+
+        // Position: centered above unit
+        const bx = screen.x - bubbleW / 2;
+        const by = screen.y - bubbleH - tailHeight - 20; // 20px above unit icon
+        const radius = 4;
+
+        ctx.globalAlpha = alpha;
+
+        // Bubble background
+        ctx.fillStyle = 'rgba(6, 6, 9, 0.85)';
+        ctx.beginPath();
+        ctx.moveTo(bx + radius, by);
+        ctx.lineTo(bx + bubbleW - radius, by);
+        ctx.arcTo(bx + bubbleW, by, bx + bubbleW, by + radius, radius);
+        ctx.lineTo(bx + bubbleW, by + bubbleH - radius);
+        ctx.arcTo(bx + bubbleW, by + bubbleH, bx + bubbleW - radius, by + bubbleH, radius);
+        ctx.lineTo(bx + radius, by + bubbleH);
+        ctx.arcTo(bx, by + bubbleH, bx, by + bubbleH - radius, radius);
+        ctx.lineTo(bx, by + radius);
+        ctx.arcTo(bx, by, bx + radius, by, radius);
+        ctx.closePath();
+        ctx.fill();
+
+        // Tail (triangle pointing down to unit)
+        ctx.beginPath();
+        ctx.moveTo(screen.x - 5, by + bubbleH);
+        ctx.lineTo(screen.x, by + bubbleH + tailHeight);
+        ctx.lineTo(screen.x + 5, by + bubbleH);
+        ctx.closePath();
+        ctx.fill();
+
+        // Border
+        ctx.strokeStyle = borderColor;
+        ctx.lineWidth = 1.5;
+        // Re-draw bubble path for stroke
+        ctx.beginPath();
+        ctx.moveTo(bx + radius, by);
+        ctx.lineTo(bx + bubbleW - radius, by);
+        ctx.arcTo(bx + bubbleW, by, bx + bubbleW, by + radius, radius);
+        ctx.lineTo(bx + bubbleW, by + bubbleH - radius);
+        ctx.arcTo(bx + bubbleW, by + bubbleH, bx + bubbleW - radius, by + bubbleH, radius);
+        ctx.lineTo(bx + radius, by + bubbleH);
+        ctx.arcTo(bx, by + bubbleH, bx, by + bubbleH - radius, radius);
+        ctx.lineTo(bx, by + radius);
+        ctx.arcTo(bx, by, bx + radius, by, radius);
+        ctx.closePath();
+        ctx.stroke();
+
+        // Tail border
+        ctx.beginPath();
+        ctx.moveTo(screen.x - 5, by + bubbleH);
+        ctx.lineTo(screen.x, by + bubbleH + tailHeight);
+        ctx.lineTo(screen.x + 5, by + bubbleH);
+        ctx.stroke();
+
+        // Text
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        for (let i = 0; i < lines.length; i++) {
+            ctx.fillText(lines[i], bx + padding, by + padding + i * lineHeight);
+        }
+    }
+
+    ctx.globalAlpha = 1.0;
+    ctx.restore();
+}
+
 function _drawTooltip(ctx) {
     if (!_state.hoveredUnit) return;
     const u = TritiumStore.units.get(_state.hoveredUnit);
@@ -970,6 +1143,7 @@ function _drawTooltip(ctx) {
     if (u.health !== undefined && u.maxHealth) {
         lines.push('HP: ' + Math.round(u.health) + '/' + u.maxHealth);
     }
+    if (u.altitude > 0) lines.push('ALT: ' + Math.round(u.altitude) + 'm');
 
     ctx.save();
     ctx.font = `11px ${FONT_FAMILY}`;
@@ -1646,6 +1820,7 @@ function _bindCanvasEvents() {
         mousedown: _onMouseDown,
         mousemove: _onMouseMove,
         mouseup: _onMouseUp,
+        dblclick: _onDblClick,
         wheel: _onWheel,
         contextmenu: _onContextMenu,
     };
@@ -1798,6 +1973,20 @@ function _onWheel(e) {
     _state.cam.targetX = wp.x - (sx - cssW / 2) / newZoom;
     _state.cam.targetY = wp.y + (sy - cssH / 2) / newZoom;
     _state.cam.targetZoom = newZoom;
+}
+
+function _onDblClick(e) {
+    const rect = _state.canvas.getBoundingClientRect();
+    const sx = e.clientX - rect.left;
+    const sy = e.clientY - rect.top;
+
+    const hitId = _hitTestUnit(sx, sy);
+    if (hitId) {
+        const unit = TritiumStore.units.get(hitId);
+        if (unit) {
+            DeviceModalManager.open(hitId, unit.asset_type || unit.type || 'generic', unit);
+        }
+    }
 }
 
 function _onContextMenu(e) {
@@ -2138,6 +2327,14 @@ function _onMeshCenterOnNode(data) {
     _state.cam.targetY = data.y;
     _state.cam.targetZoom = Math.max(5.0, _state.cam.zoom);
     console.log(`[MAP] Center on mesh node: (${data.x.toFixed(1)}, ${data.y.toFixed(1)})`);
+}
+
+function _onDeviceOpenModal(data) {
+    if (!data || !data.id) return;
+    const unit = TritiumStore.units.get(data.id);
+    if (unit) {
+        DeviceModalManager.open(data.id, unit.asset_type || unit.type || 'generic', unit);
+    }
 }
 
 function _onMinimapPan(data) {

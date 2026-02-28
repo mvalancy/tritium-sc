@@ -244,6 +244,32 @@ export class WebSocketManager {
                 EventBus.emit('robot:thought', msg.data || msg);
                 break;
 
+            case 'amy_npc_thought': {
+                const d = msg.data || msg;
+                const units = TritiumStore.units;
+                const unit = units && units.get(d.unit_id);
+                if (unit) {
+                    unit.thoughtText = d.text;
+                    unit.thoughtEmotion = d.emotion || 'neutral';
+                    unit.thoughtExpires = Date.now() + (d.duration || 5) * 1000;
+                }
+                EventBus.emit('npc:thought', d);
+                break;
+            }
+
+            case 'amy_npc_thought_clear': {
+                const d = msg.data || msg;
+                const units = TritiumStore.units;
+                const unit = units && units.get(d.unit_id);
+                if (unit) {
+                    delete unit.thoughtText;
+                    delete unit.thoughtEmotion;
+                    delete unit.thoughtExpires;
+                }
+                EventBus.emit('npc:thought_clear', d);
+                break;
+            }
+
             case 'escalation_change':
                 TritiumStore.addAlert({
                     type: 'escalation',
