@@ -20,6 +20,7 @@ from .memory_sync import MemorySync
 from .motor import MotorOutput
 from .perception import PerceptionEngine
 from .remote_agent import RemoteAgentRegistry
+from .thought_stream import ThoughtCollector
 
 
 class GraphlingsPlugin(PluginInterface):
@@ -49,6 +50,7 @@ class GraphlingsPlugin(PluginInterface):
         self._memory: Optional[MemorySync] = None
         self._lifecycle: Optional[SimulationLifecycleHandler] = None
         self._remote_registry: Optional[RemoteAgentRegistry] = None
+        self._thought_collector: Optional[ThoughtCollector] = None
 
         # Track deployed graphlings: soul_id -> deployment info
         self._deployed: dict[str, dict] = {}
@@ -110,10 +112,15 @@ class GraphlingsPlugin(PluginInterface):
         self._remote_registry = RemoteAgentRegistry(
             max_agents=self._config.max_agents
         )
+        self._thought_collector = ThoughtCollector(
+            max_history=100,
+            event_bus=self._event_bus,
+        )
 
         # Register HTTP routes
         self._register_routes()
         self._register_remote_routes()
+        self._register_thought_routes()
 
         self._logger.info(
             "Graphlings plugin configured (server: %s, max agents: %d)",
@@ -408,6 +415,64 @@ class GraphlingsPlugin(PluginInterface):
                 if agent_id:
                     registry.unregister_agent(agent_id)
 
+    # ── Thought stream routes ────────────────────────────────────
+
+    def _register_thought_routes(self) -> None:
+        """Register SSE thought stream and status routes."""
+        if not self._app or not self._thought_collector:
+            return
+
+        plugin = self
+        collector = self._thought_collector
+
+        @self._app.get("/api/graphlings/thoughts")
+        async def graphlings_thoughts_sse(request=None):
+            import asyncio
+            import json
+            from starlette.responses import StreamingResponse
+
+            sub = plugin._event_bus.subscribe()
+
+            async def event_stream():
+                try:
+                    loop = asyncio.get_event_loop()
+                    while True:
+                        try:
+                            msg = await loop.run_in_executor(
+                                None, lambda: sub.get(timeout=30)
+                            )
+                            if msg.get("type") == "graphling_thought":
+                                data = msg.get("data", {})
+                                yield f"data: {json.dumps(data)}\n\n"
+                        except Exception:
+                            yield ": keepalive\n\n"
+                finally:
+                    plugin._event_bus.unsubscribe(sub)
+
+            return StreamingResponse(
+                event_stream(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                    "X-Accel-Buffering": "no",
+                },
+            )
+
+        @self._app.get("/api/graphlings/{soul_id}/thoughts")
+        async def graphlings_soul_thoughts(soul_id: str):
+            return {"thoughts": collector.get_recent(soul_id=soul_id)}
+
+        @self._app.get("/api/graphlings/{soul_id}/status")
+        async def graphlings_soul_status(soul_id: str):
+            deployed_info = plugin._deployed.get(soul_id)
+            compute_stats = plugin._get_compute_stats(soul_id)
+            return collector.build_status(
+                soul_id=soul_id,
+                deployed_info=deployed_info,
+                compute_stats=compute_stats,
+            )
+
     # ── Background loop ──────────────────────────────────────────
 
     def _agent_loop(self) -> None:
@@ -569,6 +634,17 @@ class GraphlingsPlugin(PluginInterface):
             if self._logger:
                 self._logger.debug("Think timeout for %s, will retry", soul_id)
             return
+
+        # 7b. Record thought for SSE streaming
+        if self._thought_collector:
+            self._thought_collector.record(
+                soul_id=soul_id,
+                thought=response.get("thought", ""),
+                action=response.get("action", ""),
+                emotion=response.get("emotion", ""),
+                layer=response.get("layer", 0),
+                model=response.get("model_used", ""),
+            )
 
         # 8. Execute the action in the simulation and report feedback
         action = response.get("action", "")
