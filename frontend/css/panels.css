@@ -1139,3 +1139,179 @@
     margin-top: 4px;
     min-height: 14px;
 }
+
+
+/* ========================================
+   Device Control Modal (.dc- prefix)
+   ======================================== */
+
+.dc-modal {
+    max-width: 420px;
+}
+
+.dc-stats {
+    margin-bottom: 12px;
+}
+
+.dc-stat-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 2px 0;
+    font-family: var(--font-mono);
+    font-size: 0.55rem;
+}
+
+.dc-label {
+    color: var(--text-ghost);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-size: 0.5rem;
+}
+
+.dc-value {
+    color: var(--text-primary);
+}
+
+.dc-status-active { color: var(--green); }
+.dc-status-idle { color: var(--text-secondary); }
+.dc-status-moving { color: var(--cyan); }
+.dc-status-engaging { color: var(--magenta); }
+.dc-status-returning { color: var(--amber); }
+
+.dc-health-bar {
+    height: 4px;
+    background: var(--surface-3);
+    border-radius: 2px;
+    margin: 4px 0 8px;
+    overflow: hidden;
+}
+
+.dc-health-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.3s ease;
+}
+
+.dc-actions {
+    border-top: 1px solid var(--border);
+    padding-top: 8px;
+}
+
+.dc-section-label {
+    font-family: var(--font-mono);
+    font-size: 0.45rem;
+    letter-spacing: 0.12em;
+    color: var(--cyan-dim);
+    text-transform: uppercase;
+    margin: 8px 0 4px;
+}
+
+.dc-btn-row {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    margin-bottom: 4px;
+}
+
+.dc-btn {
+    font-family: var(--font-mono);
+    font-size: 0.5rem;
+    letter-spacing: 0.06em;
+    color: var(--cyan);
+    background: rgba(0, 240, 255, 0.04);
+    border: 1px solid rgba(0, 240, 255, 0.15);
+    border-radius: var(--radius-sm);
+    padding: 4px 10px;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+    text-transform: uppercase;
+}
+
+.dc-btn:hover {
+    background: rgba(0, 240, 255, 0.1);
+    border-color: rgba(0, 240, 255, 0.3);
+}
+
+.dc-btn:active {
+    background: rgba(0, 240, 255, 0.18);
+}
+
+.dc-btn-fire {
+    color: var(--magenta);
+    border-color: rgba(255, 42, 109, 0.2);
+    background: rgba(255, 42, 109, 0.04);
+}
+
+.dc-btn-fire:hover {
+    background: rgba(255, 42, 109, 0.12);
+    border-color: rgba(255, 42, 109, 0.4);
+}
+
+.dc-slider-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 4px 0;
+}
+
+.dc-slider {
+    flex: 1;
+    accent-color: var(--cyan);
+    height: 4px;
+}
+
+.dc-slider-val {
+    font-family: var(--font-mono);
+    font-size: 0.5rem;
+    color: var(--text-secondary);
+    min-width: 40px;
+    text-align: right;
+}
+
+.dc-cmd-row {
+    display: flex;
+    gap: 4px;
+    margin-top: 4px;
+}
+
+.dc-cmd-input {
+    flex: 1;
+    font-family: var(--font-mono);
+    font-size: 0.5rem;
+    color: var(--text-primary);
+    background: var(--surface-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 4px 6px;
+    outline: none;
+}
+
+.dc-cmd-input:focus {
+    border-color: rgba(0, 240, 255, 0.3);
+}
+
+.dc-cmd-status {
+    font-family: var(--font-mono);
+    font-size: 0.45rem;
+    color: var(--text-ghost);
+    margin-top: 2px;
+    min-height: 12px;
+}
+
+.dc-stream {
+    margin: 4px 0 8px;
+    background: var(--surface-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    position: relative;
+}
+
+.dc-stream-img {
+    display: block;
+    width: 100%;
+    height: auto;
+    max-height: 200px;
+    object-fit: contain;
+}
