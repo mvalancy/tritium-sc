@@ -124,13 +124,19 @@ Radicalization requires ALL conditions simultaneously:
 | File | Purpose |
 |------|---------|
 | `src/engine/simulation/npc_intelligence/__init__.py` | Package exports |
-| `src/engine/simulation/npc_intelligence/plugin.py` | NPCIntelligencePlugin |
+| `src/engine/simulation/npc_intelligence/plugin.py` | NPCIntelligencePlugin (brain management + tick) |
 | `src/engine/simulation/npc_intelligence/brain.py` | NPCBrain, NPCPersonality, NPCMemory |
-| `src/engine/simulation/npc_intelligence/brain_manager.py` | NPCBrainManager |
-| `src/engine/simulation/npc_intelligence/npc_fsm.py` | FSM factories |
+| `src/engine/simulation/npc_intelligence/npc_fsm.py` | FSM factories (pedestrian/vehicle/animal) |
+| `src/engine/simulation/npc_intelligence/thought_registry.py` | ThoughtRegistry (speech bubbles) |
 | `src/engine/simulation/npc_intelligence/think_scheduler.py` | LLMThinkScheduler |
 | `src/engine/simulation/npc_intelligence/prompts.py` | Prompt templates + parser |
 | `src/engine/simulation/npc_intelligence/fallback.py` | BehaviorTreeFallback |
 | `src/engine/simulation/npc_intelligence/event_reactor.py` | EventReactor |
 | `src/engine/simulation/npc_intelligence/alliance.py` | AllianceManager |
 | `src/engine/simulation/npc_intelligence/crowd.py` | CrowdDynamics |
+| `src/engine/simulation/npc_intelligence/mob.py` | MobFormation (crowd surge) |
+| `src/engine/simulation/npc_intelligence/routine.py` | DailyRoutine (schedule-based behavior) |
+| `src/engine/simulation/npc_intelligence/world_model.py` | NPCWorldModel (spatial awareness) |
+| `src/engine/simulation/npc_intelligence/world_bridge.py` | WorldBridge (sim ↔ NPC sync) |
+| `src/engine/simulation/npc_intelligence/npc_router.py` | NPCRouter (decision routing) |
+| `plugins/npc_thoughts.py` | Example plugin: context-aware thought bubbles |
