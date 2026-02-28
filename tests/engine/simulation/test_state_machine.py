@@ -654,18 +654,20 @@ class TestCreateFSMForType:
         assert fsm is not None
         assert fsm.current_state == "spawning"
 
-    def test_neutral_person_returns_none(self):
-        """Neutral persons (civilians) get no FSM."""
+    def test_neutral_person_gets_npc_fsm(self):
+        """Neutral persons (civilians) get NPC intelligence FSM."""
         fsm = create_fsm_for_type("person", alliance="neutral")
-        assert fsm is None
+        assert fsm is not None
+        assert fsm.current_state == "walking"
 
     def test_unknown_type_returns_none(self):
         fsm = create_fsm_for_type("unicorn_blaster")
         assert fsm is None
 
-    def test_animal_returns_none(self):
+    def test_animal_gets_npc_fsm(self):
         fsm = create_fsm_for_type("animal")
-        assert fsm is None
+        assert fsm is not None
+        assert fsm.current_state == "wandering"
 
 
 # ==========================================================================
