@@ -19,6 +19,7 @@ from .lifecycle import SimulationLifecycleHandler
 from .memory_sync import MemorySync
 from .motor import MotorOutput
 from .perception import PerceptionEngine
+from .remote_agent import RemoteAgentRegistry
 
 
 class GraphlingsPlugin(PluginInterface):
@@ -47,6 +48,7 @@ class GraphlingsPlugin(PluginInterface):
         self._factory: Optional[EntityFactory] = None
         self._memory: Optional[MemorySync] = None
         self._lifecycle: Optional[SimulationLifecycleHandler] = None
+        self._remote_registry: Optional[RemoteAgentRegistry] = None
 
         # Track deployed graphlings: soul_id -> deployment info
         self._deployed: dict[str, dict] = {}
@@ -105,9 +107,13 @@ class GraphlingsPlugin(PluginInterface):
         self._lifecycle = SimulationLifecycleHandler(
             self._bridge, self._factory, self._config
         )
+        self._remote_registry = RemoteAgentRegistry(
+            max_agents=self._config.max_agents
+        )
 
         # Register HTTP routes
         self._register_routes()
+        self._register_remote_routes()
 
         self._logger.info(
             "Graphlings plugin configured (server: %s, max agents: %d)",
@@ -316,6 +322,91 @@ class GraphlingsPlugin(PluginInterface):
         async def graphlings_recall(soul_id: str):
             ok = plugin._recall_agent(soul_id, "api_recall")
             return {"success": ok, "soul_id": soul_id}
+
+    # ── Remote agent routes ─────────────────────────────────────
+
+    def _register_remote_routes(self) -> None:
+        """Register HTTP and WebSocket routes for external agent join protocol."""
+        if not self._app or not self._remote_registry:
+            return
+
+        registry = self._remote_registry
+
+        @self._app.post("/api/graphlings/join")
+        async def graphlings_join(request: dict):
+            agent_id = request.get("agent_id", "")
+            name = request.get("name", "")
+            capabilities = request.get("capabilities", [])
+            callback_url = request.get("callback_url")
+            if not agent_id or not name:
+                return {"success": False, "error": "agent_id and name required"}
+            ok = registry.register_agent(
+                agent_id=agent_id,
+                name=name,
+                capabilities=capabilities,
+                callback_url=callback_url,
+            )
+            if not ok:
+                return {"success": False, "error": "registration failed (duplicate or limit reached)"}
+            return {"success": True, "agent_id": agent_id}
+
+        @self._app.post("/api/graphlings/leave")
+        async def graphlings_leave(request: dict):
+            agent_id = request.get("agent_id", "")
+            if not agent_id:
+                return {"success": False, "error": "agent_id required"}
+            ok = registry.unregister_agent(agent_id)
+            return {"success": ok, "agent_id": agent_id}
+
+        @self._app.get("/api/graphlings/agents")
+        async def graphlings_agents():
+            return {"agents": registry.get_agents()}
+
+        if not hasattr(self._app, "websocket"):
+            return
+
+        @self._app.websocket("/ws/graphlings/agent")
+        async def graphlings_agent_ws(websocket):
+            import json
+
+            await websocket.accept()
+            agent_id = None
+            try:
+                while True:
+                    data = await websocket.receive_text()
+                    msg = json.loads(data)
+                    msg_type = msg.get("type", "")
+
+                    if msg_type == "join":
+                        agent_id = msg.get("agent_id", "")
+                        name = msg.get("name", "")
+                        capabilities = msg.get("capabilities", [])
+                        ok = registry.register_agent(
+                            agent_id=agent_id, name=name, capabilities=capabilities,
+                        )
+                        await websocket.send_text(json.dumps({
+                            "type": "join_result",
+                            "success": ok,
+                            "agent_id": agent_id,
+                        }))
+                    elif msg_type == "decide":
+                        decision = registry.parse_decide_message(msg)
+                        if decision:
+                            await websocket.send_text(json.dumps(
+                                registry.build_act_result_message(
+                                    success=True, details="decision received"
+                                )
+                            ))
+                    else:
+                        await websocket.send_text(json.dumps({
+                            "type": "error",
+                            "message": f"Unknown message type: {msg_type}",
+                        }))
+            except Exception:
+                pass
+            finally:
+                if agent_id:
+                    registry.unregister_agent(agent_id)
 
     # ── Background loop ──────────────────────────────────────────
 
