@@ -28,6 +28,11 @@
 | [MESHTASTIC.md](MESHTASTIC.md) | Mesh radio integration for outdoor operations |
 | [LANDSCAPE-SURVEY.md](LANDSCAPE-SURVEY.md) | ML model evaluation and alternatives survey |
 | [VISION.md](VISION.md) | Perception philosophy, dual-use design, privacy tiers, roadmap |
+| [PLUGIN-SPEC.md](PLUGIN-SPEC.md) | Plugin system: interface, lifecycle, discovery, dependencies |
+| [NPC-INTELLIGENCE.md](NPC-INTELLIGENCE.md) | NPC brain, FSM, personality, crowd dynamics, thought registry |
+| [NPC-WORLD-BEHAVIOR.md](NPC-WORLD-BEHAVIOR.md) | NPC world population: routing, buildings, daily routines |
+| [TAK.md](TAK.md) | TAK/ATAK integration and CoT protocol bridge |
+| [TERRAIN-PLAN.md](TERRAIN-PLAN.md) | DEM terrain elevation and 3D terrain rendering plan |
 
 ## Testing
 
@@ -45,6 +50,7 @@
 | [AUDIT-GAPS.md](AUDIT-GAPS.md) | Infrastructure security audit findings |
 | [UI-VIEWS.md](UI-VIEWS.md) | UI view specifications: design intent for every panel, button, and element |
 | [WAR-ROOM-UX-REVIEW.md](WAR-ROOM-UX-REVIEW.md) | War Room frontend UX architecture review |
+| [DEMO-SPEC.md](DEMO-SPEC.md) | Demo project specifications for MQTT device examples |
 
 ## Quick Links
 
@@ -60,6 +66,9 @@
 - **API Reference**: See CLAUDE.md API Endpoints section
 - **MQTT Protocol**: See [MQTT.md](MQTT.md)
 - **Robot Integration**: See `examples/robot-template/README.md`
+- **Plugin Development**: See [PLUGIN-SPEC.md](PLUGIN-SPEC.md)
+- **NPC System**: See [NPC-INTELLIGENCE.md](NPC-INTELLIGENCE.md)
+- **Demo Devices**: See [DEMO-SPEC.md](DEMO-SPEC.md)
 
 ### For Amy
 - **Threat Model**: See [ESCALATION.md](ESCALATION.md)
