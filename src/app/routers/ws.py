@@ -498,6 +498,7 @@ def start_headless_event_bridge(event_bus, loop: asyncio.AbstractEventLoop,
                     # External device events
                     "robot_thought",
                     "detection",
+                    "detections",
                     # Bonus objective completion
                     "bonus_objective_completed",
                     # Hostile commander intel

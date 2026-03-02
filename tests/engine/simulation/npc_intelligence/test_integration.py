@@ -58,7 +58,7 @@ class TestNPCFleeFromCombat:
         brain = NPCBrain("npc-1", "person", "neutral")
         bwp = [(brain, (10.0, 0.0))]
 
-        event = {"type": "weapon_fired", "data": {"position": [0.0, 0.0]}}
+        event = {"type": "projectile_fired", "data": {"position": [0.0, 0.0]}}
         reactor.process_event(event, bwp)
 
         # Now tick the brain — it should flee
@@ -90,7 +90,7 @@ class TestVehicleEvades:
         brain = NPCBrain("npc-1", "vehicle", "neutral")
         bwp = [(brain, (20.0, 0.0))]
 
-        event = {"type": "weapon_fired", "data": {"position": [0.0, 0.0]}}
+        event = {"type": "projectile_fired", "data": {"position": [0.0, 0.0]}}
         reactor.process_event(event, bwp)
 
         brain.tick(0.1)
@@ -199,7 +199,7 @@ class TestPromptRoundtrip:
 
     def test_build_prompt_and_parse_response(self):
         brain = NPCBrain("npc-1", "person", "neutral")
-        brain.memory.add_event("weapon_fired", {"distance": 10.0})
+        brain.memory.add_event("projectile_fired", {"distance": 10.0})
 
         prompt = build_npc_prompt(brain, nearby_entities=[
             {"name": "Hostile Alpha", "alliance": "hostile", "asset_type": "person",
@@ -207,7 +207,7 @@ class TestPromptRoundtrip:
         ])
 
         assert "npc-1" in prompt
-        assert "weapon_fired" in prompt
+        assert "projectile_fired" in prompt
         assert "Hostile Alpha" in prompt
 
         # Parse various response formats
@@ -280,7 +280,7 @@ class TestPerformanceBudget:
             y = (i // 10) * 6.0 - 30.0
             bwp.append((brain, (x, y)))
 
-        event = {"type": "weapon_fired", "data": {"position": [0.0, 0.0]}}
+        event = {"type": "projectile_fired", "data": {"position": [0.0, 0.0]}}
 
         # Warm up
         reactor.process_event(event, bwp)

@@ -92,7 +92,7 @@ class TestNPCMemory:
 
     def test_danger_level_from_events(self):
         m = NPCMemory()
-        m.add_event("weapon_fired", {"distance": 5.0})
+        m.add_event("projectile_fired", {"distance": 5.0})
         m.add_event("target_eliminated", {"distance": 10.0})
         danger = m.danger_level()
         assert danger > 0.0
@@ -103,7 +103,7 @@ class TestNPCMemory:
 
     def test_danger_decays_with_age(self):
         m = NPCMemory()
-        m.add_event("weapon_fired", {"distance": 5.0})
+        m.add_event("projectile_fired", {"distance": 5.0})
         d1 = m.danger_level()
         # Manually age the event
         m.events[0]["timestamp"] -= 60.0

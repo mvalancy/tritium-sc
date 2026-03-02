@@ -617,6 +617,11 @@ class SimulationEngine:
         target._waypoint_index = 0
         target.status = "active"
 
+        self._event_bus.publish("unit_dispatched", {
+            "unit_id": target_id,
+            "destination": {"x": destination[0], "y": destination[1]},
+        })
+
     def reset_game(self) -> None:
         """Reset game state. Clear all hostiles, heal friendlies, reset combat.
 

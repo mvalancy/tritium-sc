@@ -87,8 +87,8 @@ class TestEventReactorLifecycle:
 class TestEventRadiusFiltering:
     """Events should only affect NPCs within the type-specific radius."""
 
-    def test_weapon_fired_radius_50m(self):
-        """weapon_fired should reach NPCs within 50m but not beyond."""
+    def test_projectile_fired_radius_50m(self):
+        """projectile_fired should reach NPCs within 50m but not beyond."""
         bus = EventBus()
         reactor = EventReactor(bus)
 
@@ -99,7 +99,7 @@ class TestEventRadiusFiltering:
         far_brain = bwp[1][0]
 
         event = {
-            "type": "weapon_fired",
+            "type": "projectile_fired",
             "data": {"position": list(event_origin)},
         }
         reactor.process_event(event, bwp)
@@ -159,7 +159,7 @@ class TestEventRadiusFiltering:
 
         bwp = _make_brains_with_positions([(50.0, 0.0)])
         event = {
-            "type": "weapon_fired",
+            "type": "projectile_fired",
             "data": {"position": [0.0, 0.0]},
         }
         reactor.process_event(event, bwp)
@@ -181,7 +181,7 @@ class TestDangerAndInterestMapping:
         bwp = _make_brains_with_positions([(10.0, 0.0)])
         brain = bwp[0][0]
 
-        event = {"type": "weapon_fired", "data": {"position": [0.0, 0.0]}}
+        event = {"type": "projectile_fired", "data": {"position": [0.0, 0.0]}}
         reactor.process_event(event, bwp)
 
         assert brain._danger_nearby is True
@@ -218,7 +218,7 @@ class TestDangerAndInterestMapping:
         bwp = _make_brains_with_positions([(30.0, 0.0)])
         brain = bwp[0][0]
 
-        event = {"type": "weapon_fired", "data": {"position": [0.0, 0.0]}}
+        event = {"type": "projectile_fired", "data": {"position": [0.0, 0.0]}}
         reactor.process_event(event, bwp)
 
         assert abs(brain._danger_distance - 30.0) < 1.0
@@ -231,7 +231,7 @@ class TestDangerAndInterestMapping:
         bwp = _make_brains_with_positions([(25.0, 0.0)])
         brain = bwp[0][0]
 
-        event = {"type": "weapon_fired", "data": {"position": [0.0, 0.0]}}
+        event = {"type": "projectile_fired", "data": {"position": [0.0, 0.0]}}
         reactor.process_event(event, bwp)
 
         assert len(brain.memory.events) == 1
@@ -277,7 +277,7 @@ class TestEventReactorEdgeCases:
         brain = bwp[0][0]
         brain.bind()
 
-        event = {"type": "weapon_fired", "data": {"position": [0.0, 0.0]}}
+        event = {"type": "projectile_fired", "data": {"position": [0.0, 0.0]}}
         reactor.process_event(event, bwp)
 
         assert len(brain.memory.events) == 0
@@ -300,5 +300,5 @@ class TestEventReactorEdgeCases:
         bus = EventBus()
         reactor = EventReactor(bus)
 
-        event = {"type": "weapon_fired", "data": {"position": [0.0, 0.0]}}
+        event = {"type": "projectile_fired", "data": {"position": [0.0, 0.0]}}
         reactor.process_event(event, [])  # no error

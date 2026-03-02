@@ -335,7 +335,7 @@ class TestAllianceManager:
 
     def test_only_target_eliminated_events_count(self):
         """Only target_eliminated events count toward the 3-event threshold,
-        not other combat events like weapon_fired."""
+        not other combat events like projectile_fired."""
         bus = EventBus()
         mgr = AllianceManager(event_bus=bus)
         personality = NPCPersonality(
@@ -345,9 +345,9 @@ class TestAllianceManager:
             target_id="npc-1", asset_type="person",
             alliance="neutral", personality=personality,
         )
-        # Add 5 weapon_fired events but only 2 target_eliminated
+        # Add 5 projectile_fired events but only 2 target_eliminated
         for _ in range(5):
-            brain.memory.add_event("weapon_fired", {"distance": 10.0})
+            brain.memory.add_event("projectile_fired", {"distance": 10.0})
         for _ in range(2):
             brain.memory.add_event("target_eliminated", {"distance": 10.0})
 

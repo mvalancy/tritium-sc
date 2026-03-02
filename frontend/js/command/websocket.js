@@ -510,6 +510,7 @@ export class WebSocketManager {
 
             case 'detection':
             case 'amy_detection':
+            case 'amy_detections':
                 // YOLO detection from camera
                 EventBus.emit('detection', msg.data || msg);
                 break;

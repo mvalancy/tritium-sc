@@ -59,7 +59,7 @@ def danger_brain():
         personality=NPCPersonality(curiosity=0.5, caution=0.5, sociability=0.5, aggression=0.1),
     )
     b.set_danger(distance=5.0)
-    b.memory.add_event("weapon_fired", {"distance": 5.0})
+    b.memory.add_event("projectile_fired", {"distance": 5.0})
     return b
 
 

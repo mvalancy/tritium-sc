@@ -52,7 +52,7 @@ def vehicle_brain():
 @pytest.fixture
 def brain_with_memory(pedestrian_brain):
     """A pedestrian brain that has some events in memory."""
-    pedestrian_brain.memory.add_event("weapon_fired", {"distance": 30.0})
+    pedestrian_brain.memory.add_event("projectile_fired", {"distance": 30.0})
     pedestrian_brain.memory.add_event("wave_start", {})
     pedestrian_brain.memory.add_event("target_eliminated", {"distance": 50.0})
     return pedestrian_brain
@@ -137,7 +137,7 @@ class TestBuildNpcPrompt:
 
     def test_prompt_contains_memory_events(self, brain_with_memory):
         prompt = build_npc_prompt(brain_with_memory)
-        assert "weapon_fired" in prompt
+        assert "projectile_fired" in prompt
         assert "wave_start" in prompt
         assert "target_eliminated" in prompt
 

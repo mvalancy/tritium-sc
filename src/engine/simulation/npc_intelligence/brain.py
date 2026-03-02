@@ -87,14 +87,13 @@ class NPCPersonality:
 # ============================================================================
 
 # Event types that count as "combat" for radicalization checks
-_COMBAT_EVENT_TYPES = {"target_eliminated", "weapon_fired", "unit_destroyed"}
+_COMBAT_EVENT_TYPES = {"target_eliminated", "projectile_fired"}
 
 # Danger weights by event type
 _DANGER_WEIGHTS: dict[str, float] = {
-    "weapon_fired": 0.6,
+    "projectile_fired": 0.6,
     "target_eliminated": 0.8,
-    "unit_destroyed": 0.7,
-    "explosion": 1.0,
+    "bomber_detonation": 1.0,
     "wave_start": 0.3,
     "escalation_change": 0.4,
 }
@@ -104,7 +103,7 @@ _INTEREST_WEIGHTS: dict[str, float] = {
     "wave_start": 0.5,
     "wave_complete": 0.4,
     "escalation_change": 0.3,
-    "weapon_fired": 0.2,
+    "projectile_fired": 0.2,
     "target_eliminated": 0.3,
     "npc_alliance_change": 0.6,
 }

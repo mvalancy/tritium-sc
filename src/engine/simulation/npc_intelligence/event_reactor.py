@@ -21,10 +21,9 @@ if TYPE_CHECKING:
 
 # Event type -> max radius in meters (float('inf') = global)
 _EVENT_RADII: dict[str, float] = {
-    "weapon_fired": 50.0,
+    "projectile_fired": 50.0,
     "target_eliminated": 80.0,
-    "unit_destroyed": 80.0,
-    "explosion": 100.0,
+    "bomber_detonation": 100.0,
     "wave_start": float("inf"),
     "wave_complete": float("inf"),
     "escalation_change": float("inf"),
@@ -32,10 +31,9 @@ _EVENT_RADII: dict[str, float] = {
 
 # Event types that set danger on affected NPCs
 _DANGER_EVENTS: set[str] = {
-    "weapon_fired",
+    "projectile_fired",
     "target_eliminated",
-    "unit_destroyed",
-    "explosion",
+    "bomber_detonation",
 }
 
 # Event types that set interest on affected NPCs
