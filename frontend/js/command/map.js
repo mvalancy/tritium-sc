@@ -1362,9 +1362,18 @@ function _drawLabels(ctx) {
         const fsmState = fsm ? ` [${fsm.toUpperCase()}]` : '';
         const elims = unit.eliminations ? ` ${unit.eliminations}K` : '';
         const badgeText = fsm || status;
-        // Use short_id hex as prefix if available
-        const shortId = (unit.identity && unit.identity.short_id) ? unit.identity.short_id : '';
-        const labelText = shortId ? `[${shortId}] ${unit.name || id}` : (unit.name || id);
+        // Show a short UUID prefix for all units with real IDs
+        let shortId = '';
+        if (unit.identity && unit.identity.short_id) {
+            shortId = unit.identity.short_id;
+        } else if (typeof id === 'string') {
+            // Extract short prefix from target_id UUID (e.g. "rover-a3f1b2c4" -> "A3F1B2")
+            const clean = id.replace(/^[a-z_]+-/, '');  // strip type prefix
+            if (clean.length >= 6) {
+                shortId = clean.substring(0, 6).toUpperCase();
+            }
+        }
+        const labelText = shortId ? `${shortId} ${unit.name || id}` : (unit.name || id);
         entries.push({
             id,
             text: labelText,
@@ -1783,8 +1792,9 @@ function _drawUnit(ctx, id, unit) {
     }
 
     // Compute scale from zoom and hover/selection
-    let scale = Math.min(_state.cam.zoom, 3) / 1.5; // normalized 0..2 for zoom 0..3
-    scale = Math.max(0.5, scale); // minimum readability
+    // Use smaller icons: 0.6x base at zoom 1.5, min 0.3, max 1.2
+    let scale = Math.min(_state.cam.zoom, 3) / 2.5;
+    scale = Math.max(0.3, Math.min(1.2, scale));
     if (isSelected) scale *= 1.3;
     else if (isHovered) scale *= 1.15;
 
