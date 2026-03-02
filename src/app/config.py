@@ -106,7 +106,7 @@ class Settings(BaseSettings):
     amy_think_interval: float = 8.0
 
     # Fleet / Model routing
-    fleet_enabled: bool = False       # opt-in; False = existing static behavior
+    fleet_enabled: bool = True        # auto-discover Ollama fleet on LAN + Tailscale
     fleet_auto_discover: bool = True  # Tailscale peer scan when fleet_enabled
 
     # Backstory generation (distributed via Ollama fleet)

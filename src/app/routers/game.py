@@ -402,8 +402,19 @@ def _get_mission_director(engine):
     from app.config import settings
 
     if not hasattr(engine, '_mission_director'):
+        # Discover best Ollama host from fleet if available
+        ollama_host = settings.ollama_host
+        if settings.fleet_enabled:
+            try:
+                from engine.inference.fleet import OllamaFleet
+                fleet = OllamaFleet(auto_discover=settings.fleet_auto_discover)
+                if fleet.hosts:
+                    ollama_host = fleet.hosts[0].url
+            except Exception:
+                pass
         engine._mission_director = MissionDirector(
             event_bus=engine._event_bus,
+            ollama_host=ollama_host,
             map_center=(settings.map_center_lat, settings.map_center_lng),
         )
     return engine._mission_director

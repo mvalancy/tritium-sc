@@ -51,10 +51,14 @@ class LLMThinkScheduler:
         self,
         model: str = "gemma3:4b",
         max_concurrent: int = 2,
+        fleet_hosts: list[str] | None = None,
     ) -> None:
         self._model = model
         self._max_concurrent = max_concurrent
         self._min_interval = 0.5  # seconds between LLM calls
+        # Fleet host URLs for round-robin distribution
+        self._fleet_hosts: list[str] = list(fleet_hosts) if fleet_hosts else []
+        self._host_index = 0
 
         self._queue: list[_ThinkRequest] = []
         self._queue_lock = threading.Lock()
@@ -165,14 +169,19 @@ class LLMThinkScheduler:
                 time.sleep(wait)
             self._last_call_time = time.monotonic()
 
-        # Build prompt and call LLM
+        # Build prompt and call LLM (round-robin across fleet hosts)
         try:
             prompt = build_npc_prompt(req.brain, req.nearby_entities)
             messages = [
                 {"role": "system", "content": prompt},
                 {"role": "user", "content": "What do you do? Respond with one action word."},
             ]
-            response = ollama_chat(model=self._model, messages=messages)
+            base_url = None
+            if self._fleet_hosts:
+                idx = self._host_index % len(self._fleet_hosts)
+                self._host_index += 1
+                base_url = self._fleet_hosts[idx]
+            response = ollama_chat(model=self._model, messages=messages, base_url=base_url)
             response_text = response.get("message", {}).get("content", "").strip()
             action = parse_npc_response(response_text)
 

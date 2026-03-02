@@ -21,10 +21,10 @@ from unittest.mock import MagicMock, patch
 class TestConfigFleetEnabled:
     """Settings.fleet_enabled — opt-in fleet routing."""
 
-    def test_fleet_disabled_by_default(self):
+    def test_fleet_enabled_by_default(self):
         from app.config import Settings
         s = Settings()
-        assert s.fleet_enabled is False
+        assert s.fleet_enabled is True
 
     def test_fleet_auto_discover_default(self):
         from app.config import Settings

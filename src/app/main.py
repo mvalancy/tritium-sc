@@ -86,6 +86,20 @@ def _create_simulation_engine():
     from engine.comms.event_bus import EventBus
     from engine.simulation import SimulationEngine, load_layout
 
+    # Set global Ollama host early so all LLM consumers use fleet
+    try:
+        from engine.perception.vision import set_ollama_host
+        if settings.fleet_enabled:
+            from engine.inference.fleet import OllamaFleet
+            fleet = OllamaFleet(auto_discover=settings.fleet_auto_discover)
+            if fleet.hosts:
+                set_ollama_host(fleet.hosts[0].url)
+                logger.info(f"Ollama fleet: {len(fleet.hosts)} host(s), primary={fleet.hosts[0].name}")
+        else:
+            set_ollama_host(settings.ollama_host)
+    except Exception:
+        logger.debug("Ollama fleet discovery skipped", exc_info=True)
+
     # Temporary event bus; gets replaced by Amy's actual bus after create_amy
     engine = SimulationEngine(EventBus())
 
