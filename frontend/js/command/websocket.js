@@ -559,6 +559,23 @@ export class WebSocketManager {
                 EventBus.emit('mesh:disconnected', msg.data || msg);
                 break;
 
+            // -- TAK bridge events ------------------------------------------
+            case 'tak_connected':
+                EventBus.emit('tak:connected', msg.data || msg);
+                break;
+
+            case 'tak_disconnected':
+                EventBus.emit('tak:disconnected', msg.data || msg);
+                break;
+
+            case 'tak_client_update':
+                EventBus.emit('tak:client_update', msg.data || msg);
+                break;
+
+            case 'tak_geochat':
+                EventBus.emit('tak:geochat', msg.data || msg);
+                break;
+
             case 'mission_progress':
             case 'amy_mission_progress':
                 EventBus.emit('mission:progress', msg.data || msg);

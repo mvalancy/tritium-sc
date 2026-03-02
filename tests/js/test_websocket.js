@@ -2705,6 +2705,39 @@ console.log('\n--- State Refresh on Connect ---');
 })();
 
 // ============================================================
+// TAK bridge events
+// ============================================================
+
+(function testTakConnectedHandler() {
+    const src = fs.readFileSync(__dirname + '/../../frontend/js/command/websocket.js', 'utf8');
+    assert(src.includes("case 'tak_connected':"), 'Has tak_connected case');
+    assert(src.includes("EventBus.emit('tak:connected'"), 'tak_connected emits tak:connected');
+})();
+
+(function testTakDisconnectedHandler() {
+    const src = fs.readFileSync(__dirname + '/../../frontend/js/command/websocket.js', 'utf8');
+    assert(src.includes("case 'tak_disconnected':"), 'Has tak_disconnected case');
+    assert(src.includes("EventBus.emit('tak:disconnected'"), 'tak_disconnected emits tak:disconnected');
+})();
+
+(function testTakClientUpdateHandler() {
+    const src = fs.readFileSync(__dirname + '/../../frontend/js/command/websocket.js', 'utf8');
+    assert(src.includes("case 'tak_client_update':"), 'Has tak_client_update case');
+    assert(src.includes("EventBus.emit('tak:client_update'"), 'tak_client_update emits tak:client_update');
+})();
+
+(function testTakGeochatHandler() {
+    const src = fs.readFileSync(__dirname + '/../../frontend/js/command/websocket.js', 'utf8');
+    assert(src.includes("case 'tak_geochat':"), 'Has tak_geochat case');
+    assert(src.includes("EventBus.emit('tak:geochat'"), 'tak_geochat emits tak:geochat');
+})();
+
+(function testTakBridgePassthrough() {
+    const py = fs.readFileSync(__dirname + '/../../src/app/routers/ws.py', 'utf8');
+    assert(py.includes('event_type.startswith("tak_")'), 'WS bridge passes tak_ events through without prefix');
+})();
+
+// ============================================================
 // Store: default game state fields
 // ============================================================
 

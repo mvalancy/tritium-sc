@@ -677,3 +677,48 @@ class TestHeadlessBridgeTacticalEvents:
         from app.routers.ws import start_headless_event_bridge
         source = inspect.getsource(start_headless_event_bridge)
         assert '"mode_change"' in source or "'mode_change'" in source
+
+
+class TestTakBridgePassthrough:
+    """TAK events must pass through both bridges without amy_ prefix."""
+
+    def test_amy_bridge_passes_tak_events(self):
+        """Amy bridge should forward tak_* events without prefix mangling."""
+        import inspect
+        from app.routers.ws import start_amy_event_bridge
+        source = inspect.getsource(start_amy_event_bridge)
+        assert 'event_type.startswith("tak_")' in source
+
+    def test_headless_bridge_passes_tak_events(self):
+        """Headless bridge should forward tak_* events without prefix mangling."""
+        import inspect
+        from app.routers.ws import start_headless_event_bridge
+        source = inspect.getsource(start_headless_event_bridge)
+        assert 'event_type.startswith("tak_")' in source
+
+    def test_tak_connected_broadcast_no_prefix(self):
+        """tak_connected should reach WS as 'tak_connected', not 'amy_tak_connected'."""
+        from app.routers.ws import start_headless_event_bridge, manager
+        from engine.comms.event_bus import EventBus
+
+        loop = asyncio.new_event_loop()
+        bus = EventBus()
+        broadcasts = []
+        original_broadcast = manager.broadcast
+
+        async def capture(msg):
+            broadcasts.append(msg)
+
+        manager.broadcast = capture
+        try:
+            start_headless_event_bridge(bus, loop)
+            bus.publish("tak_connected", {"host": "10.0.0.1"})
+            time.sleep(0.3)
+            loop.run_until_complete(asyncio.sleep(0.1))
+
+            tak_msgs = [m for m in broadcasts if m.get("type") == "tak_connected"]
+            assert len(tak_msgs) >= 1, f"Expected tak_connected, got types: {[m.get('type') for m in broadcasts]}"
+            assert tak_msgs[0]["data"]["host"] == "10.0.0.1"
+        finally:
+            manager.broadcast = original_broadcast
+            loop.close()
