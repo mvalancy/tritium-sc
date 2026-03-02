@@ -2678,7 +2678,7 @@ console.log('\n--- State Refresh on Connect ---');
     const src = fs.readFileSync(__dirname + '/../../frontend/js/command/websocket.js', 'utf8');
     const refreshIdx = src.indexOf('async _refreshState');
     assert(refreshIdx >= 0, 'async _refreshState method exists (eliminations check)');
-    const refreshBlock = src.slice(refreshIdx, refreshIdx + 1500);
+    const refreshBlock = src.slice(refreshIdx, refreshIdx + 2000);
     assert(
         refreshBlock.includes("game.total_eliminations") || refreshBlock.includes("total_eliminations"),
         '_refreshState hydrates total_eliminations on reconnect'
@@ -2687,6 +2687,21 @@ console.log('\n--- State Refresh on Connect ---');
         refreshBlock.includes("game.modeType") || refreshBlock.includes("game_mode_type"),
         '_refreshState hydrates game_mode_type on reconnect'
     );
+})();
+
+(function testRefreshStateHydratesModeSpecificFields() {
+    const src = fs.readFileSync(__dirname + '/../../frontend/js/command/websocket.js', 'utf8');
+    const refreshIdx = src.indexOf('async _refreshState');
+    assert(refreshIdx >= 0, 'async _refreshState exists (mode-specific check)');
+    const refreshBlock = src.slice(refreshIdx, refreshIdx + 2500);
+    // Civil unrest mode fields
+    assert(refreshBlock.includes('de_escalation_score'), '_refreshState hydrates de_escalation_score');
+    assert(refreshBlock.includes('civilian_harm_count'), '_refreshState hydrates civilian_harm_count');
+    assert(refreshBlock.includes('civilian_harm_limit'), '_refreshState hydrates civilian_harm_limit');
+    assert(refreshBlock.includes('weighted_total_score'), '_refreshState hydrates weighted_total_score');
+    // Drone swarm mode fields
+    assert(refreshBlock.includes('infrastructure_health'), '_refreshState hydrates infrastructure_health');
+    assert(refreshBlock.includes('infrastructure_max'), '_refreshState hydrates infrastructure_max');
 })();
 
 // ============================================================

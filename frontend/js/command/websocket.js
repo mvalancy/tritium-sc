@@ -209,6 +209,13 @@ export class WebSocketManager {
                 if (game.wave_hostiles_remaining !== undefined) TritiumStore.set('game.waveHostilesRemaining', game.wave_hostiles_remaining);
                 if (game.difficulty_multiplier !== undefined) TritiumStore.set('game.difficultyMultiplier', game.difficulty_multiplier);
                 if (game.game_mode_type) TritiumStore.set('game.modeType', game.game_mode_type);
+                // Mode-specific fields (civil_unrest, drone_swarm)
+                if (game.de_escalation_score !== undefined) TritiumStore.set('game.deEscalationScore', game.de_escalation_score);
+                if (game.civilian_harm_count !== undefined) TritiumStore.set('game.civilianHarmCount', game.civilian_harm_count);
+                if (game.civilian_harm_limit !== undefined) TritiumStore.set('game.civilianHarmLimit', game.civilian_harm_limit);
+                if (game.weighted_total_score !== undefined) TritiumStore.set('game.weightedTotalScore', game.weighted_total_score);
+                if (game.infrastructure_health !== undefined) TritiumStore.set('game.infrastructureHealth', game.infrastructure_health);
+                if (game.infrastructure_max !== undefined) TritiumStore.set('game.infrastructureMax', game.infrastructure_max);
             }
             if (targetsRes.ok) {
                 const data = await targetsRes.json();
