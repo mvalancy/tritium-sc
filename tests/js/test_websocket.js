@@ -894,6 +894,41 @@ console.log('\n--- Message Routing: escalation_change ---');
 })();
 
 // ============================================================
+// 16b. Message Routing: amy_alert
+// ============================================================
+
+console.log('\n--- Message Routing: amy_alert ---');
+
+(function testAmyAlert() {
+    const ctx = createFreshContext();
+    listenEvent(ctx, 'alert:new');
+    listenEvent(ctx, 'amy:alert');
+    const ws = vm.runInContext('new WebSocketManager()', ctx);
+    ws.connect();
+    createdSockets[0]._simulateOpen();
+    createdSockets[0]._simulateMessage({
+        type: 'amy_alert',
+        data: { target_id: 'hostile-7', message: 'Suspicious activity near perimeter' },
+    });
+    const alerts = vm.runInContext('TritiumStore.alerts', ctx);
+    assert(alerts.length >= 1, 'amy_alert adds alert to store');
+    assertEqual(alerts[0].type, 'amy_alert', 'Alert type is amy_alert');
+    assertEqual(alerts[0].message, 'Suspicious activity near perimeter', 'Alert message from data');
+    assertDefined(_bridge['alert:new'], 'amy_alert emits alert:new');
+    assertDefined(_bridge['amy:alert'], 'amy_alert emits amy:alert');
+})();
+
+(function testAmyAlertDefaultMessage() {
+    const ctx = createFreshContext();
+    const ws = vm.runInContext('new WebSocketManager()', ctx);
+    ws.connect();
+    createdSockets[0]._simulateOpen();
+    createdSockets[0]._simulateMessage({ type: 'amy_alert', data: {} });
+    const alerts = vm.runInContext('TritiumStore.alerts', ctx);
+    assertEqual(alerts[0].message, 'Amy alert', 'Default message when data.message absent');
+})();
+
+// ============================================================
 // 17. Message Routing: detection
 // ============================================================
 

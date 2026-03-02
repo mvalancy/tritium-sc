@@ -462,6 +462,18 @@ export class WebSocketManager {
                 EventBus.emit('escalation:change', msg.data || msg);
                 break;
 
+            case 'amy_alert': {
+                const ad = msg.data || msg;
+                TritiumStore.addAlert({
+                    type: 'amy_alert',
+                    message: ad.message || 'Amy alert',
+                    source: 'amy',
+                });
+                EventBus.emit('alert:new', ad);
+                EventBus.emit('amy:alert', ad);
+                break;
+            }
+
             case 'detection':
             case 'amy_detection':
                 // YOLO detection from camera
