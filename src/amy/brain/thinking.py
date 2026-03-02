@@ -759,7 +759,12 @@ class ThinkingThread:
             if target.alliance == "hostile":
                 commander.sensorium.push("thought", f"Cannot dispatch hostile unit '{target.name}'")
                 return
-            target.waypoints = [(x, y)]
+            # Route through pathfinder instead of direct waypoint
+            if hasattr(engine, "route_path"):
+                target.waypoints = engine.route_path(
+                    target.position, (x, y), target.asset_type, target.alliance)
+            else:
+                target.waypoints = [(x, y)]
             target._waypoint_index = 0
             target.loop_waypoints = False
             target.status = "active"
@@ -791,7 +796,22 @@ class ThinkingThread:
                 return
             try:
                 wps = _json.loads(waypoints_str)
-                target.waypoints = [(w[0], w[1]) for w in wps]
+                raw_wps = [(w[0], w[1]) for w in wps]
+                # Route between consecutive patrol points through pathfinder
+                if hasattr(engine, "route_path") and raw_wps:
+                    routed: list[tuple[float, float]] = []
+                    prev = target.position
+                    for wp in raw_wps:
+                        seg = engine.route_path(prev, wp, target.asset_type, target.alliance)
+                        if seg:
+                            start_idx = 1 if routed and seg[0] == routed[-1] else 0
+                            routed.extend(seg[start_idx:])
+                        else:
+                            routed.append(wp)
+                        prev = wp
+                    target.waypoints = routed if routed else raw_wps
+                else:
+                    target.waypoints = raw_wps
                 target._waypoint_index = 0
                 target.loop_waypoints = True
                 target.status = "active"
@@ -837,6 +857,98 @@ class ThinkingThread:
             if announcer is not None:
                 announcer.taunt(target_name)
             commander.sensorium.push("thought", f"Taunting {target_name}")
+
+        elif result.action == "formation":
+            engine = getattr(commander, "simulation_engine", None)
+            if engine is None:
+                commander.sensorium.push("thought", "No simulation engine — cannot form squads")
+                return
+            from engine.actions.formation_actions import _get_handler
+            handler = _get_handler("formation")
+            formation_type = result.params[0]
+            unit_ids = result.params[1:]
+            res = handler(formation_type, *unit_ids)
+            if res.get("status") == "ok":
+                commander.sensorium.push("thought", f"Formed {formation_type} squad {res['squad_id']} with {len(unit_ids)} units")
+                commander.event_bus.publish("formation_created", res)
+            else:
+                commander.sensorium.push("thought", f"Formation failed: {res.get('error', 'unknown error')}")
+
+        elif result.action == "set_formation":
+            engine = getattr(commander, "simulation_engine", None)
+            if engine is None:
+                commander.sensorium.push("thought", "No simulation engine — cannot set formation")
+                return
+            from engine.actions.formation_actions import _get_handler
+            handler = _get_handler("set_formation")
+            squad_id, formation_type = result.params[0], result.params[1]
+            res = handler(squad_id, formation_type)
+            if res.get("status") == "ok":
+                commander.sensorium.push("thought", f"Squad {squad_id} now in {formation_type} formation")
+            else:
+                commander.sensorium.push("thought", f"Set formation failed: {res.get('error', 'unknown error')}")
+
+        elif result.action == "squad_order":
+            engine = getattr(commander, "simulation_engine", None)
+            if engine is None:
+                commander.sensorium.push("thought", "No simulation engine — cannot issue squad order")
+                return
+            from engine.actions.formation_actions import _get_handler
+            handler = _get_handler("squad_order")
+            squad_id, order = result.params[0], result.params[1]
+            res = handler(squad_id, order)
+            if res.get("status") == "ok":
+                commander.sensorium.push("thought", f"Squad {squad_id} ordered to {order}")
+                commander.event_bus.publish("squad_order", res)
+            else:
+                commander.sensorium.push("thought", f"Squad order failed: {res.get('error', 'unknown error')}")
+
+        elif result.action == "squad_dispatch":
+            engine = getattr(commander, "simulation_engine", None)
+            if engine is None:
+                commander.sensorium.push("thought", "No simulation engine — cannot dispatch squad")
+                return
+            from engine.actions.formation_actions import _get_handler
+            handler = _get_handler("squad_dispatch")
+            squad_id = result.params[0]
+            x, y = result.params[1], result.params[2]
+            res = handler(squad_id, x, y)
+            if res.get("status") == "ok":
+                n = res.get("dispatched", 0)
+                commander.sensorium.push("thought", f"Dispatched squad {squad_id} ({n} units) to ({x:.1f}, {y:.1f})")
+                commander.event_bus.publish("squad_dispatch", res)
+            else:
+                commander.sensorium.push("thought", f"Squad dispatch failed: {res.get('error', 'unknown error')}")
+
+        elif result.action == "rally":
+            engine = getattr(commander, "simulation_engine", None)
+            if engine is None:
+                commander.sensorium.push("thought", "No simulation engine — cannot rally")
+                return
+            from engine.actions.formation_actions import _get_handler
+            handler = _get_handler("rally")
+            x, y = result.params[0], result.params[1]
+            alliance = result.params[2] if len(result.params) > 2 else "friendly"
+            res = handler(x, y, alliance)
+            rallied = res.get("rallied", 0)
+            commander.sensorium.push("thought", f"Rallied {rallied} {alliance} units to ({x:.1f}, {y:.1f})")
+            commander.event_bus.publish("rally", res)
+
+        elif result.action == "scatter":
+            engine = getattr(commander, "simulation_engine", None)
+            if engine is None:
+                commander.sensorium.push("thought", "No simulation engine — cannot scatter")
+                return
+            from engine.actions.formation_actions import _get_handler
+            handler = _get_handler("scatter")
+            squad_id = result.params[0]
+            res = handler(squad_id)
+            if res.get("status") == "ok":
+                n = res.get("scattered", 0)
+                commander.sensorium.push("thought", f"Scattered squad {squad_id} ({n} units)")
+                commander.event_bus.publish("squad_scatter", res)
+            else:
+                commander.sensorium.push("thought", f"Scatter failed: {res.get('error', 'unknown error')}")
 
     def _handle_look_at(self, direction: str) -> None:
         commander = self._commander

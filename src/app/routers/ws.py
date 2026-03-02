@@ -5,7 +5,9 @@
 
 import asyncio
 import json
+import queue
 import threading
+import time as _time
 from datetime import datetime
 from typing import Set
 
@@ -65,6 +67,12 @@ class ConnectionManager:
 # Global connection manager
 manager = ConnectionManager()
 
+# Reference to the simulation engine's LOD system (set during bridge startup)
+_lod_system = None
+
+# Reference to the simulation engine for initial state sync on connect
+_sim_engine = None
+
 
 @router.websocket("/live")
 async def websocket_live(websocket: WebSocket):
@@ -80,6 +88,23 @@ async def websocket_live(websocket: WebSocket):
             "message": "TRITIUM UPLINK ESTABLISHED",
         },
     )
+
+    # Send current game state so late-joining clients are immediately in sync.
+    # Without this, clients that connect after a state transition miss the
+    # game_state_change event and their HUD stays stuck at "idle".
+    if _sim_engine is not None:
+        try:
+            game_state = _sim_engine.get_game_state()
+            await manager.send_to(
+                websocket,
+                {
+                    "type": "amy_game_state_change",
+                    "data": game_state,
+                    "timestamp": datetime.now(tz=None).isoformat(),
+                },
+            )
+        except Exception:
+            pass  # Non-fatal: client will get state on next heartbeat
 
     try:
         while True:
@@ -112,11 +137,63 @@ async def handle_client_message(websocket: WebSocket, message: dict):
             websocket,
             {"type": "subscribed", "channels": channels},
         )
+    elif msg_type == "viewport_update":
+        # Frontend reports its current viewport center and zoom.
+        # Forward to the simulation engine's LOD system to adjust fidelity.
+        _handle_viewport_update(message)
     else:
         await manager.send_to(
             websocket,
             {"type": "error", "message": f"Unknown message type: {msg_type}"},
         )
+
+
+def _handle_viewport_update(message: dict) -> None:
+    """Process a viewport_update message from the frontend.
+
+    Expected format:
+        {
+            "type": "viewport_update",
+            "center_x": float,   # local X coord (meters from map origin)
+            "center_y": float,   # local Y coord (meters from map origin)
+            "zoom": float,       # MapLibre zoom level
+            "radius": float      # optional: visible radius in meters
+        }
+
+    If center_x/center_y are not provided but center_lat/center_lng are,
+    we convert using the geo module.
+    """
+    global _lod_system
+    if _lod_system is None:
+        return
+
+    center_x = message.get("center_x")
+    center_y = message.get("center_y")
+
+    # If frontend sends lat/lng instead of local coords, convert
+    if center_x is None or center_y is None:
+        lat = message.get("center_lat") or message.get("lat")
+        lng = message.get("center_lng") or message.get("lng")
+        if lat is not None and lng is not None:
+            try:
+                from engine.tactical.geo import latlng_to_local
+                local = latlng_to_local(lat, lng)
+                center_x = local[0]  # x = East
+                center_y = local[1]  # y = North
+            except Exception:
+                return
+        else:
+            return
+
+    zoom = message.get("zoom")
+    radius = message.get("radius")
+
+    _lod_system.update_viewport(
+        center_x=float(center_x),
+        center_y=float(center_y),
+        radius=float(radius) if radius is not None else None,
+        zoom=float(zoom) if zoom is not None else None,
+    )
 
 
 # Utility functions for broadcasting from other parts of the app
@@ -238,15 +315,38 @@ class TelemetryBatcher:
         self._running = False
 
 
+def _normalize_event_type(event_type: str) -> str:
+    """Translate engine-internal event names to frontend-expected names.
+
+    The engine's ThreatClassifier publishes ``threat_escalation`` and
+    ``threat_deescalation``, but the frontend websocket.js handler and the
+    NPC intelligence EventReactor both expect ``escalation_change``.  This
+    function normalises the name so every downstream consumer sees a
+    consistent event type.
+    """
+    if event_type in ("threat_escalation", "threat_deescalation"):
+        return "escalation_change"
+    return event_type
+
+
 def start_amy_event_bridge(amy_commander, loop: asyncio.AbstractEventLoop):
     """Start a daemon thread that forwards Amy EventBus events to WebSocket.
 
     This bridges Amy's threaded EventBus to FastAPI's async WebSocket system.
+    Also starts a game-state heartbeat that sends the current game state
+    every 2 seconds so late-joining or reconnecting clients stay in sync.
 
     Args:
         amy_commander: Amy's Commander instance
         loop: The asyncio event loop to push events into
     """
+    # Wire LOD system reference for viewport_update handling
+    global _lod_system, _sim_engine
+    sim_engine = getattr(amy_commander, "simulation_engine", None)
+    if sim_engine is not None:
+        _lod_system = getattr(sim_engine, "lod_system", None)
+        _sim_engine = sim_engine
+
     sub = amy_commander.event_bus.subscribe()
     batcher = TelemetryBatcher(loop)
     batcher.start()
@@ -257,6 +357,8 @@ def start_amy_event_bridge(amy_commander, loop: asyncio.AbstractEventLoop):
                 msg = sub.get(timeout=60)
                 event_type = msg.get("type", "unknown")
                 data = msg.get("data", {})
+                # Normalise engine event names to frontend-expected names
+                event_type = _normalize_event_type(event_type)
                 if event_type == "sim_telemetry":
                     batcher.add(data)
                 elif event_type == "sim_telemetry_batch":
@@ -289,14 +391,23 @@ def start_amy_event_bridge(amy_commander, loop: asyncio.AbstractEventLoop):
                     asyncio.run_coroutine_threadsafe(
                         broadcast_amy_event(event_type, data), loop
                     )
+            except queue.Empty:
+                continue
             except Exception:
+                logger.warning(f"Bridge loop error for event '{event_type}'", exc_info=True)
                 continue
 
     thread = threading.Thread(target=bridge_loop, daemon=True, name="amy-ws-bridge")
     thread.start()
 
+    # Game state heartbeat: broadcast current game state every 2s.
+    # This ensures clients stay in sync even if they miss a
+    # game_state_change event (network hiccup, late join, reconnect).
+    _start_game_state_heartbeat(sim_engine, loop)
 
-def start_headless_event_bridge(event_bus, loop: asyncio.AbstractEventLoop):
+
+def start_headless_event_bridge(event_bus, loop: asyncio.AbstractEventLoop,
+                                simulation_engine=None):
     """Bridge a bare EventBus to WebSocket without requiring Amy.
 
     Used in headless mode (AMY_ENABLED=false, SIMULATION_ENABLED=true) so that
@@ -305,7 +416,14 @@ def start_headless_event_bridge(event_bus, loop: asyncio.AbstractEventLoop):
     Args:
         event_bus: An EventBus instance (from the standalone SimulationEngine)
         loop: The asyncio event loop to push events into
+        simulation_engine: Optional SimulationEngine instance for LOD wiring
     """
+    # Wire LOD system and engine reference for viewport_update and game state sync
+    global _lod_system, _sim_engine
+    if simulation_engine is not None:
+        _lod_system = getattr(simulation_engine, "lod_system", None)
+        _sim_engine = simulation_engine
+
     sub = event_bus.subscribe()
     batcher = TelemetryBatcher(loop)
     batcher.start()
@@ -316,6 +434,8 @@ def start_headless_event_bridge(event_bus, loop: asyncio.AbstractEventLoop):
                 msg = sub.get(timeout=60)
                 event_type = msg.get("type", "unknown")
                 data = msg.get("data", {})
+                # Normalise engine event names to frontend-expected names
+                event_type = _normalize_event_type(event_type)
                 if event_type == "sim_telemetry":
                     batcher.add(data)
                 elif event_type == "sim_telemetry_batch":
@@ -323,19 +443,68 @@ def start_headless_event_bridge(event_bus, loop: asyncio.AbstractEventLoop):
                         broadcast_amy_event("sim_telemetry_batch", data), loop
                     )
                 elif event_type in (
+                    # Core game lifecycle
                     "game_state_change",
                     "wave_start",
                     "wave_complete",
-                    "target_eliminated",
                     "game_over",
+                    # Combat events
                     "projectile_fired",
                     "projectile_hit",
+                    "target_eliminated",
                     "elimination_streak",
-                    "announcer",
+                    "target_neutralized",
+                    # Weapon/ammo events
+                    "weapon_jam",
+                    "ammo_depleted",
+                    "ammo_low",
+                    # NPC intelligence
                     "npc_thought",
                     "npc_thought_clear",
+                    "npc_alliance_change",
+                    # Threat escalation (normalised from threat_escalation/threat_deescalation)
+                    "escalation_change",
+                    # Mission generation
                     "mission_progress",
                     "scenario_generated",
+                    "backstory_generated",
+                    # Mission-type events (civil unrest + drone swarm)
+                    "crowd_density",
+                    "infrastructure_damage",
+                    "infrastructure_overwhelmed",
+                    "bomber_detonation",
+                    "de_escalation",
+                    "civilian_harmed",
+                    # Environmental hazards
+                    "hazard_spawned",
+                    "hazard_expired",
+                    # Sensor events
+                    "sensor_triggered",
+                    "sensor_cleared",
+                    # Upgrade/ability system
+                    "upgrade_applied",
+                    "ability_activated",
+                    "ability_expired",
+                    # External device events
+                    "robot_thought",
+                    "detection",
+                    # Bonus objective completion
+                    "bonus_objective_completed",
+                    # Hostile commander intel
+                    "hostile_intel",
+                    # Unit communication signals
+                    "unit_signal",
+                    # Cover system state for map overlay
+                    "cover_points",
+                    # Mission-specific combat events
+                    "instigator_identified",
+                    "emp_activated",
+                    # Auto-dispatch and zone breach announcements
+                    "auto_dispatch_speech",
+                    "zone_violation",
+                    # Amy mode/formation events
+                    "formation_created",
+                    "mode_change",
                 ):
                     asyncio.run_coroutine_threadsafe(
                         broadcast_amy_event(event_type, data), loop
@@ -349,10 +518,56 @@ def start_headless_event_bridge(event_bus, loop: asyncio.AbstractEventLoop):
                         }),
                         loop,
                     )
+            except queue.Empty:
+                continue
             except Exception:
+                logger.warning(f"Headless bridge error for event '{event_type}'", exc_info=True)
                 continue
 
     thread = threading.Thread(
         target=bridge_loop, daemon=True, name="headless-ws-bridge"
+    )
+    thread.start()
+
+    # Game state heartbeat for headless mode too
+    _start_game_state_heartbeat(simulation_engine, loop)
+
+
+def _start_game_state_heartbeat(
+    sim_engine, loop: asyncio.AbstractEventLoop, interval: float = 2.0
+) -> None:
+    """Broadcast current game state to all clients every ``interval`` seconds.
+
+    This is a safety net: even if a client misses a game_state_change event
+    (network hiccup, late join, reconnect), it will self-correct within
+    ``interval`` seconds.  The heartbeat only sends when there are active
+    connections to avoid unnecessary work.
+    """
+    if sim_engine is None:
+        return
+
+    _last_state: dict = {}
+
+    def _heartbeat():
+        nonlocal _last_state
+        while True:
+            _time.sleep(interval)
+            if not manager.active_connections:
+                continue
+            try:
+                state = sim_engine.get_game_state()
+                # Only send if state changed since last heartbeat
+                # to avoid spamming identical messages
+                if state == _last_state:
+                    continue
+                _last_state = state
+                asyncio.run_coroutine_threadsafe(
+                    broadcast_amy_event("game_state_change", state), loop
+                )
+            except Exception:
+                pass  # Engine shutting down or not yet ready
+
+    thread = threading.Thread(
+        target=_heartbeat, daemon=True, name="game-state-heartbeat"
     )
     thread.start()

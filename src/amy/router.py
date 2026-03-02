@@ -427,6 +427,12 @@ async def sim_dispatch(request: Request, body: DispatchRequest):
     if target is None:
         return JSONResponse({"error": f"Unit '{body.unit_id}' not found"}, status_code=404)
 
+    if target.speed == 0:
+        return JSONResponse(
+            {"error": f"Unit '{body.unit_id}' is stationary and cannot be dispatched"},
+            status_code=422,
+        )
+
     engine.dispatch_unit(body.unit_id, (body.target.x, body.target.y))
 
     return {

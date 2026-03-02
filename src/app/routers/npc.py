@@ -31,6 +31,7 @@ class ThoughtRequest(BaseModel):
     text: str
     emotion: str = "neutral"
     duration: float = 5.0
+    importance: str = "normal"  # idle, low, normal, high, critical
 
 
 class ActionRequest(BaseModel):
@@ -271,11 +272,13 @@ async def set_thought(target_id: str, body: ThoughtRequest, request: Request):
     registry = _get_thought_registry(request)
     thought = registry.set_thought(
         target_id, body.text, emotion=body.emotion, duration=body.duration,
+        importance=body.importance,
     )
     return {
         "unit_id": target_id,
         "text": thought.text,
         "emotion": thought.emotion,
+        "importance": thought.importance,
         "duration": body.duration,
     }
 
@@ -297,9 +300,9 @@ async def set_action(target_id: str, body: ActionRequest, request: Request):
     except Exception:
         pass
 
-    # Set thought if provided
+    # Set thought if provided (normal importance — user-driven action)
     if body.thought:
-        registry.set_thought(target_id, body.thought, duration=5.0)
+        registry.set_thought(target_id, body.thought, duration=5.0, importance="normal")
 
     return {
         "target_id": target_id,

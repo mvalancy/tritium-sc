@@ -5,7 +5,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+from typing import Optional
+
+from fastapi import APIRouter, Query, Request
 
 router = APIRouter(prefix="/api", tags=["targets"])
 
@@ -26,13 +28,29 @@ def _get_sim_engine(request: Request):
 
 
 @router.get("/targets")
-async def get_targets(request: Request):
-    """Return all tracked targets (simulation + YOLO detections)."""
+async def get_targets(
+    request: Request,
+    source: Optional[str] = Query(None, description="Filter by source: real, sim, graphling"),
+):
+    """Return all tracked targets (simulation + YOLO detections).
+
+    Optional query parameter ``source`` filters by target source classification:
+    - ``real`` — physical hardware / YOLO-detected targets
+    - ``sim`` — locally simulated targets
+    - ``graphling`` — remote Graphlings agents
+    """
     tracker = _get_tracker(request)
     if tracker is not None:
         targets = tracker.get_all()
+        dicts = [t.to_dict() for t in targets]
+        if source:
+            # TrackedTarget.source uses "yolo"/"simulation"/"manual"; map to
+            # SimulationTarget convention for filtering consistency.
+            _source_map = {"real": "yolo", "sim": "simulation"}
+            tracker_source = _source_map.get(source, source)
+            dicts = [d for d in dicts if d.get("source") == tracker_source]
         return {
-            "targets": [t.to_dict() for t in targets],
+            "targets": dicts,
             "summary": tracker.summary(),
         }
 
@@ -40,6 +58,16 @@ async def get_targets(request: Request):
     engine = _get_sim_engine(request)
     if engine is not None:
         targets = engine.get_targets()
+        if source:
+            # Apply same source mapping as tracker path for consistency.
+            _source_map = {"real": "yolo", "sim": "simulation"}
+            # SimulationTarget.source uses short names ("sim", "real", "graphling"),
+            # while TrackedTarget uses long names ("simulation", "yolo").
+            # Accept both conventions.
+            mapped = _source_map.get(source, source)
+            targets = [
+                t for t in targets if t.source == source or t.source == mapped
+            ]
         return {
             "targets": [t.to_dict() for t in targets],
             "summary": f"{len(targets)} simulation targets",
@@ -81,7 +109,13 @@ async def get_friendlies(request: Request):
 @router.post("/sighting")
 async def report_sighting(request: Request):
     """Accept a sighting report from camera or robot."""
-    engine = _get_sim_engine(request)
+    # Try Amy's engine first, then headless fallback.
+    engine = None
+    amy = getattr(request.app.state, "amy", None)
+    if amy is not None:
+        engine = getattr(amy, "simulation_engine", None)
+    if engine is None:
+        engine = _get_sim_engine(request)
     if engine is None:
         return {"error": "No simulation engine"}
     body = await request.json()

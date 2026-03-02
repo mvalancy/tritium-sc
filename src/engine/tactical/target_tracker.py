@@ -116,6 +116,9 @@ class TargetTracker:
                 t.status = sim_data.get("status", "active")
                 t.last_seen = time.monotonic()
             else:
+                # Map SimulationTarget source to tracker source:
+                # "sim" -> "simulation", "graphling" -> "simulation" (still sim-managed),
+                # "real" -> "simulation" (real targets come through YOLO path instead)
                 self._targets[tid] = TrackedTarget(
                     target_id=tid,
                     name=sim_data.get("name", tid[:8]),

@@ -444,11 +444,16 @@ class AutoDispatcher:
         with self._lock:
             self._active_dispatches[threat_id] = best.target_id
 
-        # Move sim target if we have the engine
+        # Move sim target if we have the engine — route through pathfinder
         if self._engine is not None:
             sim_target = self._engine.get_target(best.target_id)
             if sim_target is not None:
-                sim_target.waypoints = [threat.position]
+                if hasattr(self._engine, "route_path"):
+                    sim_target.waypoints = self._engine.route_path(
+                        sim_target.position, threat.position,
+                        sim_target.asset_type, sim_target.alliance)
+                else:
+                    sim_target.waypoints = [threat.position]
                 sim_target._waypoint_index = 0
                 sim_target.loop_waypoints = False
                 sim_target.status = "active"

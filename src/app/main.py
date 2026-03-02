@@ -38,6 +38,8 @@ from app.routers.mesh import router as mesh_router
 from app.routers.geodata import router as geodata_router
 from app.routers.npc import router as npc_router
 from app.routers.plugins import router as plugins_router
+from app.routers.devices import router as devices_router
+from app.routers.tak import router as tak_router
 
 
 # ---------------------------------------------------------------------------
@@ -480,6 +482,16 @@ async def lifespan(app: FastAPI):
                 else:
                     logger.info("Simulation engine started (10Hz tick)")
 
+                # Register formation Lua actions against this engine instance
+                try:
+                    from engine.actions.lua_registry import LuaActionRegistry
+                    from engine.actions.formation_actions import register_formation_actions
+                    _formation_registry = LuaActionRegistry.with_core_actions()
+                    register_formation_actions(_formation_registry, sim_engine)
+                    logger.info("Formation Lua actions registered")
+                except Exception as e:
+                    logger.warning(f"Formation actions registration failed: {e}")
+
             # Synthetic camera node (overhead view of simulation)
             if sim_engine is not None:
                 try:
@@ -582,9 +594,20 @@ async def lifespan(app: FastAPI):
 
                 # Bridge sim events to WebSocket so the browser canvas renders targets
                 start_headless_event_bridge(
-                    sim_engine.event_bus, asyncio.get_event_loop()
+                    sim_engine.event_bus, asyncio.get_event_loop(),
+                    simulation_engine=sim_engine,
                 )
                 logger.info("Headless simulation engine + event bridge started (no Amy)")
+
+                # Register formation Lua actions against this engine instance
+                try:
+                    from engine.actions.lua_registry import LuaActionRegistry
+                    from engine.actions.formation_actions import register_formation_actions
+                    _formation_registry = LuaActionRegistry.with_core_actions()
+                    register_formation_actions(_formation_registry, sim_engine)
+                    logger.info("Formation Lua actions registered (headless)")
+                except Exception as e:
+                    logger.warning(f"Formation actions registration failed: {e}")
 
     # Plugin system — discover, configure, and start all plugins
     plugin_manager = _start_plugins(app, amy_instance, sim_engine)
@@ -647,6 +670,8 @@ app.include_router(mesh_router)
 app.include_router(geodata_router)
 app.include_router(npc_router)
 app.include_router(plugins_router)
+app.include_router(devices_router)
+app.include_router(tak_router)
 
 # Static files
 frontend_path = Path(__file__).parent.parent.parent / "frontend"
