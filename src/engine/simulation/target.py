@@ -521,6 +521,7 @@ class SimulationTarget:
     instigator_timer: float = 0.0         # Timer for activation cycle (seconds)
     identified: bool = False              # Whether this instigator has been identified by a friendly scout
     ammo_count: int = -1                  # -1 = unlimited, 20 for missile turrets
+    ammo_max: int = -1                    # Max ammo capacity (-1 = unlimited)
 
     # Source classification: where this target came from
     # "sim" = locally simulated, "real" = physical hardware/YOLO, "graphling" = remote agent
@@ -869,6 +870,7 @@ class SimulationTarget:
             "instigator_state": self.instigator_state,
             "identified": self.identified,
             "ammo_count": self.ammo_count,
+            "ammo_max": self.ammo_max,
             "identity": self.identity.to_dict() if self.identity else None,
             "source": self.source,
         }

@@ -155,32 +155,59 @@ export const PatrolPanelDef = {
 
         // Batch actions
         if (patrolAllBtn) {
-            patrolAllBtn.addEventListener('click', async () => {
-                try {
-                    await fetch('/api/amy/command', {
+            patrolAllBtn.addEventListener('click', () => {
+                // Resume patrol for idle friendly units by dispatching them
+                // to a point slightly offset from their current position —
+                // this triggers the engine to pick up existing patrol routes.
+                let count = 0;
+                TritiumStore.units.forEach((u, id) => {
+                    if ((u.alliance || '').toLowerCase() !== 'friendly') return;
+                    const status = (u.status || 'active').toLowerCase();
+                    if (status === 'neutralized' || status === 'eliminated') return;
+                    const wps = u.waypoints;
+                    if (Array.isArray(wps) && wps.length >= 2) return; // already patrolling
+                    const pos = u.position || {};
+                    const px = pos.x || 0;
+                    const py = pos.y || 0;
+                    fetch('/api/amy/command', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ action: 'patrol_all' }),
-                    });
-                    EventBus.emit('toast:show', { message: 'All units: PATROL', type: 'info' });
-                } catch (_) {
-                    EventBus.emit('toast:show', { message: 'Patrol command failed', type: 'alert' });
-                }
+                        body: JSON.stringify({ action: 'dispatch', params: [id, px, py] }),
+                    }).catch(() => {});
+                    count++;
+                });
+                EventBus.emit('toast:show', {
+                    message: count > 0 ? `Dispatched ${count} idle units` : 'No idle units to dispatch',
+                    type: 'info',
+                });
             });
         }
 
         if (recallAllBtn) {
-            recallAllBtn.addEventListener('click', async () => {
-                try {
-                    await fetch('/api/amy/command', {
+            recallAllBtn.addEventListener('click', () => {
+                // Recall all patrolling friendly units by dispatching to
+                // their current position (clears waypoints).
+                let count = 0;
+                TritiumStore.units.forEach((u, id) => {
+                    if ((u.alliance || '').toLowerCase() !== 'friendly') return;
+                    const status = (u.status || 'active').toLowerCase();
+                    if (status === 'neutralized' || status === 'eliminated') return;
+                    const wps = u.waypoints;
+                    if (!Array.isArray(wps) || wps.length < 2) return; // not patrolling
+                    const pos = u.position || {};
+                    const px = pos.x || 0;
+                    const py = pos.y || 0;
+                    fetch('/api/amy/command', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ action: 'stand_down' }),
-                    });
-                    EventBus.emit('toast:show', { message: 'All units: STAND DOWN', type: 'info' });
-                } catch (_) {
-                    EventBus.emit('toast:show', { message: 'Recall command failed', type: 'alert' });
-                }
+                        body: JSON.stringify({ action: 'dispatch', params: [id, px, py] }),
+                    }).catch(() => {});
+                    count++;
+                });
+                EventBus.emit('toast:show', {
+                    message: count > 0 ? `Recalled ${count} patrolling units` : 'No units on patrol',
+                    type: 'info',
+                });
             });
         }
 

@@ -1106,6 +1106,28 @@ class TestToDict:
         d = t.to_dict()
         assert d["status"] == "arrived"
 
+    def test_ammo_count_default(self):
+        t = _friendly_rover()
+        d = t.to_dict()
+        assert d["ammo_count"] == -1
+
+    def test_ammo_count_serialized(self):
+        t = _friendly_rover()
+        t.ammo_count = 20
+        d = t.to_dict()
+        assert d["ammo_count"] == 20
+
+    def test_ammo_max_default(self):
+        t = _friendly_rover()
+        d = t.to_dict()
+        assert d["ammo_max"] == -1
+
+    def test_ammo_max_serialized(self):
+        t = _friendly_rover()
+        t.ammo_max = 50
+        d = t.to_dict()
+        assert d["ammo_max"] == 50
+
 
 # ---------------------------------------------------------------------------
 # Extended simulation fields

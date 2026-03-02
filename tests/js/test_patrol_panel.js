@@ -165,6 +165,71 @@ console.log('\n--- unmount() ---');
 (function() { let threw = false; try { PatrolPanelDef.unmount(createMockElement('div')); } catch (e) { threw = true; } assert(!threw, 'unmount() does not throw'); })();
 
 // ============================================================
+// 8. API correctness: no invalid actions
+// ============================================================
+console.log('\n--- API correctness ---');
+
+(function() {
+    assert(!patrolCode.includes("action: 'patrol_all'"), 'patrol_all action removed (not in VALID_ACTIONS)');
+})();
+
+(function() {
+    assert(!patrolCode.includes("action: 'stand_down'"), 'stand_down action removed (not in VALID_ACTIONS)');
+})();
+
+(function() {
+    assert(patrolCode.includes("action: 'dispatch'"), 'Uses valid dispatch action for clearing patrols');
+})();
+
+(function() {
+    // Verify RECALL ALL iterates units and dispatches to current position
+    // Skip to the handler (second occurrence, not the variable declaration)
+    const firstRecall = patrolCode.indexOf('recallAllBtn');
+    const recallIdx = patrolCode.indexOf('recallAllBtn', firstRecall + 1);
+    const recallBlock = patrolCode.slice(recallIdx, recallIdx + 1200);
+    assert(recallBlock.includes('units.forEach'), 'RECALL ALL iterates store units');
+    assert(recallBlock.includes("'friendly'"), 'RECALL ALL filters for friendly alliance');
+    assert(recallBlock.includes("'dispatch'"), 'RECALL ALL dispatches each unit');
+})();
+
+(function() {
+    // Verify PATROL ALL iterates units
+    const patrolIdx = patrolCode.indexOf('patrolAllBtn');
+    const patrolBlock = patrolCode.slice(patrolIdx, patrolIdx + 800);
+    assert(patrolBlock.includes('units.forEach'), 'PATROL ALL iterates store units');
+    assert(patrolBlock.includes("'friendly'"), 'PATROL ALL filters for friendly alliance');
+})();
+
+// ============================================================
+// 9. Position property access correctness
+// ============================================================
+console.log('\n--- Position property access ---');
+
+(function() {
+    // Clear-patrol button should read unit.position, not unit.x/unit.y
+    assert(patrolCode.includes('unit.position'), 'Clear-patrol reads unit.position (not unit.x)');
+    assert(!patrolCode.includes('unit.x'), 'Does not directly read unit.x (position is nested)');
+})();
+
+(function() {
+    // All position reads should use .position pattern
+    assert(patrolCode.includes('u.position || {}'), 'Batch actions safely access u.position');
+    assert(patrolCode.includes('pos.x || 0'), 'Falls back to 0 for missing x');
+    assert(patrolCode.includes('pos.y || 0'), 'Falls back to 0 for missing y');
+})();
+
+// ============================================================
+// 10. Backend ammo_max in to_dict
+// ============================================================
+console.log('\n--- Backend ammo_max ---');
+
+(function() {
+    const targetPy = fs.readFileSync(__dirname + '/../../src/engine/simulation/target.py', 'utf8');
+    assert(targetPy.includes('"ammo_max": self.ammo_max'), 'to_dict() includes ammo_max field');
+    assert(targetPy.includes('ammo_max: int = -1'), 'SimulationTarget has ammo_max field');
+})();
+
+// ============================================================
 // Summary
 // ============================================================
 console.log('\n' + '='.repeat(40));

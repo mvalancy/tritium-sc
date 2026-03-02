@@ -1318,6 +1318,9 @@ class SimulationEngine:
             # depleted), sync them.  ammo_count == -1 means unlimited.
             if t.ammo_count == 0 and weapon.ammo > 0:
                 t.ammo_count = weapon.ammo
+            # Sync max_ammo so the frontend can compute ammo percentage
+            if weapon.max_ammo > 0 and t.ammo_max != weapon.max_ammo:
+                t.ammo_max = weapon.max_ammo
             # Also sync inventory weapon ammo to weapon system ammo
             if t.inventory is not None:
                 inv_weapon = t.inventory.get_active_weapon()
