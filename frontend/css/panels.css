@@ -359,6 +359,12 @@
 .panel-dot-hostile  { background: var(--magenta); }
 .panel-dot-neutral  { background: var(--cyan); }
 .panel-dot-unknown  { background: var(--amber); }
+.panel-dot-green    { background: var(--green); }
+.panel-dot-red      { background: var(--magenta); }
+.panel-dot-amber    { background: var(--amber); }
+
+/* Monospace utility — used by panel value displays */
+.mono { font-family: 'JetBrains Mono', 'Fira Code', monospace; }
 
 /* Empty state */
 .panel-empty {
