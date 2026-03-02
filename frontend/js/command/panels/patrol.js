@@ -133,8 +133,9 @@ export const PatrolPanelDef = {
                     const uid = btn.dataset.unitId;
                     if (!uid) return;
                     const unit = TritiumStore.units.get(uid);
-                    const ux = unit && unit.x != null ? unit.x : 0;
-                    const uy = unit && unit.y != null ? unit.y : 0;
+                    const pos = unit && unit.position ? unit.position : {};
+                    const ux = pos.x || 0;
+                    const uy = pos.y || 0;
                     fetch('/api/amy/command', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
