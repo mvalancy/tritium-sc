@@ -147,12 +147,15 @@ function handleAction(action, gamePos, selectedUnitId) {
                 unitId: selectedUnitId,
             });
             if (selectedUnitId) {
-                fetch(`/api/npc/${encodeURIComponent(selectedUnitId)}/action`, {
+                // Use the same Lua dispatch command as DISPATCH HERE —
+                // the NPC action endpoint requires a control lock and
+                // doesn't actually apply waypoints to unit movement.
+                fetch('/api/amy/command', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        action: 'set_waypoint',
-                        waypoints: [{ x: gamePos.x, y: gamePos.y }],
+                        action: 'dispatch',
+                        params: [selectedUnitId, gamePos.x, gamePos.y],
                     }),
                 }).then(resp => {
                     if (resp.ok) {

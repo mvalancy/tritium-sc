@@ -530,14 +530,15 @@ console.log('\n--- Waypoint backend call ---');
 (function testWaypointCallsBackend() {
     fetchCalls = [];
     ContextMenu.handleAction('waypoint', { x: 300, y: 400 }, 'rover-01');
-    const call = fetchCalls.find(c => c.url === '/api/npc/rover-01/action');
-    assert(!!call, 'Waypoint action calls /api/npc/{id}/action');
+    const call = fetchCalls.find(c => c.url === '/api/amy/command');
+    assert(!!call, 'Waypoint action calls /api/amy/command (Lua dispatch)');
     if (call) {
         const body = JSON.parse(call.opts.body);
-        assert(body.action === 'set_waypoint', 'Waypoint body has action "set_waypoint"');
-        assert(Array.isArray(body.waypoints), 'Waypoint body has waypoints array');
-        assert(body.waypoints[0].x === 300, 'Waypoint has correct x');
-        assert(body.waypoints[0].y === 400, 'Waypoint has correct y');
+        assert(body.action === 'dispatch', 'Waypoint body uses dispatch action');
+        assert(Array.isArray(body.params), 'Waypoint body has params array');
+        assert(body.params[0] === 'rover-01', 'Waypoint params has unit id');
+        assert(body.params[1] === 300, 'Waypoint params has correct x');
+        assert(body.params[2] === 400, 'Waypoint params has correct y');
     }
 })();
 
@@ -932,10 +933,12 @@ console.log('\n--- handleAction edge cases ---');
 (function testWaypointFetchUrl() {
     fetchCalls = [];
     ContextMenu.handleAction('waypoint', { x: 10, y: 20 }, 'special/unit');
-    const call = fetchCalls.find(c => c.url && c.url.includes('/api/npc/'));
-    assert(!!call, 'Waypoint calls backend for unit with special chars');
-    assert(call.url.includes(encodeURIComponent('special/unit')),
-        'Waypoint URL encodes unit ID with special characters');
+    const call = fetchCalls.find(c => c.url === '/api/amy/command');
+    assert(!!call, 'Waypoint calls /api/amy/command for unit with special chars');
+    if (call) {
+        const body = JSON.parse(call.opts.body);
+        assert(body.params[0] === 'special/unit', 'Waypoint params includes unit id');
+    }
 })();
 
 (function testSuggestDispatchFetchMethod() {
@@ -1179,12 +1182,12 @@ console.log('\n--- Fetch body validation ---');
 (function testWaypointFetchBodyStructure() {
     fetchCalls = [];
     ContextMenu.handleAction('waypoint', { x: 55.5, y: 66.6 }, 'rover-02');
-    const call = fetchCalls.find(c => c.url && c.url.includes('/api/npc/'));
+    const call = fetchCalls.find(c => c.url === '/api/amy/command');
     const body = JSON.parse(call.opts.body);
-    assert(body.action === 'set_waypoint', 'Waypoint body action is "set_waypoint"');
-    assert(body.waypoints.length === 1, 'Waypoint body has exactly 1 waypoint');
-    assert(body.waypoints[0].x === 55.5, 'Waypoint x is passed through');
-    assert(body.waypoints[0].y === 66.6, 'Waypoint y is passed through');
+    assert(body.action === 'dispatch', 'Waypoint body uses Lua dispatch action');
+    assert(body.params[0] === 'rover-02', 'Waypoint params[0] is unit id');
+    assert(body.params[1] === 55.5, 'Waypoint params[1] is x');
+    assert(body.params[2] === 66.6, 'Waypoint params[2] is y');
 })();
 
 (function testSuggestDispatchBodyText() {
