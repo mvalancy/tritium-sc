@@ -194,16 +194,19 @@ const RoverControl = {
                         if (status) status.textContent = 'Click map to set patrol points';
                         break;
                     case 'recall':
-                        api.recall(device.id);
-                        if (status) status.textContent = 'Recall sent';
+                        api.recall(device.id)
+                            .then(r => { if (status) status.textContent = r.ok ? 'Recall sent' : 'Recall failed'; })
+                            .catch(() => { if (status) status.textContent = 'Recall failed: network error'; });
                         break;
                     case 'stop':
-                        api.stop(device.id);
-                        if (status) status.textContent = 'Stop sent';
+                        api.stop(device.id)
+                            .then(r => { if (status) status.textContent = r.ok ? 'Stop sent' : 'Stop failed'; })
+                            .catch(() => { if (status) status.textContent = 'Stop failed: network error'; });
                         break;
                     case 'fire':
-                        api.fire(device.id);
-                        if (status) status.textContent = 'Fire command sent';
+                        api.fire(device.id)
+                            .then(r => { if (status) status.textContent = r.ok ? 'Fire command sent' : 'Fire failed'; })
+                            .catch(() => { if (status) status.textContent = 'Fire failed: network error'; });
                         break;
                     case 'aim':
                         if (typeof EventBus !== 'undefined') {
@@ -359,15 +362,16 @@ const TurretControl = {
 
     bind(container, device, api) {
         // PTZ sliders — update display AND send aim commands (debounced)
-        let _aimTimer = null;
+        // Store timer on container so destroy() can clear it
+        container._aimTimer = null;
         const sliders = container.querySelectorAll ? container.querySelectorAll('.dc-slider') : [];
         for (const slider of sliders) {
             slider.addEventListener('input', () => {
                 const valDisplay = slider.parentElement?.querySelector('.dc-slider-val');
                 if (valDisplay) valDisplay.textContent = slider.value + '\u00B0';
                 // Debounce aim commands to avoid flooding the backend
-                if (_aimTimer) clearTimeout(_aimTimer);
-                _aimTimer = setTimeout(() => {
+                if (container._aimTimer) clearTimeout(container._aimTimer);
+                container._aimTimer = setTimeout(() => {
                     const panSlider = container.querySelector('[data-axis="pan"]');
                     const tiltSlider = container.querySelector('[data-axis="tilt"]');
                     const pan = panSlider ? Number(panSlider.value) : 0;
@@ -382,7 +386,12 @@ const TurretControl = {
     },
 
     update: RoverControl.update,
-    destroy: RoverControl.destroy,
+    destroy(container) {
+        if (container._aimTimer) {
+            clearTimeout(container._aimTimer);
+            container._aimTimer = null;
+        }
+    },
 };
 
 const SensorControl = {
@@ -414,16 +423,23 @@ const SensorControl = {
             const cmd = btn.dataset?.cmd || btn.getAttribute?.('data-cmd');
             if (!cmd) continue;
             btn.addEventListener('click', () => {
-                switch (cmd) {
-                    case 'enable':
-                        api.sendDeviceCommand(device.id, 'command', { command: 'enable' });
-                        break;
-                    case 'disable':
-                        api.sendDeviceCommand(device.id, 'command', { command: 'disable' });
-                        break;
-                    case 'test':
-                        api.sendDeviceCommand(device.id, 'command', { command: 'test_trigger' });
-                        break;
+                const cmdMap = { enable: 'enable', disable: 'disable', test: 'test_trigger' };
+                const luaCmd = cmdMap[cmd];
+                if (luaCmd) {
+                    api.sendDeviceCommand(device.id, 'command', { command: luaCmd })
+                        .then(r => {
+                            if (typeof EventBus !== 'undefined') {
+                                EventBus.emit('toast:show', {
+                                    message: r.ok ? `${cmd.toUpperCase()} sent` : `${cmd.toUpperCase()} failed`,
+                                    type: r.ok ? 'info' : 'alert',
+                                });
+                            }
+                        })
+                        .catch(() => {
+                            if (typeof EventBus !== 'undefined') {
+                                EventBus.emit('toast:show', { message: `${cmd.toUpperCase()} failed: network error`, type: 'alert' });
+                            }
+                        });
                 }
             });
         }
@@ -470,8 +486,22 @@ const MeshRadioControl = {
                     case 'send_text': {
                         const input = container.querySelector('.dc-mesh-text');
                         if (input && input.value && input.value.trim()) {
-                            api.sendDeviceCommand(device.id, 'text', { text: input.value.trim() });
-                            input.value = '';
+                            const msg = input.value.trim();
+                            api.sendDeviceCommand(device.id, 'text', { text: msg })
+                                .then(r => {
+                                    if (r.ok) input.value = '';
+                                    if (typeof EventBus !== 'undefined') {
+                                        EventBus.emit('toast:show', {
+                                            message: r.ok ? 'Message sent' : 'Send failed',
+                                            type: r.ok ? 'info' : 'alert',
+                                        });
+                                    }
+                                })
+                                .catch(() => {
+                                    if (typeof EventBus !== 'undefined') {
+                                        EventBus.emit('toast:show', { message: 'Send failed: network error', type: 'alert' });
+                                    }
+                                });
                         }
                         break;
                     }
@@ -676,7 +706,10 @@ const NPCControl = {
                         bEl.innerHTML = '<span style="color:var(--text-ghost)">No brain attached</span>';
                     }
                 })
-                .catch(() => {});
+                .catch(() => {
+                    const bEl = container.querySelector('.dc-npc-brain');
+                    if (bEl) bEl.innerHTML = '<span style="color:var(--text-ghost)">Failed to load brain state</span>';
+                });
         }
 
         // Button handlers
@@ -881,6 +914,7 @@ const DeviceModalManager = {
     _currentDeviceId: null,
     _currentControl: null,
     _bodyEl: null,
+    _unsubUnits: null,
 
     open(deviceId, deviceType, deviceData) {
         // Close existing if any
@@ -947,6 +981,18 @@ const DeviceModalManager = {
         // Emit event
         if (typeof EventBus !== 'undefined') {
             EventBus.emit('device:modal_opened', { deviceId, deviceType });
+
+            // Subscribe to telemetry updates so the modal stays live
+            this._unsubUnits = EventBus.on('units:updated', (units) => {
+                if (!this._currentControl || !this._bodyEl) return;
+                const arr = Array.isArray(units) ? units : [units];
+                for (const u of arr) {
+                    if (u && u.target_id === this._currentDeviceId) {
+                        this._currentControl.update(this._bodyEl, u);
+                        break;
+                    }
+                }
+            });
         }
     },
 
@@ -965,6 +1011,11 @@ const DeviceModalManager = {
 
         if (this._escHandler && typeof document !== 'undefined' && document.removeEventListener) {
             document.removeEventListener('keydown', this._escHandler);
+        }
+
+        if (this._unsubUnits) {
+            this._unsubUnits();
+            this._unsubUnits = null;
         }
 
         const wasOpen = this._overlay !== null;

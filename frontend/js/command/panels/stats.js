@@ -90,9 +90,11 @@ function buildLeaderboardHTML(units) {
     sorted.forEach((u, i) => {
         const rank = i + 1;
         const mvpBadge = rank === 1 ? '<span class="bstats-mvp-badge">*</span>' : '';
+        const shotsFired = typeof u.shots_fired === 'number' ? u.shots_fired : 0;
+        const shotsHit = typeof u.shots_hit === 'number' ? u.shots_hit : 0;
         const acc = typeof u.accuracy === 'number'
             ? formatAccuracy(u.accuracy)
-            : (u.shots_fired > 0 ? formatAccuracy(u.shots_hit / u.shots_fired) : '0%');
+            : (shotsFired > 0 ? formatAccuracy(shotsHit / shotsFired) : '0%');
         const dmg = formatDamage(u.damage_dealt || 0);
         const rowOpacity = i % 2 === 0 ? '1' : '0.75';
         rows += `<tr style="opacity:${rowOpacity}">` +

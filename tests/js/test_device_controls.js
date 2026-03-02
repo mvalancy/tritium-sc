@@ -577,13 +577,14 @@ console.log('\n--- RoverControl button events ---');
     assert(Array.isArray(body.params) && body.params[0] === 'rover-recall-test', 'RECALL sends unit id in params array');
 })();
 
-(function testRoverRecallSetsStatusText() {
+(async function testRoverRecallSetsStatusText() {
     resetTracking();
     const device = makeDevice();
     const container = buildContainerWithButtons(RoverControl, device);
     RoverControl.bind(container, device, DeviceAPI);
 
     findButton(container, 'recall').click();
+    await Promise.resolve(); // let .then() fire
     assert(container._statusEl.textContent === 'Recall sent', 'RECALL sets status to confirmation');
 })();
 
@@ -601,13 +602,14 @@ console.log('\n--- RoverControl button events ---');
     assert(body.command === 'stop()', 'STOP sends stop() device command');
 })();
 
-(function testRoverStopSetsStatusText() {
+(async function testRoverStopSetsStatusText() {
     resetTracking();
     const device = makeDevice();
     const container = buildContainerWithButtons(RoverControl, device);
     RoverControl.bind(container, device, DeviceAPI);
 
     findButton(container, 'stop').click();
+    await Promise.resolve(); // let .then() fire
     assert(container._statusEl.textContent === 'Stop sent', 'STOP sets status to confirmation');
 })();
 
@@ -625,13 +627,14 @@ console.log('\n--- RoverControl button events ---');
     assert(body.command === 'fire_nerf()', 'FIRE sends fire_nerf() device command');
 })();
 
-(function testRoverFireSetsStatusText() {
+(async function testRoverFireSetsStatusText() {
     resetTracking();
     const device = makeDevice();
     const container = buildContainerWithButtons(RoverControl, device);
     RoverControl.bind(container, device, DeviceAPI);
 
     findButton(container, 'fire').click();
+    await Promise.resolve(); // let .then() fire
     assert(container._statusEl.textContent === 'Fire command sent', 'FIRE sets status to confirmation');
 })();
 
@@ -1286,7 +1289,7 @@ console.log('\n--- MeshRadioControl ---');
     assert(body.text === 'Hello mesh network', 'SEND TEXT sends the message text in body');
 })();
 
-(function testMeshRadioSendTextClearsInput() {
+(async function testMeshRadioSendTextClearsInput() {
     resetTracking();
     const device = makeDevice({ id: 'mesh-clear-01', type: 'mesh_radio' });
     const container = buildContainerWithButtons(MeshRadioControl, device);
@@ -1294,6 +1297,7 @@ console.log('\n--- MeshRadioControl ---');
 
     container._meshInputEl.value = 'Test message';
     findButton(container, 'send_text').click();
+    await Promise.resolve(); // let .then() fire
     assert(container._meshInputEl.value === '', 'SEND TEXT clears the input after sending');
 })();
 

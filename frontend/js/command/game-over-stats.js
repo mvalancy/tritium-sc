@@ -54,7 +54,10 @@ function goFormatKD(kills, deaths) {
  * @returns {string} "SURVIVED" or "ELIMINATED"
  */
 function goUnitStatusLabel(healthRemaining, deaths) {
-    if (healthRemaining > 0) return 'SURVIVED';
+    if (typeof healthRemaining === 'number' && healthRemaining > 0) return 'SURVIVED';
+    if (healthRemaining === undefined || healthRemaining === null) {
+        return deaths > 0 ? 'ELIMINATED' : 'SURVIVED';
+    }
     return 'ELIMINATED';
 }
 

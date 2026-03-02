@@ -128,6 +128,8 @@ function warHudShowCountdown(seconds) {
     const el = document.getElementById('war-countdown');
     if (!el) return;
 
+    // Clear any existing countdown to prevent double-speed ticking
+    if (_hudState.countdownTimer) clearTimeout(_hudState.countdownTimer);
     let count = Math.max(1, Math.round(seconds));
     el.style.display = 'flex';
     el.classList.add('active');
@@ -303,9 +305,9 @@ function _renderEliminationFeed() {
         const age = now - k.time;
         const opacity = age < 6000 ? 1 : Math.max(0, 1 - (age - 6000) / 2000);
         return `<div class="war-elimination-entry" style="opacity: ${opacity}">
-            <span style="color: ${k.interceptorColor}">${_escHtml(k.interceptor)}</span>
+            <span style="color: ${k.interceptorColor}">${_hudEscapeHtml(k.interceptor)}</span>
             <span class="war-elimination-arrow">&gt;&gt;</span>
-            <span style="color: ${k.targetColor}">${_escHtml(k.target)}</span>
+            <span style="color: ${k.targetColor}">${_hudEscapeHtml(k.target)}</span>
         </div>`;
     }).join('');
 }
@@ -648,7 +650,7 @@ function _processAnnouncementQueue() {
 // Utility
 // ============================================================
 
-function _escHtml(str) {
+function _hudEscapeHtml(str) {
     const div = document.createElement('div');
     div.textContent = str || '';
     return div.innerHTML;
