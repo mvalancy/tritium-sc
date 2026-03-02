@@ -371,11 +371,16 @@ export class WebSocketManager {
             case 'game_kill':
             case 'amy_game_elimination':
             case 'amy_game_kill':
-                if (typeof warCombatAddEliminationEffect === 'function') {
-                    warCombatAddEliminationEffect(msg.data || msg);
-                }
-                if (typeof warHudAddKillFeedEntry === 'function') {
-                    warHudAddKillFeedEntry(msg.data || msg);
+                // Route through warHandle* for audio + visual + kill feed
+                if (typeof warHandleTargetEliminated === 'function') {
+                    warHandleTargetEliminated(msg.data || msg);
+                } else {
+                    if (typeof warCombatAddEliminationEffect === 'function') {
+                        warCombatAddEliminationEffect(msg.data || msg);
+                    }
+                    if (typeof warHudAddKillFeedEntry === 'function') {
+                        warHudAddKillFeedEntry(msg.data || msg);
+                    }
                 }
                 EventBus.emit('combat:elimination', msg.data || msg);
                 EventBus.emit('game:elimination', msg.data || msg);
@@ -491,7 +496,10 @@ export class WebSocketManager {
 
             case 'projectile_fired':
             case 'amy_projectile_fired':
-                if (typeof warCombatAddProjectile === 'function') {
+                // Route through warHandle* so war-events.js audio hooks fire
+                if (typeof warHandleProjectileFired === 'function') {
+                    warHandleProjectileFired(msg.data || msg);
+                } else if (typeof warCombatAddProjectile === 'function') {
                     warCombatAddProjectile(msg.data || msg);
                 }
                 EventBus.emit('combat:projectile', msg.data || msg);
@@ -499,7 +507,9 @@ export class WebSocketManager {
 
             case 'projectile_hit':
             case 'amy_projectile_hit':
-                if (typeof warCombatAddHitEffect === 'function') {
+                if (typeof warHandleProjectileHit === 'function') {
+                    warHandleProjectileHit(msg.data || msg);
+                } else if (typeof warCombatAddHitEffect === 'function') {
                     warCombatAddHitEffect(msg.data || msg);
                 }
                 EventBus.emit('combat:hit', msg.data || msg);
@@ -508,7 +518,9 @@ export class WebSocketManager {
             case 'elimination_streak':
             case 'kill_streak':
             case 'amy_elimination_streak':
-                if (typeof warCombatAddEliminationStreakEffect === 'function') {
+                if (typeof warHandleEliminationStreak === 'function') {
+                    warHandleEliminationStreak(msg.data || msg);
+                } else if (typeof warCombatAddEliminationStreakEffect === 'function') {
                     warCombatAddEliminationStreakEffect(msg.data || msg);
                 }
                 EventBus.emit('combat:streak', msg.data || msg);

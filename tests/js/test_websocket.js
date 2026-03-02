@@ -1406,6 +1406,12 @@ console.log('\n--- Edge Cases ---');
         warHudShowAmyAnnouncement = function(t, c) { _bridge.announcerCalled = true; };
         warHudShowWaveBanner = function(w, n, h) { _bridge.waveBannerCalled = true; };
         warHudShowWaveComplete = function(w, e, s) { _bridge.waveCompleteCalled = true; };
+        // warHandle* wrappers (preferred — include audio hooks)
+        warHandleProjectileFired = function(d) { _bridge.handleProjectileCalled = true; };
+        warHandleProjectileHit = function(d) { _bridge.handleHitCalled = true; };
+        warHandleTargetEliminated = function(d) { _bridge.handleElimCalled = true; };
+        warHandleEliminationStreak = function(d) { _bridge.handleStreakCalled = true; };
+        // warCombat* fallbacks (visual-only, no audio)
         warCombatAddProjectile = function(d) { _bridge.projectileCalled = true; };
         warCombatAddHitEffect = function(d) { _bridge.hitCalled = true; };
         warCombatAddEliminationEffect = function(d) { _bridge.elimCalled = true; };
@@ -1432,18 +1438,56 @@ console.log('\n--- Edge Cases ---');
     createdSockets[0]._simulateMessage({ type: 'wave_complete', data: { wave: 1, eliminations: 3, score_bonus: 50 } });
     assert(_bridge.waveCompleteCalled, 'warHudShowWaveComplete called for wave_complete');
 
+    // Combat events should prefer warHandle* (with audio) over warCombat* (visual-only)
     createdSockets[0]._simulateMessage({ type: 'projectile_fired', data: {} });
-    assert(_bridge.projectileCalled, 'warCombatAddProjectile called for projectile_fired');
+    assert(_bridge.handleProjectileCalled, 'warHandleProjectileFired preferred for projectile_fired (includes audio)');
+    assert(!_bridge.projectileCalled, 'warCombatAddProjectile NOT called when warHandle* available');
 
     createdSockets[0]._simulateMessage({ type: 'projectile_hit', data: {} });
-    assert(_bridge.hitCalled, 'warCombatAddHitEffect called for projectile_hit');
+    assert(_bridge.handleHitCalled, 'warHandleProjectileHit preferred for projectile_hit (includes audio)');
+    assert(!_bridge.hitCalled, 'warCombatAddHitEffect NOT called when warHandle* available');
 
-    createdSockets[0]._simulateMessage({ type: 'target_eliminated', data: {} });
-    assert(_bridge.elimCalled, 'warCombatAddEliminationEffect called for target_eliminated');
-    assert(_bridge.killFeedCalled, 'warHudAddKillFeedEntry called for target_eliminated');
+    createdSockets[0]._simulateMessage({ type: 'game_elimination', data: {} });
+    assert(_bridge.handleElimCalled, 'warHandleTargetEliminated preferred for game_elimination (includes audio)');
+    assert(!_bridge.elimCalled, 'warCombatAddEliminationEffect NOT called when warHandle* available');
 
     createdSockets[0]._simulateMessage({ type: 'elimination_streak', data: {} });
-    assert(_bridge.streakCalled, 'warCombatAddEliminationStreakEffect called for elimination_streak');
+    assert(_bridge.handleStreakCalled, 'warHandleEliminationStreak preferred for elimination_streak (includes audio)');
+    assert(!_bridge.streakCalled, 'warCombatAddEliminationStreakEffect NOT called when warHandle* available');
+})();
+
+// 21b. Combat events fall back to warCombat* when warHandle* not available
+console.log('\n--- Combat Audio Fallback ---');
+
+(function testCombatFallbackToWarCombat() {
+    const ctx = createFreshContext();
+    const _fb = {};
+    // Only define warCombat* (no warHandle*) — simulating legacy mode
+    vm.runInContext(`
+        warCombatAddProjectile = function(d) { _fb.projectileCalled = true; };
+        warCombatAddHitEffect = function(d) { _fb.hitCalled = true; };
+        warCombatAddEliminationEffect = function(d) { _fb.elimCalled = true; };
+        warCombatAddEliminationStreakEffect = function(d) { _fb.streakCalled = true; };
+        warHudAddKillFeedEntry = function(d) { _fb.killFeedCalled = true; };
+    `, ctx);
+    ctx._fb = _fb;
+
+    const ws = vm.runInContext('new WebSocketManager()', ctx);
+    ws.connect();
+    createdSockets[0]._simulateOpen();
+
+    createdSockets[0]._simulateMessage({ type: 'projectile_fired', data: {} });
+    assert(_fb.projectileCalled, 'warCombatAddProjectile fallback when warHandle* absent');
+
+    createdSockets[0]._simulateMessage({ type: 'projectile_hit', data: {} });
+    assert(_fb.hitCalled, 'warCombatAddHitEffect fallback when warHandle* absent');
+
+    createdSockets[0]._simulateMessage({ type: 'game_elimination', data: {} });
+    assert(_fb.elimCalled, 'warCombatAddEliminationEffect fallback when warHandle* absent');
+    assert(_fb.killFeedCalled, 'warHudAddKillFeedEntry fallback when warHandle* absent');
+
+    createdSockets[0]._simulateMessage({ type: 'elimination_streak', data: {} });
+    assert(_fb.streakCalled, 'warCombatAddEliminationStreakEffect fallback when warHandle* absent');
 })();
 
 // ============================================================
