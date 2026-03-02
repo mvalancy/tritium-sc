@@ -66,6 +66,11 @@ VALID_ACTIONS: dict[str, tuple[int, int, list[type]]] = {
     "squad_dispatch":    (3, 3, [str, float, float]),
     "rally":             (2, 3, [float, float, str]),
     "scatter":           (1, 1, [str]),
+    # Device commands (dispatched by devices router)
+    "sensor_enable":     (1, 1, [str]),
+    "sensor_disable":    (1, 1, [str]),
+    "sensor_test":       (1, 1, [str]),
+    "camera_off":        (1, 1, [str]),
 }
 
 VALID_DIRECTIONS = {
