@@ -213,6 +213,40 @@ const _state = {
     _overlayTickCounter: 0,
 };
 
+// ============================================================
+// Layer state persistence (localStorage)
+// ============================================================
+
+const _LAYER_STORAGE_KEY = 'tritium-map-layers';
+const _PERSISTED_LAYERS = [
+    'showFog', 'showGrid', 'showBuildings', 'showLabels', 'showUnits',
+    'showPatrolRoutes', 'showHealthBars', 'showBanners', 'showKillFeed',
+    'showHeatmap', 'showThoughts', 'showWeaponRange',
+];
+
+/** Load persisted layer prefs into _state. */
+function _loadLayerPrefs() {
+    try {
+        const raw = localStorage.getItem(_LAYER_STORAGE_KEY);
+        if (!raw) return;
+        const saved = JSON.parse(raw);
+        for (const key of _PERSISTED_LAYERS) {
+            if (key in saved) _state[key] = !!saved[key];
+        }
+    } catch (_) { /* ignore corrupt data */ }
+}
+
+/** Save current layer toggles to localStorage. */
+function _saveLayerPrefs() {
+    try {
+        const obj = {};
+        for (const key of _PERSISTED_LAYERS) obj[key] = _state[key];
+        localStorage.setItem(_LAYER_STORAGE_KEY, JSON.stringify(obj));
+    } catch (_) { /* quota exceeded, ignore */ }
+}
+
+_loadLayerPrefs();
+
 // Pre-allocated Matrix4 reused every frame to avoid GC pressure.
 // The render() callback runs at 60Hz — allocating a new Matrix4 each
 // frame generates ~60 short-lived objects/sec that the GC must collect.
@@ -5469,6 +5503,9 @@ function _updateLayerHud() {
     let text = `${mode} ${tilt} z${zoom} | ${layers.join(' + ') || 'ALL OFF'}`;
     if (fxOff.length > 0) text += ` | -${fxOff.join(' -')}`;
     _state.layerHud.textContent = text;
+
+    // Persist layer prefs on every toggle
+    _saveLayerPrefs();
 }
 
 // ============================================================
