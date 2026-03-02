@@ -262,17 +262,18 @@ class UnitMissionSystem:
                 "description": f"Hold position at ({target.position[0]:.0f}, {target.position[1]:.0f}). Scan all sectors.",
             }
         elif target.asset_type in ("drone", "scout_drone"):
-            # Flying units: aerial scout or sweep
+            # Flying units: wide aerial sweeps across the city
+            patrol_radius = self._map_bounds * 0.6
             roll = random.random()
             if roll < 0.4:
-                wps = _perimeter_patrol(target.position, radius=60.0)
+                wps = _perimeter_patrol(target.position, radius=patrol_radius, points=8)
                 mission = {
                     "type": "scout",
                     "waypoints": wps,
-                    "description": "Aerial reconnaissance sweep of the perimeter.",
+                    "description": "Aerial reconnaissance sweep of the sector.",
                 }
             elif roll < 0.7:
-                wps = _grid_sweep(target.position, size=50.0, step=20.0)
+                wps = _grid_sweep(target.position, size=patrol_radius, step=patrol_radius / 4)
                 mission = {
                     "type": "sweep",
                     "waypoints": wps,
@@ -280,38 +281,40 @@ class UnitMissionSystem:
                 }
             else:
                 direction = random.uniform(0, 360)
-                wps = _sector_scout(target.position, direction, range_=60.0)
+                wps = _sector_scout(target.position, direction, range_=patrol_radius)
                 mission = {
                     "type": "scout",
                     "waypoints": wps,
                     "description": f"Sector scout, bearing {direction:.0f} degrees.",
                 }
         else:
-            # Ground mobile units: patrol
+            # Ground mobile units: city-wide patrols
             roll = random.random()
-            if roll < 0.5:
+            if roll < 0.4:
                 wps = _perimeter_patrol(
-                    (0, 0), radius=self._map_bounds * 0.3, points=6
+                    (0, 0), radius=self._map_bounds * 0.7, points=8
                 )
                 mission = {
                     "type": "patrol",
                     "waypoints": wps,
-                    "description": "Perimeter patrol. Keep eyes open.",
+                    "description": "City perimeter patrol. Full loop.",
                 }
-            elif roll < 0.8:
-                wps = _random_patrol(bounds=self._map_bounds * 0.4, points=5)
+            elif roll < 0.7:
+                wps = _random_patrol(bounds=self._map_bounds * 0.8, points=6)
                 mission = {
                     "type": "patrol",
                     "waypoints": wps,
-                    "description": "Random area patrol. Cover ground.",
+                    "description": "Random area patrol. Cover the neighborhood.",
                 }
             else:
                 direction = random.uniform(0, 360)
-                wps = _sector_scout(target.position, direction, range_=40.0)
+                wps = _sector_scout(
+                    target.position, direction, range_=self._map_bounds * 0.5
+                )
                 mission = {
                     "type": "escort",
                     "waypoints": wps,
-                    "description": "Forward escort route.",
+                    "description": "Forward recon route.",
                 }
 
         self._missions[target.target_id] = mission
