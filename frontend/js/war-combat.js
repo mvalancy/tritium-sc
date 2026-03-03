@@ -503,6 +503,78 @@ function warCombatDrawTargetShape(ctx, sp, radius, target, alliance, zoom) {
         ctx.globalAlpha = 0.3;
     }
 
+    // Graphling units: distinct crystal shape with pulsing glow
+    const isGraphling = type === 'graphling' || (target.source || '') === 'graphling'
+        || (target.target_id || '').startsWith('graphling_');
+    if (isGraphling) {
+        const baseR = radius * 1.2;
+        const pulse = Math.sin(Date.now() * 0.003) * 0.15;
+        const glowR = baseR + pulse * radius * 2;
+
+        // Outer glow ring (pulsing)
+        ctx.strokeStyle = 'rgba(0, 240, 255, ' + (0.25 + pulse * 0.5) + ')';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y, glowR + 4, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Crystal shape: hexagonal gem
+        ctx.fillStyle = 'rgba(0, 240, 255, 0.25)';
+        ctx.strokeStyle = '#00f0ff';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+            const a = (i * Math.PI) / 3 - Math.PI / 6;
+            const px = sp.x + Math.cos(a) * baseR;
+            const py = sp.y + Math.sin(a) * baseR;
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        // Inner crystal facet lines
+        ctx.strokeStyle = 'rgba(0, 240, 255, 0.4)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(sp.x, sp.y - baseR); ctx.lineTo(sp.x, sp.y + baseR);
+        ctx.moveTo(sp.x - baseR * 0.87, sp.y - baseR * 0.5);
+        ctx.lineTo(sp.x + baseR * 0.87, sp.y + baseR * 0.5);
+        ctx.moveTo(sp.x - baseR * 0.87, sp.y + baseR * 0.5);
+        ctx.lineTo(sp.x + baseR * 0.87, sp.y - baseR * 0.5);
+        ctx.stroke();
+
+        // Center bright dot
+        ctx.fillStyle = '#00f0ff';
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Role label below
+        const roleName = target.role_name || target.role || '';
+        if (roleName && zoom > 0.6) {
+            ctx.fillStyle = 'rgba(0, 240, 255, 0.7)';
+            ctx.font = `italic ${Math.max(7, 8 * Math.min(zoom, 2))}px "JetBrains Mono", monospace`;
+            ctx.textAlign = 'center';
+            ctx.fillText(roleName.toUpperCase(), sp.x, sp.y + baseR + 14);
+        }
+
+        // Heading indicator
+        if (heading !== undefined && heading !== null) {
+            const rad = (90 - heading) * Math.PI / 180;
+            ctx.strokeStyle = '#00f0ff';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(sp.x, sp.y);
+            ctx.lineTo(sp.x + Math.cos(rad) * baseR * 2, sp.y - Math.sin(rad) * baseR * 2);
+            ctx.stroke();
+        }
+
+        ctx.globalAlpha = 1.0;
+        return; // Skip default alliance drawing
+    }
+
     if (alliance === 'hostile') {
         // Hostile: red diamond with "weapon" line
         _drawDiamond(ctx, sp.x, sp.y, radius, '#ff2a6d');

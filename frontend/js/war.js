@@ -760,8 +760,16 @@ function drawTarget(ctx, tid, t) {
     const isNeutralized = (t.status || '').toLowerCase() === 'neutralized'
         || (t.status || '').toLowerCase() === 'eliminated';
     const name = t.name || tid;
-    ctx.fillStyle = isNeutralized ? 'rgba(255, 255, 255, 0.3)' : 'rgba(255, 255, 255, 0.8)';
-    ctx.font = `${Math.max(9, 11 * Math.min(warState.cam.zoom, 2))}px "JetBrains Mono", monospace`;
+    const isGraphlingUnit = (t.asset_type || '') === 'graphling' || (t.source || '') === 'graphling'
+        || (tid || '').startsWith('graphling_');
+    if (isGraphlingUnit) {
+        // Graphling name in cyan with crystal emoji
+        ctx.fillStyle = isNeutralized ? 'rgba(0, 240, 255, 0.3)' : '#00f0ff';
+        ctx.font = `bold ${Math.max(10, 12 * Math.min(warState.cam.zoom, 2))}px "JetBrains Mono", monospace`;
+    } else {
+        ctx.fillStyle = isNeutralized ? 'rgba(255, 255, 255, 0.3)' : 'rgba(255, 255, 255, 0.8)';
+        ctx.font = `${Math.max(9, 11 * Math.min(warState.cam.zoom, 2))}px "JetBrains Mono", monospace`;
+    }
     ctx.textAlign = 'center';
     ctx.fillText(name, sp.x, sp.y - radius - 4);
 

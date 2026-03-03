@@ -23,6 +23,7 @@ const _hudState = {
     eliminationFeed: [],      // { text, interceptorColor, targetColor, time }
     announcements: [], // queued amy announcements
     countdownTimer: null,
+    countdownStarted: false,
     waveBannerTimer: null,
     loadingMessages: [],       // from scenario generation
     loadingMessageTimer: null,
@@ -108,9 +109,13 @@ function warHudUpdateGameState(data) {
         warHudHideBeginWarButton();
     }
 
-    // Trigger countdown overlay when entering countdown state
-    if (_hudState.gameState === 'countdown') {
-        warHudShowCountdown(data.countdown || 5);
+    // Trigger countdown overlay ONCE when entering countdown state
+    if (_hudState.gameState === 'countdown' && !_hudState.countdownStarted) {
+        _hudState.countdownStarted = true;
+        warHudShowCountdown(Math.ceil(data.countdown || 5));
+    }
+    if (_hudState.gameState !== 'countdown') {
+        _hudState.countdownStarted = false;
     }
 
     // Show score panel during active play

@@ -25,6 +25,7 @@ class UnitPosition(BaseModel):
 _PLACEABLE_TYPES = frozenset({
     "turret", "drone", "rover", "tank", "apc",
     "heavy_turret", "missile_turret", "scout_drone",
+    "graphling",
 })
 
 
@@ -69,6 +70,31 @@ async def get_game_state(request: Request):
     """Get current game state."""
     engine = _get_engine(request)
     return engine.get_game_state()
+
+
+@router.get("/debug/targets")
+async def debug_targets(request: Request):
+    """Debug: dump all engine targets directly."""
+    engine = _get_engine(request)
+    targets = engine.get_targets()
+    return {
+        "count": len(targets),
+        "targets": [
+            {
+                "id": t.target_id,
+                "name": t.name,
+                "asset_type": t.asset_type,
+                "alliance": t.alliance,
+                "status": t.status,
+                "is_combatant": t.is_combatant,
+                "health": t.health,
+                "position": list(t.position[:2]),
+                "speed": t.speed,
+                "weapon_range": t.weapon_range,
+            }
+            for t in targets
+        ],
+    }
 
 
 @router.post("/begin")
@@ -121,13 +147,14 @@ async def place_unit(unit: PlaceUnit, request: Request):
     from engine.simulation.target import SimulationTarget
 
     is_turret = "turret" in unit.asset_type
+    is_graphling = unit.asset_type == "graphling"
     target = SimulationTarget(
         target_id=f"{unit.asset_type}-{uuid.uuid4().hex[:6]}",
         name=unit.name,
         alliance="friendly",
         asset_type=unit.asset_type,
         position=(unit.position.x, unit.position.y),
-        speed=0.0 if is_turret else 2.0,
+        speed=0.0 if is_turret else (8.0 if is_graphling else 2.0),
         waypoints=[],
         status="stationary" if is_turret else "idle",
     )

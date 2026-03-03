@@ -409,9 +409,14 @@ export const UnitsPanelDef = {
                         break;
                     case 'AMMO':
                         if (u.ammoCount !== undefined) {
-                            const ammoPct = u.ammoMax > 0 ? u.ammoCount / u.ammoMax : 0;
-                            newText = u.ammoCount === 0 ? 'RELOADING' : `${u.ammoCount}${u.ammoMax ? '/' + u.ammoMax : ''}`;
-                            val.style.color = u.ammoCount === 0 ? 'var(--text-ghost)' : ammoPct > 0.5 ? 'var(--green)' : ammoPct > 0.2 ? 'var(--amber)' : 'var(--magenta)';
+                            if (u.ammoCount < 0) {
+                                newText = '\u221E';
+                                val.style.color = 'var(--green)';
+                            } else {
+                                const ammoPct = u.ammoMax > 0 ? u.ammoCount / u.ammoMax : 0;
+                                newText = u.ammoCount === 0 ? 'RELOADING' : `${u.ammoCount}${u.ammoMax > 0 ? '/' + u.ammoMax : ''}`;
+                                val.style.color = u.ammoCount === 0 ? 'var(--text-ghost)' : ammoPct > 0.5 ? 'var(--green)' : ammoPct > 0.2 ? 'var(--amber)' : 'var(--magenta)';
+                            }
                         }
                         break;
                 }
@@ -648,18 +653,25 @@ export const UnitsPanelDef = {
                     <span class="panel-stat-value">${Math.round(u.altitude)}m</span>
                 </div>` : ''}
                 ${u.ammoCount !== undefined && !['person', 'camera', 'sensor', 'animal', 'vehicle'].includes(u.type) ? (() => {
+                    if (u.ammoCount < 0) {
+                        return `
+                <div class="panel-stat-row">
+                    <span class="panel-stat-label">AMMO</span>
+                    <span class="panel-stat-value" style="color:var(--green)">\u221E</span>
+                </div>`;
+                    }
                     const ammoPct = u.ammoMax > 0 ? u.ammoCount / u.ammoMax : 0;
                     const ammoColor = u.ammoCount === 0 ? 'var(--text-ghost)'
                         : ammoPct > 0.5 ? 'var(--green)'
                         : ammoPct > 0.2 ? 'var(--amber)'
                         : 'var(--magenta)';
-                    const ammoLabel = u.ammoCount === 0 ? 'RELOADING' : `${u.ammoCount}${u.ammoMax ? '/' + u.ammoMax : ''}`;
+                    const ammoLabel = u.ammoCount === 0 ? 'RELOADING' : `${u.ammoCount}${u.ammoMax > 0 ? '/' + u.ammoMax : ''}`;
                     return `
                 <div class="panel-stat-row">
                     <span class="panel-stat-label">AMMO</span>
                     <span class="panel-stat-value" style="color:${ammoColor}">${ammoLabel}</span>
                 </div>
-                ${u.ammoMax ? `<div class="panel-bar unit-ammo-bar" style="margin:2px 0 4px">
+                ${u.ammoMax > 0 ? `<div class="panel-bar unit-ammo-bar" style="margin:2px 0 4px">
                     <div class="panel-bar-fill" style="width:${Math.round(ammoPct * 100)}%;background:${ammoColor}"></div>
                 </div>` : ''}`;
                 })() : ''}
