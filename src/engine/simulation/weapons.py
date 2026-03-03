@@ -78,6 +78,11 @@ _DEFAULT_WEAPONS: dict[str, Weapon] = {
         name="nerf_scout_gun", damage=5.0, weapon_range=8.0,
         cooldown=1.5, accuracy=0.65, ammo=15, max_ammo=15,
     ),
+    "graphling": Weapon(
+        name="crystal_shard", damage=9.0, weapon_range=25.0,
+        cooldown=1.2, accuracy=0.75, ammo=50, max_ammo=50,
+        weapon_class="beam",
+    ),
 }
 
 # Extended weapon catalog — available via inventory system

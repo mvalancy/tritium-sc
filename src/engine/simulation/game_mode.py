@@ -285,7 +285,7 @@ class GameMode:
             "wave": self.wave,
             "wave_name": wave_config.name if wave_config else "",
             "total_waves": total_waves,
-            "countdown": round(self._countdown_remaining, 1),
+            "countdown": math.ceil(self._countdown_remaining) if self._countdown_remaining > 0 else 0,
             "score": self.score,
             "total_eliminations": self.total_eliminations,
             "wave_eliminations": self.wave_eliminations,
@@ -319,7 +319,7 @@ class GameMode:
     def _tick_active(self, dt: float) -> None:
         # Check defeat: all friendly combatants eliminated
         # low_battery units are still alive (reduced capability, not dead)
-        _ALIVE_STATUSES = ("active", "idle", "stationary", "low_battery")
+        _ALIVE_STATUSES = ("active", "idle", "stationary", "low_battery", "arrived")
         friendlies_alive = [
             t for t in self._engine.get_targets()
             if t.alliance == "friendly" and t.is_combatant

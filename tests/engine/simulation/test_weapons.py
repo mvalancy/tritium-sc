@@ -121,7 +121,8 @@ class TestPredefinedWeapons:
 
     def test_default_weapons_has_expected_types(self):
         expected = {"turret", "drone", "rover", "person_hostile", "tank",
-                    "apc", "heavy_turret", "missile_turret", "scout_drone"}
+                    "apc", "heavy_turret", "missile_turret", "scout_drone",
+                    "graphling"}
         assert set(_DEFAULT_WEAPONS.keys()) == expected
 
     def test_turret_weapon(self):

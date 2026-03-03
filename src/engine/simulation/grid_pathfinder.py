@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from .terrain import TerrainMap
+    from engine.tactical.obstacles import BuildingObstacles
 
 # ---------------------------------------------------------------------------
 # Movement profiles
@@ -50,6 +51,7 @@ PROFILES: dict[str, MovementProfile] = {
     "light_vehicle": MovementProfile(road=0.7, yard=1.5, open_=2.0, building=999.0, water=999.0),
     "heavy_vehicle": MovementProfile(road=0.7, yard=999.0, open_=999.0, building=999.0, water=999.0),
     "aerial":        MovementProfile(road=1.0, yard=1.0, open_=1.0, building=5.0, water=1.0),
+    "graphling":     MovementProfile(road=0.8, yard=1.0, open_=1.0, building=999.0, water=999.0),
 }
 
 # Terrain type -> profile field mapping
@@ -116,6 +118,7 @@ def profile_for_unit(asset_type: str, alliance: str = "friendly") -> str:
         "hostile_vehicle": "light_vehicle",
         "person": "pedestrian",
         "animal": "pedestrian",
+        "graphling": "graphling",
     }
     return _FALLBACK.get(asset_type, "pedestrian")
 
@@ -146,6 +149,7 @@ def grid_find_path(
     end: tuple[float, float],
     profile_name: str,
     max_iterations: int = 2000,
+    obstacles: Optional[BuildingObstacles] = None,
 ) -> Optional[list[tuple[float, float]]]:
     """Find a path on the terrain grid using A* with the given movement profile.
 
@@ -155,6 +159,10 @@ def grid_find_path(
         end: (x, y) world-coordinate end position.
         profile_name: Key into PROFILES (or a profile name from profile_for_unit).
         max_iterations: Circuit breaker to prevent unbounded search.
+        obstacles: Optional BuildingObstacles for post-smoothing validation.
+            When provided, the smoothed path is checked against building
+            polygons.  If smoothing introduced a building crossing, the
+            unsmoothed (grid-cell) path is returned instead.
 
     Returns:
         List of (x, y) world-coordinate waypoints, or None if no path found.
@@ -209,7 +217,15 @@ def grid_find_path(
             # Reconstruct path
             path_grid = _reconstruct(came_from, end_node)
             path_world = [terrain_map._grid_to_world(c, r) for c, r in path_grid]
-            return smooth_path(path_world)
+            smoothed = smooth_path(path_world)
+            # Validate smoothed path against building polygons.
+            # Smoothing removes intermediate waypoints, which can create
+            # line segments that cut through buildings even though the
+            # original grid path went around them.  When that happens,
+            # fall back to the unsmoothed grid-cell path.
+            if obstacles is not None and obstacles.path_crosses_building(smoothed):
+                return path_world
+            return smoothed
 
         current_g = g_score.get(node, float("inf"))
 

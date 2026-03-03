@@ -75,6 +75,8 @@ _WEAPON_TYPES: dict[str, str | None] = {
     "scout_swarm": None,           # Cannot fire
     "attack_swarm": "nerf_dart_gun",
     "bomber_swarm": None,          # Detonation, not projectile
+    # Graphling agents (crystal creatures)
+    "graphling": "crystal_shard",
 }
 
 
@@ -198,7 +200,7 @@ class UnitBehaviors:
         """For each active combatant, run its type-specific behavior."""
         friendlies = {
             k: v for k, v in targets.items()
-            if v.alliance == "friendly" and v.status in ("active", "idle", "stationary")
+            if v.alliance == "friendly" and v.status in ("active", "idle", "stationary", "arrived")
             and v.is_combatant
         }
         hostiles = {
@@ -226,6 +228,8 @@ class UnitBehaviors:
                 self._rover_behavior(t, hostiles, vision_state=vision_state)
             elif t.asset_type in ("tank", "apc"):
                 self._rover_behavior(t, hostiles, vision_state=vision_state)
+            elif t.asset_type == "graphling":
+                self._graphling_behavior(t, hostiles, vision_state=vision_state)
 
             # Rover de-escalation in civil_unrest mode
             if t.asset_type == "rover" and self._game_mode_type == "civil_unrest":
@@ -407,6 +411,76 @@ class UnitBehaviors:
         ptype = _WEAPON_TYPES.get(rover.asset_type, "nerf_dart")
         self._combat.fire(rover, target, projectile_type=ptype,
                           terrain_map=self._terrain_map)
+
+    def _graphling_behavior(
+        self,
+        unit: SimulationTarget,
+        hostiles: dict[str, SimulationTarget],
+        vision_state=None,
+    ) -> None:
+        """Graphling combat: pursue nearest hostile, fire when in range."""
+        # Always keep graphlings in active status during combat
+        if unit.status in ("arrived", "idle"):
+            unit.status = "active"
+
+        if not hostiles:
+            return
+
+        # Find nearest hostile (any distance)
+        best = None
+        best_dist = float("inf")
+        for enemy in hostiles.values():
+            dx = enemy.position[0] - unit.position[0]
+            dy = enemy.position[1] - unit.position[1]
+            dist = math.sqrt(dx * dx + dy * dy)
+            if dist < best_dist:
+                best_dist = dist
+                best = enemy
+
+        if best is None:
+            return
+
+        # Face the target
+        dx = best.position[0] - unit.position[0]
+        dy = best.position[1] - unit.position[1]
+        unit.heading = math.degrees(math.atan2(dx, dy))
+
+        if best_dist <= unit.weapon_range:
+            # In range: fire
+            ptype = _WEAPON_TYPES.get(unit.asset_type, "nerf_dart")
+            self._combat.fire(unit, best, projectile_type=ptype,
+                              terrain_map=self._terrain_map)
+        else:
+            # Out of range: pursue
+            # Only re-path when: no waypoints, arrived, or target moved >20m
+            need_repath = (
+                not unit.waypoints
+                or unit.status == "arrived"
+            )
+            if not need_repath:
+                # Check if target has moved significantly from our current destination
+                last_wp = unit.waypoints[-1] if unit.waypoints else None
+                if last_wp is not None:
+                    ddx = best.position[0] - last_wp[0]
+                    ddy = best.position[1] - last_wp[1]
+                    if math.sqrt(ddx * ddx + ddy * ddy) > 20.0:
+                        need_repath = True
+
+            if need_repath:
+                if self._router is not None:
+                    path = self._router(
+                        tuple(unit.position[:2]),
+                        tuple(best.position[:2]),
+                        unit.asset_type,
+                        unit.alliance,
+                    )
+                    if path:
+                        unit.waypoints = path
+                        unit._waypoint_index = 0
+                else:
+                    unit.waypoints = [tuple(best.position[:2])]
+                    unit._waypoint_index = 0
+                unit.status = "active"
 
     def _hostile_kid_behavior(
         self,

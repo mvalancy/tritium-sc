@@ -73,13 +73,17 @@ def plan_path(
     if unit_type in _FLYING_TYPES:
         return [start, end]
 
+    # Graphlings: always use grid A* with building avoidance (never street graph)
+    if unit_type == "graphling":
+        return _grid_fallback(start, end, unit_type, alliance, terrain_map, obstacles)
+
     # Hostile persons: road approach then direct last 30m
     if alliance == "hostile" and unit_type == "person":
         path = _hostile_path(start, end, street_graph)
         if path is not None and len(path) > 2:
             return path
         # Street graph didn't help — try grid A*
-        return _grid_fallback(start, end, unit_type, alliance, terrain_map)
+        return _grid_fallback(start, end, unit_type, alliance, terrain_map, obstacles)
 
     # Road-following ground units
     if unit_type in _ROAD_TYPES:
@@ -87,10 +91,10 @@ def plan_path(
         if path is not None and len(path) > 2:
             return path
         # Street graph didn't help — try grid A*
-        return _grid_fallback(start, end, unit_type, alliance, terrain_map)
+        return _grid_fallback(start, end, unit_type, alliance, terrain_map, obstacles)
 
     # Unknown or other unit types: grid A* then direct fallback
-    return _grid_fallback(start, end, unit_type, alliance, terrain_map)
+    return _grid_fallback(start, end, unit_type, alliance, terrain_map, obstacles)
 
 
 def _grid_fallback(
@@ -99,13 +103,22 @@ def _grid_fallback(
     unit_type: str,
     alliance: str,
     terrain_map: Optional[TerrainMap],
+    obstacles: Optional[BuildingObstacles] = None,
 ) -> list[tuple[float, float]]:
-    """Try grid A* on terrain map, fall back to direct path."""
+    """Try grid A* on terrain map, fall back to direct path.
+
+    When *obstacles* is provided it is forwarded to ``grid_find_path()``
+    so that the post-smoothing validation can reject paths whose smoothed
+    segments cut through buildings.
+    """
     if terrain_map is not None:
         try:
             from engine.simulation.grid_pathfinder import grid_find_path, profile_for_unit
             profile_name = profile_for_unit(unit_type, alliance)
-            path = grid_find_path(terrain_map, start, end, profile_name)
+            path = grid_find_path(
+                terrain_map, start, end, profile_name,
+                obstacles=obstacles,
+            )
             if path is not None and len(path) >= 2:
                 return path
         except Exception:

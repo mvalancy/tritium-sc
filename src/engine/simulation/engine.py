@@ -310,12 +310,27 @@ class SimulationEngine:
                 )
             else:
                 target.set_collision_check(self._obstacles.point_in_building)
-                # Filter waypoints that land inside buildings
-                if target.waypoints:
-                    target.waypoints = [
-                        wp for wp in target.waypoints
-                        if not self._obstacles.point_in_building(wp[0], wp[1])
-                    ]
+                # Validate path against buildings.
+                # First check if any path segment crosses a building polygon
+                # (catches smoothed shortcuts that cut through buildings).
+                # If so, re-route using full pathfinding which respects buildings.
+                # Otherwise, filter individual waypoints that land inside buildings.
+                if target.waypoints and len(target.waypoints) >= 2:
+                    if self._obstacles.path_crosses_building(target.waypoints):
+                        # Path cuts through a building — re-route
+                        new_path = self.route_path(
+                            target.waypoints[0],
+                            target.waypoints[-1],
+                            target.asset_type,
+                            target.alliance,
+                        )
+                        target.waypoints = new_path
+                    else:
+                        # No segment crossings — just remove waypoints inside buildings
+                        target.waypoints = [
+                            wp for wp in target.waypoints
+                            if not self._obstacles.point_in_building(wp[0], wp[1])
+                        ]
                     target._waypoint_index = 0
 
         # Assign roof altitude for stationary units inside buildings

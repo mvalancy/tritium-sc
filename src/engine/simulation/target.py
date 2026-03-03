@@ -434,6 +434,8 @@ _COMBAT_PROFILES: dict[str, tuple[float, float, float, float, float, bool]] = {
     "scout_swarm":      (15.0,  15.0,   0.0, 0.0,  0.0, False),  # Recon only, no weapons
     "attack_swarm":     (30.0,  30.0,  25.0, 1.0,  8.0, True),   # Strafing runs
     "bomber_swarm":     (50.0,  50.0,   0.0, 0.0, 40.0, True),   # Kamikaze, damage on detonation
+    # Graphling agents (crystal creatures from the graphlings project)
+    "graphling":        (80.0,  80.0,  25.0, 1.5,  8.0, True),   # Light combatant, very fast
 }
 
 
@@ -718,13 +720,14 @@ class SimulationTarget:
                 if mc._waypoint_index >= len(mc._waypoints):
                     if mc._patrol_loop:
                         mc._waypoint_index = 0
-                    elif self.alliance == "hostile":
-                        # Hostiles blocked by buildings should NOT escape —
-                        # stay active at current position to participate in combat.
-                        # Rewind to last waypoint so they can retry or get engaged.
-                        mc._waypoint_index = max(0, len(mc._waypoints) - 1)
                     else:
-                        mc.arrived = True
+                        # All remaining waypoints are blocked by buildings.
+                        # Do NOT set arrived=True — that triggers terminal
+                        # status ("escaped"/"arrived"/"despawned") which
+                        # permanently strands the unit.  Instead, rewind
+                        # to the last waypoint and stop movement so the
+                        # behavior tick can detect the stall and re-path.
+                        mc._waypoint_index = max(0, len(mc._waypoints) - 1)
                         mc.speed = 0.0
 
         # Sync position and heading from controller.
@@ -882,6 +885,7 @@ class SimulationTarget:
             "ammo_max": self.ammo_max,
             "identity": self.identity.to_dict() if self.identity else None,
             "source": self.source,
+            "role_name": getattr(self, "role_name", None),
         }
 
         # Inventory serialization with fog-of-war
