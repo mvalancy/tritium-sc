@@ -279,23 +279,27 @@ def run_battle(
         if page is not None:
             page.goto(f"{base_url}/", wait_until="networkidle", timeout=15000)
             time.sleep(1)
-            # Zoom camera to fit the map bounds tightly so action fills screen
-            # Press 'F' to center on action, then zoom in via JS
+            # Randomize layer visibility per config for varied screenshots
+            import random
+            rng = random.Random(config.seed)
+            show_sat = rng.choice([True, True, False])  # 2/3 chance satellite
+            show_roads = rng.choice([True, False, False])  # 1/3 chance roads
             try:
                 page.evaluate(f"""() => {{
-                    // Center camera and zoom to map bounds
                     if (window.store) {{
+                        // Zoom to fit map bounds — action fills the screen
                         const bounds = {config.map_bounds};
-                        // Set zoom level inversely proportional to map bounds
-                        // tight (50m) = zoom ~4, medium (100m) = ~2, large (200m) = ~1
                         const zoom = Math.max(1, 200 / bounds);
                         window.store.set('camera.zoom', zoom);
                         window.store.set('camera.x', 0);
                         window.store.set('camera.y', 0);
+                        // Randomize layers for visual variety
+                        window.store.set('showSatellite', {'true' if show_sat else 'false'});
+                        window.store.set('showRoads', {'true' if show_roads else 'false'});
                     }}
                 }}""")
             except Exception:
-                pass  # Non-fatal if zoom fails
+                pass  # Non-fatal if zoom/layer toggle fails
 
         # 6. Wait 1s, check initial friendlies
         time.sleep(1)
