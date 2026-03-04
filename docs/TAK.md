@@ -1042,7 +1042,7 @@ The bridge is designed to degrade gracefully at every level:
 
 | Test File | Tests | What |
 |-----------|-------|------|
-| `tests/amy/core/test_cot.py` | CoT XML generation/parsing | `target_to_cot_xml`, `cot_xml_to_target`, `make_sa_cot`, type mapping, round-trip |
-| `tests/amy/core/test_tak_bridge.py` | TAKBridge unit tests | Init, start/stop, publish filter, inbound handling, queue management, echo prevention |
-| `tests/amy/core/test_tak_e2e.py` | Integration tests | Full pipeline with real EventBus + TargetTracker, mock pytak |
-| `tests/amy/api/test_tak_router.py` | API endpoint tests | `/api/tak/status`, `/clients`, `/send`, `/alert` |
+| `tests/engine/comms/test_cot.py` | CoT XML generation/parsing | `target_to_cot_xml`, `cot_xml_to_target`, `make_sa_cot`, type mapping, round-trip |
+| `tests/engine/comms/test_tak_bridge.py` | TAKBridge unit tests | Init, start/stop, publish filter, inbound handling, queue management, echo prevention |
+| `tests/engine/comms/test_tak_e2e.py` | Integration tests | Full pipeline with real EventBus + TargetTracker, mock pytak |
+| `tests/engine/api/test_tak_router.py` | API endpoint tests | `/api/tak/status`, `/clients`, `/send`, `/alert` |

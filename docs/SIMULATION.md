@@ -379,12 +379,12 @@ This means Amy's tactical situation shifts naturally: daytime is about people-wa
 
 ## Test Coverage
 
-Tests in `tests/amy/`:
-- `test_simulation_target.py` -- Target tick, waypoint navigation, battery drain, status transitions
-- `test_simulation_engine.py` -- Engine lifecycle, hostile spawning, cleanup
-- `test_simulation_loader.py` -- Layout loading, type mapping, waypoint assignment, zone extraction
-- `test_ambient_spawner.py` -- Neutral spawn types, name dedup, paths, cap enforcement
-- `test_target_tracker.py` -- Unified registry, simulation + YOLO updates, pruning, summary
+Tests in `tests/engine/`:
+- `simulation/test_simulation_target.py` -- Target tick, waypoint navigation, battery drain, status transitions
+- `simulation/test_simulation_engine.py` -- Engine lifecycle, hostile spawning, cleanup
+- `simulation/test_simulation_loader.py` -- Layout loading, type mapping, waypoint assignment, zone extraction
+- `simulation/test_ambient_spawner.py` -- Neutral spawn types, name dedup, paths, cap enforcement
+- `tactical/test_target_tracker.py` -- Unified registry, simulation + YOLO updates, pruning, summary
 
 ## Scaling Considerations
 

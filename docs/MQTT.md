@@ -392,8 +392,9 @@ The frontend renders them on the same tactical map.
 - Camera video feeds: real cameras serve MJPEG via `/api/amy/nodes/{id}/video`.
   Simulated cameras would need a synthetic MJPEG endpoint.
 - Audio: real audio comes from BCC950 mic. There is no simulated audio source.
-- The SensorNode abstraction (`src/amy/nodes/base.py`) supports this
-  conceptually but no MQTT-based remote SensorNode implementation exists yet.
+- The SensorNode abstraction (`src/engine/nodes/base.py`) supports this
+  and `src/engine/nodes/mqtt_robot.py` provides an MQTT-based remote
+  SensorNode implementation that wraps MQTT robots as SensorNodes.
 
 ### Scalability Considerations
 
@@ -733,10 +734,10 @@ application telemetry.
 
 Unit and integration tests across three files:
 
-- `tests/amy/test_mqtt_bridge.py` — Unit tests covering init, start/stop,
+- `tests/engine/nodes/test_mqtt_bridge.py` — Unit tests covering init, start/stop,
   message routing, outbound publishing (with QoS assertions), command ACK,
   device liveness tracking, edge cases, key collision, reconnect, import safety
-- `tests/amy/test_mqtt_e2e.py` — Integration tests with real EventBus +
+- `tests/engine/nodes/test_mqtt_e2e.py` — Integration tests with real EventBus +
   real TargetTracker (mock MQTT client, real data pipeline): camera detection
   flow, robot telemetry flow, mixed device scenarios, stale pruning, stats
 - `examples/robot-template/tests/test_brain.py` — Protocol compatibility

@@ -91,7 +91,7 @@ The system uses a dual-speed processing pipeline:
 
 | Layer | Speed | Purpose | Implementation |
 |-------|-------|---------|----------------|
-| **YOLO fast-path** | 10 fps | Reactive detection: bounding boxes, tracking IDs, position | `src/app/ai/detector.py`, `src/amy/brain/perception.py` |
+| **YOLO fast-path** | 10 fps | Reactive detection: bounding boxes, tracking IDs, position | `src/app/ai/detector.py`, `src/engine/perception/perception.py` |
 | **LLM slow-path** | ~5s cycles | Strategic reasoning: threat assessment, dispatch decisions, dialogue | `src/amy/brain/thinking.py`, `src/engine/inference/robot_thinker.py` |
 
 **VisionBridge** (`examples/robot-template/brain/vision_bridge.py`) bridges
@@ -300,17 +300,17 @@ with this ID connects via MQTT, its telemetry overrides the simulated position.
 
 | Test Target | File | What It Tests |
 |-------------|------|---------------|
-| ModelRouter | `tests/amy/test_model_router.py` | Task classification, model selection, fallback chains |
-| LuaRegistry | `tests/amy/test_lua_registry.py` | Registration, validation, prompt generation, source filtering |
-| RobotThinker | `tests/amy/test_robot_thinker.py` | Context building, think cycle with mocked Ollama, MQTT messages |
-| Multi-action Lua | `tests/amy/test_multi_action_lua.py` | Compound parsing, sequence validation, code blocks |
-| VisionBridge | `tests/amy/test_vision_bridge.py` (if exists) | Detection accumulation, pruning, target conversion |
+| ModelRouter | `tests/engine/inference/test_model_router.py` | Task classification, model selection, fallback chains |
+| LuaRegistry | `tests/engine/actions/test_lua_registry.py` | Registration, validation, prompt generation, source filtering |
+| RobotThinker | `tests/engine/inference/test_robot_thinker.py` | Context building, think cycle with mocked Ollama, MQTT messages |
+| Multi-action Lua | `tests/engine/actions/test_multi_action_lua.py` | Compound parsing, sequence validation, code blocks |
+| VisionBridge | `tests/engine/perception/test_vision_bridge.py` (if exists) | Detection accumulation, pruning, target conversion |
 | NavPlanner | Robot template tests | GPS/game transforms, path planning, waypoint following |
 | SimulatedHardware | Robot template tests | Physics loop, battery curve, motor temps, IMU |
 
 ### Synthetic Imagery Testing
 
-The existing synthetic video pipeline (`src/amy/synthetic/video_gen.py`) generates
+The existing synthetic video pipeline (`src/engine/synthetic/video_gen.py`) generates
 procedural OpenCV scenes for testing without real cameras:
 
 - `bird_eye` — overhead tactical view
@@ -319,9 +319,9 @@ procedural OpenCV scenes for testing without real cameras:
 - `neighborhood` — suburban ambient activity
 
 These are validated by:
-- 49 OpenCV pixel tests (`tests/amy/test_video_opencv.py`)
-- 15 performance benchmarks (`tests/amy/test_video_perf.py`)
-- 5 LLaVA structured validation tests (`tests/amy/test_video_llava.py`)
+- 49 OpenCV pixel tests (`tests/engine/synthetic/test_video_opencv.py`)
+- 15 performance benchmarks (`tests/engine/synthetic/test_video_perf.py`)
+- 5 LLaVA structured validation tests (`tests/engine/synthetic/test_video_llava.py`)
 
 ### Integration Tests
 

@@ -36,7 +36,7 @@ single Ollama host.  This means:
 
 ## Architecture
 
-### 1. ModelRouter (`amy/model_router.py`)
+### 1. ModelRouter (`src/engine/inference/model_router.py`)
 
 Central routing component. Inspired by Open Claw's provider abstraction
 but simpler — we only have Ollama, not multiple cloud providers.
@@ -175,7 +175,7 @@ When `fleet_enabled=False` (default), Amy uses the existing static
 `ollama_host` + `amy_chat_model` + `amy_deep_model` — zero behavior
 change.
 
-### 3. Lua Action Registry (`amy/lua_registry.py`)
+### 3. Lua Action Registry (`src/engine/actions/lua_registry.py`)
 
 Replace the hardcoded `VALID_ACTIONS` dict in `lua_motor.py` with a
 registry that supports dynamic action registration.
@@ -313,7 +313,7 @@ extension is:
 
 ### Phase 2: Lua Action Registry (extensibility) [COMPLETE]
 
-6. [x] `src/amy/actions/lua_registry.py` — ActionDef dataclass, LuaActionRegistry
+6. [x] `src/engine/actions/lua_registry.py` — ActionDef dataclass, LuaActionRegistry
 7. [x] register(), register_action(), register_many() (backwards-compatible
    with VALID_ACTIONS dict format)
 8. [x] unregister(), unregister_by_source() for cleanup when robots disconnect
@@ -339,7 +339,7 @@ extension is:
 
 ### Phase 4: Code Generation (novel behaviors) [COMPLETE]
 
-20. [x] `src/amy/actions/lua_multi.py` — extract_multi_actions(), parse_multi_actions()
+20. [x] `src/engine/actions/lua_multi.py` — extract_multi_actions(), parse_multi_actions()
     for compound behavior sequences
 21. [x] Handles code blocks, comments, thinking tags, mixed text
 22. [x] validate_action_sequence() — sequence length, say() limits, validity checks
@@ -411,13 +411,13 @@ Higher-order reasoning, identification, and multi-agent autonomy.
 
 All tests written BEFORE implementation. Each phase has its own test file:
 
-- `tests/amy/test_model_router.py` — TaskType classification, model
+- `tests/engine/inference/test_model_router.py` — TaskType classification, model
   selection, fallback chains, fleet integration
-- `tests/amy/test_lua_registry.py` — registration, validation, prompt
+- `tests/engine/actions/test_lua_registry.py` — registration, validation, prompt
   generation, unregister, source filtering
-- `tests/amy/test_robot_thinker.py` — thinking cycle, action dispatch,
+- `tests/engine/inference/test_robot_thinker.py` — thinking cycle, action dispatch,
   MQTT publishing
-- `tests/amy/test_multi_action_lua.py` — multi-statement parsing,
+- `tests/engine/actions/test_multi_action_lua.py` — multi-statement parsing,
   sequence validation, code block extraction
 
 ## Open Claw Patterns Adopted

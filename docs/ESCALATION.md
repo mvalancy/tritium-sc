@@ -260,7 +260,7 @@ component is added (e.g., behavioral analyzer), split into
 
 ## Test Coverage
 
-- `tests/amy/test_escalation.py` -- 120 unit tests covering:
+- `tests/engine/tactical/test_escalation.py` -- 120 unit tests covering:
   - Escalation ladder (perimeter, restricted, linger)
   - De-escalation cascade and timer reset
   - Manual override
@@ -273,11 +273,11 @@ component is added (e.g., behavioral analyzer), split into
   - Prior hostile memory (linger flag, manual override flag, re-entry skip)
   - Turret dispatch exclusion (turrets, persons never dispatched)
   - Stale dispatch cleanup (threat gone, unit destroyed/arrived, deescalation)
-- `tests/amy/test_escalation_e2e.py` -- 5 integration tests verifying the
+- `tests/engine/tactical/test_escalation_e2e.py` -- 5 integration tests verifying the
   full pipeline: hostile enters zone -> classifier escalates -> manual override
   to hostile -> dispatcher dispatches -> rover waypoints set -> events flow
   through EventBus.
-- `tests/amy/test_thinking.py` -- speech guardrail tests including:
+- `tests/amy/core/test_thinking.py` -- speech guardrail tests including:
   - say() suppressed when nobody present (no sim)
   - say() allowed when simulation active (War Room mode)
   - Tactical commander doctrine in thinking prompt

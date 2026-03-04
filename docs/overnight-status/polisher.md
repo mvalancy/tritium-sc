@@ -41,7 +41,7 @@
     - M key toggles mute state
 - Existing coverage confirmed:
   - `tests/ui/test_chat_overlay.py`: 7 tests (open, type, send, close, toggle)
-  - `tests/amy/synthetic/test_audio_api.py`: 12 tests (list, stream, metadata, filter, WAV validity)
+  - `tests/engine/audio/test_audio_api.py`: 12 tests (list, stream, metadata, filter, WAV validity)
   - `tests/integration/test_full_loop.py`: audio effects integration coverage
 
 ## Milestone 5: Amy Awareness (COMPLETE)

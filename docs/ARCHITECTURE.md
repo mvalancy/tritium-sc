@@ -256,7 +256,7 @@ Amy runs multiple daemon threads coordinated through the EventBus:
 | `src/engine/simulation/ambient.py` | AmbientSpawner (neutral targets) |
 | `src/engine/simulation/loader.py` | TritiumLevelFormat parser |
 | `src/engine/tactical/geo.py` | WGS84 coordinate reference + transforms |
-| `src/amy/brain/perception.py` | Layered frame analysis (L0-L2) |
+| `src/engine/perception/perception.py` | Layered frame analysis (L0-L2) |
 | `src/app/routers/ws.py` | WebSocket bridge + TelemetryBatcher |
 | `frontend/js/war.js` | War Room canvas renderer |
 

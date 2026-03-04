@@ -29,7 +29,7 @@ Backend simulation:
 - src/engine/tactical/target_tracker.py — unified TargetTracker merging sim + YOLO detections
 - src/amy/commander.py — _sim_bridge_loop feeds EventBus events into TargetTracker
 - src/amy/brain/thinking.py — battlespace context in thinking prompt, dispatch/alert/patrol actions
-- src/amy/actions/lua_motor.py — dispatch(), alert(), patrol() Lua actions
+- src/engine/actions/lua_motor.py — dispatch(), alert(), patrol() Lua actions
 - src/amy/brain/sensorium.py — battlespace summary in rich_narrative()
 - src/amy/router.py — /api/amy/simulation/* endpoints (list, spawn, remove)
 - app/routers/targets_unified.py — /api/targets endpoint
@@ -50,12 +50,12 @@ Level editor (games-common at frontend/common/):
 - TransformGizmo.js, SceneHierarchy.js, RegionTools.js, TerrainSystem.js, etc.
 
 Tests:
-- tests/amy/test_simulation_target.py, test_simulation_engine.py, test_simulation_loader.py
-- tests/amy/test_target_tracker.py, test_dispatch_actions.py
+- tests/engine/simulation/test_simulation_target.py, test_simulation_engine.py, test_simulation_loader.py
+- tests/engine/simulation/test_target_tracker.py, test_dispatch_actions.py
 
 ### Iteration checklist — work through IN ORDER, fix what's broken
 
-1. AUDIT: Run `python3 -m pytest tests/amy/ -m unit -v` and fix any failures first.
+1. AUDIT: Run `python3 -m pytest tests/engine/ tests/amy/ -m unit -v` and fix any failures first.
 
 2. EDITOR → SIMULATION BRIDGE: The level editor saves layouts to localStorage.
    The simulation loader reads JSON files.  Audit and fix the bridge:
@@ -119,7 +119,7 @@ Tests:
 ### Rules
 
 - Read existing code before modifying — understand the patterns first
-- Run the full test suite after changes: `.venv/bin/python3 -m pytest tests/amy/ -m unit -v`
+- Run the full test suite after changes: `.venv/bin/python3 -m pytest tests/engine/ tests/amy/ -m unit -v`
 - Don't break existing functionality (572+ tests must pass)
 - Follow existing conventions: type hints, no emojis, async/await, CYBERCORE CSS
 - The app name is TRITIUM-SC (Tritium-Security Central)

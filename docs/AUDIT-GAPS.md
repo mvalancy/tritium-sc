@@ -76,13 +76,13 @@ which now resolves correctly. Verified: `pytest --collect-only --update-baseline
 ### Report Generator Zero Coverage [LOW -> FIXED]
 
 `report_gen.py` now has 8 smoke tests in `tests/lib/`. Additionally,
-`tests/amy/test_video_report.py` exercises HTML report generation for
+`tests/engine/synthetic/test_video_report.py` exercises HTML report generation for
 synthetic video results. Combined coverage addresses the zero-test gap.
 
 ### Visual Tests Missing OpenCV Checks [MEDIUM -> FIXED]
 
 4 OpenCV checks added to `test_war_room.py` tests that previously skipped
-Layer 1 (OpenCV). Additionally, `tests/amy/test_video_opencv.py` adds 49
+Layer 1 (OpenCV). Additionally, `tests/engine/synthetic/test_video_opencv.py` adds 49
 dedicated OpenCV validation tests for synthetic video content (color detection,
 shape recognition, motion analysis, overlay verification).
 

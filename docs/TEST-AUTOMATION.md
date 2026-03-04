@@ -150,7 +150,7 @@ Reports generated as self-contained HTML with inline base64 thumbnails.
 
 ```
 Tier 1: Syntax Check (py_compile, node --check)
-Tier 2: Unit Tests (pytest tests/amy/ -m unit) — 1353 tests
+Tier 2: Unit Tests (pytest tests/engine/ tests/amy/ -m unit) — 4500+ tests
 Tier 3: JS Tests (node tests/js/test_war_math.js) — 28 tests
 Tier 4: Vision Audit (llava multi-model, multi-resolution)
 Tier 5: E2E (Playwright spec files)

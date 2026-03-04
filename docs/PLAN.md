@@ -175,8 +175,8 @@ COMPLETE (Phase 0-4)      PHASE 5 (Active)          FUTURE (Phase 6+)
 - [x] Synthetic feed manager: MJPEG streaming, snapshot, CRUD API
 - [x] ModelRouter: task-aware model selection with two-stage failover (`src/engine/inference/model_router.py`)
 - [x] OllamaFleet: multi-host discovery from conf/env/Tailscale (`src/engine/inference/fleet.py`)
-- [x] LuaActionRegistry: dynamic action registration for robots/plugins (`src/amy/actions/lua_registry.py`)
-- [x] Multi-action Lua: compound behavior parsing + sequence validation (`src/amy/actions/lua_multi.py`)
+- [x] LuaActionRegistry: dynamic action registration for robots/plugins (`src/engine/actions/lua_registry.py`)
+- [x] Multi-action Lua: compound behavior parsing + sequence validation (`src/engine/actions/lua_multi.py`)
 - [x] RobotThinker (server-side): LLM-powered robot thinking with registry (`src/engine/inference/robot_thinker.py`)
 
 ### Phase 5: Hardware Integration + Sim-to-Real [IN PROGRESS]
@@ -194,9 +194,9 @@ COMPLETE (Phase 0-4)      PHASE 5 (Active)          FUTURE (Phase 6+)
 - [x] Simulated hardware — LiPo 3S voltage curve, current draw model,
   differential drive physics, thermal simulation (`hardware/simulated.py`)
 - [x] MQTTSensorNode — wraps MQTT-connected robots as SensorNodes in Amy's
-  node system (`src/amy/nodes/mqtt_robot.py`)
+  node system (`src/engine/nodes/mqtt_robot.py`)
 - [x] SyntheticCameraNode — renders simulation state as MJPEG camera feed,
-  implements SensorNode interface (`src/amy/nodes/synthetic_camera.py`)
+  implements SensorNode interface (`src/engine/nodes/synthetic_camera.py`)
 - [x] Robot thought MQTT topic — `tritium/{site}/robots/{id}/thoughts`
 
 #### 5b: ROS2 Mini Robot (Config-Driven, Any Tailscale Host)

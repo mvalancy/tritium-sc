@@ -301,10 +301,10 @@ Add `./test.sh 12` (or `--battle-proof`) that runs the full battle proof test fr
 
 | Agent | Workstream | Focus | Validates With |
 |-------|-----------|-------|---------------|
-| **Navigator** | 1 (Streets) | Street graph, pathfinding, SimEngine integration | `pytest tests/amy/simulation/` |
-| **Cartographer** | 2 (Scale) | Layout overhaul, position verification | `pytest tests/amy/simulation/` |
+| **Navigator** | 1 (Streets) | Street graph, pathfinding, SimEngine integration | `pytest tests/engine/simulation/` |
+| **Cartographer** | 2 (Scale) | Layout overhaul, position verification | `pytest tests/engine/simulation/` |
 | **Artist** | 3 (Graphics) | Unit icons, combat visuals, fog | `./test.sh 10` + Playwright |
-| **Cameraman** | 4 (Feeds) | Synthetic CCTV, parallel generation | `pytest tests/amy/synthetic/` |
+| **Cameraman** | 4 (Feeds) | Synthetic CCTV, parallel generation | `pytest tests/engine/synthetic/` |
 | **Polisher** | 5 (UI) | Setup mode, chat, audio, proof test | `./test.sh 10` + Playwright |
 
 Each agent:
@@ -363,9 +363,9 @@ When the operator wakes up and runs `./test.sh fast`, all tiers pass. When they 
 - `src/engine/tactical/obstacles.py` — Building footprint obstacles
 - `src/engine/simulation/pathfinding.py` — A* on street graph
 - `frontend/js/command/unit-icons.js` — Procedural unit icon drawing
-- `tests/amy/simulation/test_pathfinding.py` — Pathfinding tests
-- `tests/amy/simulation/test_street_graph.py` — Street graph tests
-- `tests/amy/simulation/test_scale.py` — Scale verification tests
+- `tests/engine/simulation/test_pathfinding.py` — Pathfinding tests
+- `tests/engine/simulation/test_street_graph.py` — Street graph tests
+- `tests/engine/simulation/test_scale.py` — Scale verification tests
 - `tests/visual/test_battle_proof.py` — Full battle proof test
 - `docs/overnight-status/*.md` — Agent status files
 

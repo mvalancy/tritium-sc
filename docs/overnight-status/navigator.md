@@ -6,7 +6,7 @@
 
 ### Task 1: Street Graph Extraction (14 tests)
 - **File**: `src/engine/tactical/street_graph.py`
-- **Tests**: `tests/amy/simulation/test_street_graph.py`
+- **Tests**: `tests/engine/simulation/test_street_graph.py`
 - `StreetGraph` class loads road segments from OSM Overpass API
 - Builds NetworkX graph: intersections as nodes, roads as weighted edges (meters)
 - Shared lat/lng points between roads create connected intersection nodes
@@ -17,7 +17,7 @@
 
 ### Task 2: Building Obstacles (13 tests)
 - **File**: `src/engine/tactical/obstacles.py`
-- **Tests**: `tests/amy/simulation/test_obstacles.py`
+- **Tests**: `tests/engine/simulation/test_obstacles.py`
 - `BuildingObstacles` class loads building footprints from Overpass API
 - Ray-casting point-in-polygon (no Shapely dependency)
 - Line segment intersection for `path_crosses_building()`
@@ -26,7 +26,7 @@
 
 ### Task 3: A* Pathfinder (12 tests)
 - **File**: `src/engine/simulation/pathfinding.py`
-- **Tests**: `tests/amy/simulation/test_pathfinding.py`
+- **Tests**: `tests/engine/simulation/test_pathfinding.py`
 - `plan_path(start, end, unit_type, street_graph, obstacles)` → waypoints
 - Routing rules by unit type:
   - **Rover/Tank/APC**: snap to road → A* on street graph → road waypoints
@@ -38,7 +38,7 @@
 
 ### Task 4: SimulationEngine Wiring (8 integration tests)
 - **Modified**: `src/engine/simulation/engine.py`
-- **Tests**: `tests/amy/simulation/test_pathfinding_integration.py`
+- **Tests**: `tests/engine/simulation/test_pathfinding_integration.py`
 - `engine.set_street_graph(sg)` and `engine.set_obstacles(obs)`
 - `engine.dispatch_unit(target_id, destination)` — routes via pathfinder
 - `engine.spawn_hostile()` — uses road-following approach when graph available

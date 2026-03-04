@@ -3,7 +3,7 @@
 ## Completed Tasks
 
 ### Task 1: Enhanced CCTV Frame Renderer
-- Added `render_cctv_frame()` to `src/amy/synthetic/video_gen.py`
+- Added `render_cctv_frame()` to `src/engine/synthetic/video_gen.py`
 - 5 CCTV scene types: front_door, back_yard, street_view, parking, driveway
 - 3 time-of-day modes: day, dusk, night (with proper brightness ordering)
 - Realism features:
@@ -53,7 +53,7 @@
 - MJPEG streaming and snapshot endpoints work with CCTV feeds
 
 ### Task 6: Tests
-- Created `tests/amy/synthetic/test_cctv_feeds.py` — 25 tests, all passing
+- Created `tests/engine/synthetic/test_cctv_feeds.py` — 25 tests, all passing
 - Test classes:
   - TestCCTVFrameResolution — 640x480 and 1280x720
   - TestCCTVTimestampOverlay — bright pixels in top-left region
@@ -71,11 +71,11 @@
 - 445/445 all synthetic tests pass (0 regressions)
 
 ## Files Modified
-- `src/amy/synthetic/video_gen.py` — added CCTV_SCENE_TYPES, render_cctv_frame, 5 scene renderers, barrel distortion, JPEG compression
-- `src/amy/synthetic/video_library.py` — added generate_cctv_clip method
+- `src/engine/synthetic/video_gen.py` — added CCTV_SCENE_TYPES, render_cctv_frame, 5 scene renderers, barrel distortion, JPEG compression
+- `src/engine/synthetic/video_library.py` — added generate_cctv_clip method
 - `src/app/routers/synthetic_feed.py` — added cctv scene type support
 
 ## Files Created
-- `tests/amy/synthetic/test_cctv_feeds.py` — 25 unit tests
+- `tests/engine/synthetic/test_cctv_feeds.py` — 25 unit tests
 - `scripts/generate_feeds.py` — batch generation script
 - `docs/overnight-status/cameraman.md` — this file
