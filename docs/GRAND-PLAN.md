@@ -121,7 +121,7 @@ Regenerate `neighborhood_default.json` with positions that match real satellite 
 
 Replace geometric shapes with purpose-drawn Canvas 2D icons (not image sprites — procedural drawing for crisp scaling).
 
-**File**: `frontend/js/command/unit-icons.js`
+**File**: `src/frontend/js/command/unit-icons.js`
 
 **Test report shows** (Playwright screenshot + OpenCV):
 | Test | Assertion |
@@ -362,7 +362,7 @@ When the operator wakes up and runs `./test.sh fast`, all tiers pass. When they 
 - `src/engine/tactical/street_graph.py` — OSM street graph extraction
 - `src/engine/tactical/obstacles.py` — Building footprint obstacles
 - `src/engine/simulation/pathfinding.py` — A* on street graph
-- `frontend/js/command/unit-icons.js` — Procedural unit icon drawing
+- `src/frontend/js/command/unit-icons.js` — Procedural unit icon drawing
 - `tests/engine/simulation/test_pathfinding.py` — Pathfinding tests
 - `tests/engine/simulation/test_street_graph.py` — Street graph tests
 - `tests/engine/simulation/test_scale.py` — Scale verification tests
@@ -374,5 +374,5 @@ When the operator wakes up and runs `./test.sh fast`, all tiers pass. When they 
 - `src/engine/simulation/behaviors.py` — Road-aware hostile approach
 - `src/engine/simulation/target.py` — Smooth heading interpolation
 - `tests/scenarios/neighborhood_default.json` — Road-aligned positions
-- `frontend/js/command/map.js` — Unit icon rendering, fog of war
+- `src/frontend/js/command/map.js` — Unit icon rendering, fog of war
 - `test.sh` — Add tier 12

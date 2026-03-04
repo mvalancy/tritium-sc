@@ -134,8 +134,8 @@ overwhelmed by the raw detection stream.
 |--------|--------|----------|----------|
 | GPS (WGS84) | Game meters | `gps_to_world()` | `examples/robot-template/brain/nav_planner.py` |
 | Game meters | GPS (WGS84) | `world_to_gps()` | `examples/robot-template/brain/nav_planner.py` |
-| Lat/Lng | Game coords | `latlngToGame()` | `frontend/js/geo.js` |
-| Game coords | Lat/Lng | `gameToLatlng()` | `frontend/js/geo.js` |
+| Lat/Lng | Game coords | `latlngToGame()` | `src/frontend/js/geo.js` |
+| Game coords | Lat/Lng | `gameToLatlng()` | `src/frontend/js/geo.js` |
 
 The projection is equirectangular, accurate to <1m error at neighborhood
 scale (<1km). Python and JavaScript implementations use identical math.

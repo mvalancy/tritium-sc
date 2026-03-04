@@ -139,16 +139,16 @@ tritium-sc/
 │       ├── zones/             # Zone management and alerting
 │       ├── discovery/         # NVR auto-discovery
 │       └── models.py          # SQLAlchemy models
-├── frontend/                   # Static frontend (no build step)
-│   ├── unified.html           # PRIMARY — Command Center
-│   ├── index.html             # LEGACY — Original 10-tab SPA
-│   ├── js/                    # Modular JavaScript
-│   │   ├── app.js            # Main app, view switching, shortcuts
-│   │   ├── war.js            # War Room — Canvas 2D RTS tactical map
-│   │   └── (amy, assets, input, scenarios, grid, player, zones, targets)
-│   └── css/
-│       ├── cybercore.css     # CYBERCORE CSS framework
-│       └── tritium.css       # Custom + Amy + War Room panel styles
+│   └── frontend/               # Static frontend (no build step)
+│       ├── unified.html       # PRIMARY — Command Center
+│       ├── index.html         # LEGACY — Original 10-tab SPA
+│       ├── js/                # Modular JavaScript
+│       │   ├── app.js        # Main app, view switching, shortcuts
+│       │   ├── war.js        # War Room — Canvas 2D RTS tactical map
+│       │   └── (amy, assets, input, scenarios, grid, player, zones, targets)
+│       └── css/
+│           ├── cybercore.css # CYBERCORE CSS framework
+│           └── tritium.css   # Custom + Amy + War Room panel styles
 ├── tests/                      # ALL tests
 │   ├── engine/                # System infrastructure tests
 │   │   ├── simulation/       # Simulation engine tests (48 files)
@@ -263,9 +263,9 @@ tritium-sc/
 | `src/app/routers/ws.py` | WebSocket broadcast + TelemetryBatcher + Amy event bridge |
 | `src/app/routers/audio.py` | /api/audio/effects — sound effects API |
 | `src/app/routers/synthetic_feed.py` | /api/synthetic/cameras — MJPEG streaming |
-| `frontend/js/app.js` | Main app state, WebSocket, keyboard shortcuts |
-| `frontend/js/war.js` | War Room — Canvas 2D RTS tactical map |
-| `frontend/js/war3d.js` | War Room — Three.js WebGL 3D renderer |
+| `src/frontend/js/app.js` | Main app state, WebSocket, keyboard shortcuts |
+| `src/frontend/js/war.js` | War Room — Canvas 2D RTS tactical map |
+| `src/frontend/js/war3d.js` | War Room — Three.js WebGL 3D renderer |
 | `tests/ui/test_vision.py` | Vision audit: Playwright + Ollama |
 | `examples/robot-template/` | Reference MQTT robot brain for real hardware |
 | `examples/ros2-robot/` | ROS2 Humble robot (Nav2 + MQTT bridge) |
@@ -426,9 +426,9 @@ When launching multiple agents, each agent should own a clear slice:
 | Agent Focus | Owns | Reads | Validates |
 |------------|------|-------|-----------|
 | Backend/Amy | `src/amy/`, `src/app/` | Everything | `./test.sh 2` |
-| Frontend map | `frontend/js/command/map.js` | `frontend/`, APIs | `./test.sh 3` + browser |
-| Frontend panels | `frontend/js/command/panels/` | store, events | `./test.sh 3` + browser |
-| Frontend CSS | `frontend/css/` | `frontend/` | Browser |
+| Frontend map | `src/frontend/js/command/map.js` | `src/frontend/`, APIs | `./test.sh 3` + browser |
+| Frontend panels | `src/frontend/js/command/panels/` | store, events | `./test.sh 3` + browser |
+| Frontend CSS | `src/frontend/css/` | `src/frontend/` | Browser |
 | Tests | `tests/` | Everything | `./test.sh fast` |
 
 Rules:

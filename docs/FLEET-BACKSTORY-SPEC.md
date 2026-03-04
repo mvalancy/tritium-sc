@@ -239,8 +239,8 @@ VisionPromptManager slots into L3+ analysis. Template selection is context-depen
 | `src/app/routers/game.py` | Add `GET /api/game/backstories` endpoint (+20 lines) |
 | `src/app/routers/ws.py` | Forward backstory events (+5 lines) |
 | `src/app/config.py` | Add backstory settings (+5 lines) |
-| `frontend/js/command/panels/units.js` | Display backstory details (+25 lines) |
-| `frontend/js/command/websocket.js` | Handle backstory events (+10 lines) |
+| `src/frontend/js/command/panels/units.js` | Display backstory details (+25 lines) |
+| `src/frontend/js/command/websocket.js` | Handle backstory events (+10 lines) |
 
 ### Phase Ordering
 

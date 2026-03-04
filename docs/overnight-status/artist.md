@@ -3,7 +3,7 @@
 ## Completed
 
 ### Task 1: Procedural Unit Icons
-- Created `frontend/js/command/unit-icons.js` (508 lines)
+- Created `src/frontend/js/command/unit-icons.js` (508 lines)
 - 8 distinct unit type icons: rover (rounded rect + 4 wheels), drone (X + spinning rotors), turret (pentagon + barrel), hostile_person (pulsing diamond), neutral_person (circle + walking legs), tank (hull + turret barrel), sensor/camera (circle + FOV cone)
 - All icons rotate with heading via ctx.save/rotate/restore
 - All icons scale with zoom parameter
@@ -11,7 +11,7 @@
 - Health bar (green->yellow->red gradient) drawn below damaged units
 - Neutralized units fade to 35% alpha with red X overlay
 - 29 unit tests in `tests/js/test_unit_icons.js` -- all pass
-- Integrated into `frontend/js/command/map.js` as primary renderer, replacing `warCombatDrawTargetShape` for unit drawing
+- Integrated into `src/frontend/js/command/map.js` as primary renderer, replacing `warCombatDrawTargetShape` for unit drawing
 
 ### Task 2: Combat Visual Improvements
 - **Projectile trails**: 8 segments (was 4), 2px wider radius, brighter alpha curve (0.8 max vs 0.6), white bright core on projectile head
@@ -44,11 +44,11 @@
 - Updated test_war_fog.js: 45/45 pass
 
 ## Files Changed
-- `frontend/js/command/unit-icons.js` -- NEW (508 lines)
-- `frontend/js/command/map.js` -- import unit icons, integrate fog, screen shake
-- `frontend/js/command/main.js` -- import toggleFog, add to mapActions
-- `frontend/js/war-combat.js` -- enhanced trails, muzzle flash, particles, gravity, screen shake
-- `frontend/js/war-fog.js` -- updated vision radii
+- `src/frontend/js/command/unit-icons.js` -- NEW (508 lines)
+- `src/frontend/js/command/map.js` -- import unit icons, integrate fog, screen shake
+- `src/frontend/js/command/main.js` -- import toggleFog, add to mapActions
+- `src/frontend/js/war-combat.js` -- enhanced trails, muzzle flash, particles, gravity, screen shake
+- `src/frontend/js/war-fog.js` -- updated vision radii
 - `tests/js/test_unit_icons.js` -- NEW (347 lines, 29 tests)
 - `tests/js/test_war_fog.js` -- updated expected values
 - `tests/visual/test_unit_graphics.py` -- NEW (7 visual tests)

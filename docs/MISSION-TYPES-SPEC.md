@@ -800,12 +800,12 @@ Mode-specific modifications to `GENERATION_STEPS` prompts:
 
 | File | Change | Est. Lines |
 |------|--------|------------|
-| `frontend/js/command/mission-modal.js` | Already has both modes listed. Add mode-specific briefing display: infrastructure health bar for drone swarm, civilian harm counter and de-escalation score for civil unrest. Modify `_onGenerationComplete()` to render mode-specific briefing sections. | ~30 |
-| `frontend/js/war-hud.js` | Add `infrastructure_health` bar (drone swarm mode): horizontal bar with color gradient (green > yellow > red). Add `civilian_harm_count` / `de_escalation_score` display (civil unrest mode): counter with warning color at 3+ harms. Add `ammo_count` display for missile turrets. Mode-aware HUD layout switching based on `game_state.game_mode_type`. | ~50 |
-| `frontend/js/command/websocket.js` | Parse `crowd_density`, `infrastructure_damage`, `civilian_harmed`, `bomber_detonation`, `emp_activated` events from WebSocket. Dispatch to appropriate handlers/store. | ~20 |
-| `frontend/js/command/map-maplibre.js` | Render crowd density heatmap overlay (civil unrest mode): semi-transparent colored grid cells on the map layer. Render altitude indicators on drone swarm hostiles (height lines or vertical shadow offset proportional to altitude). | ~60 |
-| `frontend/js/command/panels/units.js` | Show `crowd_role` and `drone_variant` in unit detail panel. Show `ammo_count` for missile turrets with visual ammo bar. Show `instigator_state` for identified instigators. Show `altitude` for aerial units. | ~30 |
-| `frontend/css/command.css` | Styles for infrastructure health bar, civilian harm counter, crowd density heatmap overlay, altitude indicator lines, ammo count bar, mode-specific HUD panel borders (amber for civil unrest, cyan for drone swarm). | ~40 |
+| `src/frontend/js/command/mission-modal.js` | Already has both modes listed. Add mode-specific briefing display: infrastructure health bar for drone swarm, civilian harm counter and de-escalation score for civil unrest. Modify `_onGenerationComplete()` to render mode-specific briefing sections. | ~30 |
+| `src/frontend/js/war-hud.js` | Add `infrastructure_health` bar (drone swarm mode): horizontal bar with color gradient (green > yellow > red). Add `civilian_harm_count` / `de_escalation_score` display (civil unrest mode): counter with warning color at 3+ harms. Add `ammo_count` display for missile turrets. Mode-aware HUD layout switching based on `game_state.game_mode_type`. | ~50 |
+| `src/frontend/js/command/websocket.js` | Parse `crowd_density`, `infrastructure_damage`, `civilian_harmed`, `bomber_detonation`, `emp_activated` events from WebSocket. Dispatch to appropriate handlers/store. | ~20 |
+| `src/frontend/js/command/map-maplibre.js` | Render crowd density heatmap overlay (civil unrest mode): semi-transparent colored grid cells on the map layer. Render altitude indicators on drone swarm hostiles (height lines or vertical shadow offset proportional to altitude). | ~60 |
+| `src/frontend/js/command/panels/units.js` | Show `crowd_role` and `drone_variant` in unit detail panel. Show `ammo_count` for missile turrets with visual ammo bar. Show `instigator_state` for identified instigators. Show `altitude` for aerial units. | ~30 |
+| `src/frontend/css/command.css` | Styles for infrastructure health bar, civilian harm counter, crowd density heatmap overlay, altitude indicator lines, ammo count bar, mode-specific HUD panel borders (amber for civil unrest, cyan for drone swarm). | ~40 |
 
 **Total estimated frontend: ~230 lines** (6 modified files, 0 new files)
 

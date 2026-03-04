@@ -28,7 +28,7 @@ buttons. See Section 11 for full style spec.
 **Satellite imagery**: The tactical map uses **real ESRI World Imagery tiles**
 as the ground layer, not a plain grid. We already have the tile proxy
 (`app/routers/geo.py`) caching to `~/.cache/tritium-sc/tiles/` and
-coordinate transforms in `frontend/js/geo.js`. The satellite view grounds the
+coordinate transforms in `src/frontend/js/geo.js`. The satellite view grounds the
 experience in reality — you're commanding actual neighborhood terrain.
 
 **Anti-patterns to avoid**:
@@ -672,8 +672,8 @@ setup mode only.
 ### 10.1 Parallel Development
 
 The new UI is built alongside the old one:
-- `frontend/index.html` → old UI (kept as `frontend/legacy.html`)
-- `frontend/command.html` → new command center UI
+- `src/frontend/index.html` → old UI (kept as `src/frontend/legacy.html`)
+- `src/frontend/command.html` → new command center UI
 - Both served by the same FastAPI backend
 - Switch between them via URL: `/` (new) vs `/legacy` (old)
 
@@ -782,7 +782,7 @@ heavy cyberpunk (thick borders, Orbitron font, glitch effects).
 
 **New file structure**:
 ```
-frontend/css/
+src/frontend/css/
   cybercore-v2.css    (~400 LOC) — Variables, reset, base, grid-bg, scanlines
   command.css         (~600 LOC) — Layout, panels, sidebar, bottom-bar, toasts
   map.css             (~300 LOC) — Tactical map overlay elements

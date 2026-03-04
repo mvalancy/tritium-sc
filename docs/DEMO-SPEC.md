@@ -399,7 +399,7 @@ contract.
 
 **Frontend files:**
 ```
-frontend/js/command/
+src/frontend/js/command/
   device-modal.js      # DeviceModalManager — creates/shows/hides modals
   device-controls/
     index.js           # Registry of control panels by device type
@@ -547,7 +547,7 @@ frontend never connects directly to MQTT.
 ### 4.6 CSS
 
 Uses the existing `.cc-modal-overlay` + `.cc-modal` system from
-`frontend/css/command.css` (lines 867-978). Device-specific styles use a
+`src/frontend/css/command.css` (lines 867-978). Device-specific styles use a
 `.dc-` prefix (device control):
 
 ```css
@@ -561,7 +561,7 @@ Uses the existing `.cc-modal-overlay` + `.cc-modal` system from
 
 ### 4.7 Map Integration
 
-File: `frontend/js/command/map.js`
+File: `src/frontend/js/command/map.js`
 
 **Change:** When a unit is clicked (existing `_hitTestUnit()` → `unit:selected`
 event), also open the device control modal:
@@ -685,7 +685,7 @@ Content-Type: multipart/form-data
 
 ### 5.5 Frontend Layer Renderer
 
-File: `frontend/js/command/map-layers.js`
+File: `src/frontend/js/command/map-layers.js`
 
 ```javascript
 class MapLayerRenderer {
@@ -712,7 +712,7 @@ class MapLayerRenderer {
 ```
 
 **Layer panel in menu bar:**
-File: `frontend/js/command/menu-bar.js`
+File: `src/frontend/js/command/menu-bar.js`
 
 Add "LAYERS" menu with:
 - List of loaded layers (checkboxes for visibility)

@@ -173,6 +173,6 @@ Static CSS/JS can be cached by browsers.  During development:
 | File | Purpose |
 |------|---------|
 | `tests/ui/test_layout_drift.py` | Automated 30s drift test |
-| `frontend/css/tritium.css` | All Amy panel layout rules |
-| `frontend/js/amy.js` | MJPEG feed setup |
+| `src/frontend/css/tritium.css` | All Amy panel layout rules |
+| `src/frontend/js/amy.js` | MJPEG feed setup |
 | `docs/UI-TESTING.md` | This document |

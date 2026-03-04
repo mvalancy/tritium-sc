@@ -21,7 +21,7 @@ Update it when UI elements change.
 Desktop-style dropdown menu bar across the top of the viewport. Six menus on
 the left side, quick-access panel toggle buttons on the right side.
 
-Source: `frontend/js/command/menu-bar.js`
+Source: `src/frontend/js/command/menu-bar.js`
 
 ### 1.1 FILE Menu
 
@@ -127,7 +127,7 @@ Status: **COSMETIC** -- all local panel state management.
 
 Three mode buttons in the top-left corner of the tactical map area.
 
-Source: `frontend/unified.html`, `frontend/js/command/main.js`
+Source: `src/frontend/unified.html`, `src/frontend/js/command/main.js`
 
 | Button | Shortcut | What It Does | Status | Backend |
 |--------|----------|-------------|--------|---------|
@@ -145,7 +145,7 @@ Pressing ESC while in Setup mode switches back to Observe mode.
 Opened by clicking a unit on the map or from the Unit Inspector. Each
 device type gets a type-specific control panel with relevant buttons.
 
-Source: `frontend/js/command/device-modal.js`
+Source: `src/frontend/js/command/device-modal.js`
 
 ### 3.1 DeviceAPI (shared backend calls)
 
@@ -321,7 +321,7 @@ The DeviceControlRegistry resolves these aliases to their parent control type:
 Filterable list of all units on the tactical map with a detail view for
 the selected unit.
 
-Source: `frontend/js/command/panels/units.js`
+Source: `src/frontend/js/command/panels/units.js`
 
 ### 4.1 Filter Dropdown
 
@@ -377,7 +377,7 @@ Inline inspector panel with navigation between units and integrated
 device controls. Replaces the blocking device modal with a persistent
 side panel.
 
-Source: `frontend/js/command/panels/unit-inspector.js`
+Source: `src/frontend/js/command/panels/unit-inspector.js`
 
 ### 5.1 Navigation Bar
 
@@ -413,7 +413,7 @@ from the unit's store data.
 VCR-style battle replay with timeline scrubber, transport controls, speed
 selector, wave jump, and event log.
 
-Source: `frontend/js/command/panels/replay.js`
+Source: `src/frontend/js/command/panels/replay.js`
 
 ### 6.1 Status Bar
 
@@ -483,7 +483,7 @@ frame data.
 Live sensor network activation log. Displays motion detector, door sensor,
 and tripwire events.
 
-Source: `frontend/js/command/panels/sensors.js`
+Source: `src/frontend/js/command/panels/sensors.js`
 
 ### 7.1 Toolbar
 
@@ -511,7 +511,7 @@ Status: **WORKING** -- real-time data from WebSocket telemetry.
 Live during-battle statistics panel. Shows per-unit leaderboard, accuracy,
 damage, and elimination sparkline.
 
-Source: `frontend/js/command/panels/stats.js`
+Source: `src/frontend/js/command/panels/stats.js`
 
 ### 8.1 Header Stat Cards
 
@@ -547,7 +547,7 @@ Status: **WORKING** -- endpoint exists in game.py.
 Shows game state (wave, score, eliminations) and provides game control
 buttons. Auto-opens on game state changes.
 
-Source: `frontend/js/command/panels/game-hud.js`
+Source: `src/frontend/js/command/panels/game-hud.js`
 
 ### 9.1 Status Display
 
@@ -616,7 +616,7 @@ upgrades from the API, displays them as clickable cards.
 Full-screen modal for mission generation and launch. Shows game mode
 selection, LLM generation progress, and mission briefing.
 
-Source: `frontend/js/command/mission-modal.js`
+Source: `src/frontend/js/command/mission-modal.js`
 
 ### 10.1 Game Mode Selection
 
@@ -675,7 +675,7 @@ After generation completes, shows:
 Context-sensitive right-click menu on the tactical map. Menu items change
 based on whether a unit is selected.
 
-Source: `frontend/js/command/context-menu.js`
+Source: `src/frontend/js/command/context-menu.js`
 
 ### 11.1 With Unit Selected
 
@@ -704,7 +704,7 @@ ESC key also closes the context menu.
 Slide-out chat panel for communicating with Amy. Hidden by default,
 slides in from the right side.
 
-Source: `frontend/unified.html`, `frontend/js/command/main.js`
+Source: `src/frontend/unified.html`, `src/frontend/js/command/main.js`
 
 | Element | Shortcut | What It Does | Status | Backend |
 |---------|----------|-------------|--------|---------|
@@ -730,8 +730,8 @@ dimmed system messages when the chat is open.
 Full-screen overlay shown on victory or defeat. Fetches after-action stats
 from the backend.
 
-Source: `frontend/unified.html`, `frontend/js/command/main.js`,
-`frontend/js/command/game-over-stats.js`
+Source: `src/frontend/unified.html`, `src/frontend/js/command/main.js`,
+`src/frontend/js/command/game-over-stats.js`
 
 ### 13.1 Static Display
 
@@ -765,7 +765,7 @@ Fetched in parallel on overlay open:
 
 Keyboard shortcuts reference overlay.
 
-Source: `frontend/unified.html`
+Source: `src/frontend/unified.html`
 
 | Shortcut | What It Does | Status |
 |----------|-------------|--------|
@@ -780,7 +780,7 @@ Toggle via `?` key or HELP > Keyboard Shortcuts menu item.
 
 ## 15. Keyboard Shortcuts (Complete Reference)
 
-Source: `frontend/js/command/main.js`
+Source: `src/frontend/js/command/main.js`
 
 ### 15.1 General
 
@@ -856,7 +856,7 @@ Source: `frontend/js/command/main.js`
 
 Fixed header across the top of the viewport.
 
-Source: `frontend/unified.html`
+Source: `src/frontend/unified.html`
 
 | Element | What It Shows | Status |
 |---------|---------------|--------|
@@ -870,7 +870,7 @@ Source: `frontend/unified.html`
 
 Fixed 20px bar at the bottom of the viewport.
 
-Source: `frontend/unified.html`
+Source: `src/frontend/unified.html`
 
 | Element | What It Shows | Status |
 |---------|---------------|--------|
@@ -888,7 +888,7 @@ Source: `frontend/unified.html`
 
 Canvas and DOM overlays rendered on top of the tactical map during gameplay.
 
-Source: `frontend/unified.html`, `frontend/js/war-hud.js`
+Source: `src/frontend/unified.html`, `src/frontend/js/war-hud.js`
 
 | Element | What It Does | Status |
 |---------|-------------|--------|
@@ -910,7 +910,7 @@ Source: `frontend/unified.html`, `frontend/js/war-hud.js`
 
 Pop-up notifications in the top-right corner. Auto-dismiss after a few seconds.
 
-Source: `frontend/js/command/main.js`
+Source: `src/frontend/js/command/main.js`
 
 | Event Source | Content | Status |
 |-------------|---------|--------|

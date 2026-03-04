@@ -574,9 +574,9 @@ elevation differences dramatically visible for verification.
 
 | File | Changes |
 |------|---------|
-| `frontend/js/command/map-maplibre.js` | Add terrain-dem source, `toggleTerrain()`, state vars, render() terrain elevation, `_sync3DUnits()` terrain Z, `_gameToMercator()` terrain Z, layer HUD, exports |
-| `frontend/js/command/menu-bar.js` | Add Terrain menu item with shortcut H |
-| `frontend/js/command/main.js` | Import `toggleTerrain`, add to `mapActions`, add keyboard shortcut |
+| `src/frontend/js/command/map-maplibre.js` | Add terrain-dem source, `toggleTerrain()`, state vars, render() terrain elevation, `_sync3DUnits()` terrain Z, `_gameToMercator()` terrain Z, layer HUD, exports |
+| `src/frontend/js/command/menu-bar.js` | Add Terrain menu item with shortcut H |
+| `src/frontend/js/command/main.js` | Import `toggleTerrain`, add to `mapActions`, add keyboard shortcut |
 | `src/app/routers/geo.py` | (Phase 3) Add `/api/geo/terrain-tile/{z}/{x}/{y}` proxy endpoint |
 | `tests/js/test_terrain.js` | New: terrain toggle state tests |
 | `tests/visual/test_terrain.py` | New: Playwright terrain smoke tests |

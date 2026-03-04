@@ -31,9 +31,9 @@ This audit systematically verified 10 critical areas:
 
 **Severity:** CRITICAL — Player experiences silent gameplay during combat
 **Files Affected:**
-- `frontend/js/command/websocket.js:415-438`
-- `frontend/js/war-events.js:242-279`
-- `frontend/js/war.js:1961-2508`
+- `src/frontend/js/command/websocket.js:415-438`
+- `src/frontend/js/war-events.js:242-279`
+- `src/frontend/js/war.js:1961-2508`
 
 **Root Cause:**
 Frontend has dual audio integration paths that are NOT connected:
@@ -195,7 +195,7 @@ case 'amy_wave_complete': {
 
 **Severity:** MAJOR — Scenario launch fails silently under race conditions
 **Files Affected:**
-- `frontend/js/command/mission-modal.js:393-441`
+- `src/frontend/js/command/mission-modal.js:393-441`
 - `src/app/routers/game.py:325-376`
 - `src/engine/simulation/mission_director.py`
 
@@ -214,7 +214,7 @@ The mission modal and backend have a timing race condition:
 
 **Evidence:**
 ```javascript
-// frontend/js/command/mission-modal.js:393-441
+// src/frontend/js/command/mission-modal.js:393-441
 async function _launchMission() {
     _statusLabel.textContent = 'DEPLOYING FORCES...';
     // ... pass loading messages to HUD ...
@@ -319,7 +319,7 @@ T=280:   User sees "DEPLOYMENT FAILED" with no explanation
 
 **Severity:** MAJOR — State bloat + operator blindness to game status
 **Files Affected:**
-- `frontend/js/command/websocket.js` (write side)
+- `src/frontend/js/command/websocket.js` (write side)
 - All panel files (read side — missing)
 
 **Problem:**
@@ -369,7 +369,7 @@ No panel reads these values to display:
 ```
 
 **Fix Required:**
-1. **Create civil unrest HUD panel** (`frontend/js/command/panels/civil-unrest.js`)
+1. **Create civil unrest HUD panel** (`src/frontend/js/command/panels/civil-unrest.js`)
    - Display civilian harm count + limit as meter
    - Display infrastructure health bar per building
    - Display de-escalation score progress
@@ -394,7 +394,7 @@ No panel reads these values to display:
 ### Issue #4: Pan/Tilt Sliders Flood Backend
 
 **Severity:** MAJOR — Turret control stutters, network spam
-**File:** `frontend/js/command/device-modal.js:356-374`
+**File:** `src/frontend/js/command/device-modal.js:356-374`
 
 **Problem:**
 ```javascript
@@ -483,8 +483,8 @@ After fix, drag slider and watch network tab:
 
 **Severity:** MAJOR — User's custom layout resets on page reload
 **Files Affected:**
-- `frontend/js/command/layout-manager.js`
-- `frontend/js/command/panel-manager.js`
+- `src/frontend/js/command/layout-manager.js`
+- `src/frontend/js/command/panel-manager.js`
 
 **Problem:**
 LayoutManager saves/loads panel positions and sizes but ignores visibility:
@@ -707,15 +707,15 @@ load(name) {
 ## Files Summary
 
 ### Critical Path Files
-- `frontend/js/command/websocket.js` — dispatch to warHandle functions
-- `frontend/js/war-events.js` — defines warHandle patches
-- `frontend/js/war.js` — defines warHandle functions
+- `src/frontend/js/command/websocket.js` — dispatch to warHandle functions
+- `src/frontend/js/war-events.js` — defines warHandle patches
+- `src/frontend/js/war.js` — defines warHandle functions
 
 ### Major Issue Files
-- `frontend/js/command/mission-modal.js` — send scenario in request
-- `frontend/js/command/websocket.js` — write civil-unrest store keys
-- `frontend/js/command/device-modal.js` — increase pan/tilt debounce
-- `frontend/js/command/layout-manager.js` — persist isOpen state
+- `src/frontend/js/command/mission-modal.js` — send scenario in request
+- `src/frontend/js/command/websocket.js` — write civil-unrest store keys
+- `src/frontend/js/command/device-modal.js` — increase pan/tilt debounce
+- `src/frontend/js/command/layout-manager.js` — persist isOpen state
 
 ---
 

@@ -118,7 +118,7 @@ Keyboard shortcuts: G, P, D, Z, T, A, N, Y, S, W.
 
 ## Grid View (G)
 
-**File**: `frontend/js/grid.js`
+**File**: `src/frontend/js/grid.js`
 **Container**: `#view-grid`
 
 ### Layout
@@ -141,7 +141,7 @@ CSS Grid of camera feed tiles.  Default 2x2 (4 tiles).
 
 ## Player View (P)
 
-**File**: `frontend/js/player.js`
+**File**: `src/frontend/js/player.js`
 **Container**: `#view-player`
 
 ### Layout
@@ -164,7 +164,7 @@ Dark empty area when no video loaded.
 
 ## 3D Camera Grid (D)
 
-**File**: `frontend/js/grid.js` (Three.js init section)
+**File**: `src/frontend/js/grid.js` (Three.js init section)
 **Container**: `#view-3d`
 
 ### Layout
@@ -194,7 +194,7 @@ Full-screen Three.js WebGL canvas with a small overlay panel.
 
 ## Zone Manager (Z)
 
-**File**: `frontend/js/zones.js`
+**File**: `src/frontend/js/zones.js`
 **Container**: `#view-zones`
 
 ### Layout
@@ -226,7 +226,7 @@ Full-screen Three.js WebGL canvas with a small overlay panel.
 
 ## Target Tracker (T)
 
-**File**: `frontend/js/targets.js`
+**File**: `src/frontend/js/targets.js`
 **Container**: `#view-targets`
 
 ### Layout
@@ -254,7 +254,7 @@ Vertical flex stack with padding.
 
 ## Asset Manager (A)
 
-**File**: `frontend/js/assets.js`
+**File**: `src/frontend/js/assets.js`
 **Container**: `#view-assets`
 
 ### Layout
@@ -286,7 +286,7 @@ Vertical flex stack with padding.
 
 ## Analytics (N)
 
-**File**: `frontend/js/analytics.js`
+**File**: `src/frontend/js/analytics.js`
 **Container**: `#view-analytics`
 
 ### Layout
@@ -309,7 +309,7 @@ detection data exists.
 
 ## Amy AI Commander (Y)
 
-**File**: `frontend/js/amy.js`
+**File**: `src/frontend/js/amy.js`
 **Container**: `#view-amy`
 
 ### Layout
@@ -367,7 +367,7 @@ plus a BATTLESPACE section.
 
 ## Scenarios (S)
 
-**File**: `frontend/js/scenarios.js`
+**File**: `src/frontend/js/scenarios.js`
 **Container**: `#view-scenarios`
 
 ### Layout
@@ -413,7 +413,7 @@ plus a BATTLESPACE section.
 
 ## War Room (W)
 
-**Files**: `frontend/js/war.js`, `frontend/js/war3d.js`
+**Files**: `src/frontend/js/war.js`, `src/frontend/js/war3d.js`
 **Container**: `#view-war`
 
 ### Layout
@@ -464,8 +464,8 @@ The canvas sits at z-index 1; the HUD container (`#war-hud`) is at z-index 10.
 When adding a new view:
 
 1. Add the HTML container in `index.html` (id: `view-{name}`)
-2. Add the JS file in `frontend/js/{name}.js`
-3. Add keyboard shortcut in `frontend/js/app.js` (switchView)
+2. Add the JS file in `src/frontend/js/{name}.js`
+3. Add keyboard shortcut in `src/frontend/js/app.js` (switchView)
 4. **Add the view spec to this document** with all panels and elements
 5. Add an entry to `VIEWS` dict in `tests/ui/test_vision.py` with:
    - `shortcut`, `settle_ms`, `label`, `description`

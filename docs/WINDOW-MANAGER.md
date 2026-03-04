@@ -82,7 +82,7 @@ placeholder positions and renders into those regions using viewport/scissor.
 ### ViewportRegistry
 
 ```javascript
-// frontend/js/command/viewport-registry.js
+// src/frontend/js/command/viewport-registry.js
 
 export class ViewportRegistry {
     constructor(canvas) {
@@ -225,7 +225,7 @@ Every panel is a **plugin**. Each plugin is an ES6 module that exports a
 definition object. The definition is the plugin's entire contract with the system.
 
 ```javascript
-// frontend/js/command/plugins/camera-stream.js
+// src/frontend/js/command/plugins/camera-stream.js
 
 export const CameraStreamPlugin = {
     // --- Identity ---
@@ -298,7 +298,7 @@ export const CameraStreamPlugin = {
 ### Plugin Registry
 
 ```javascript
-// frontend/js/command/plugin-registry.js
+// src/frontend/js/command/plugin-registry.js
 
 export class PluginRegistry {
     constructor() {
@@ -340,7 +340,7 @@ Plugins self-register by being imported. `main.js` imports all plugin modules,
 and each module registers with the global registry:
 
 ```javascript
-// frontend/js/command/main.js
+// src/frontend/js/command/main.js
 
 import { PluginRegistry } from './plugin-registry.js';
 import { AmyPlugin } from './plugins/amy.js';
@@ -413,7 +413,7 @@ they're positioned, their sizes, and their per-instance configuration.
 ### Layout Persistence
 
 ```javascript
-// frontend/js/command/layout-manager.js
+// src/frontend/js/command/layout-manager.js
 
 export class LayoutManager {
     constructor(dockManager, registry) {
@@ -774,37 +774,37 @@ The plugin API is designed to work with both PanelManager and dockview.
 
 | File | Purpose |
 |------|---------|
-| `frontend/js/command/plugin-registry.js` | Plugin registration and discovery |
-| `frontend/js/command/layout-manager.js` | Named layout save/recall/export/import |
-| `frontend/js/command/viewport-registry.js` | Three.js multi-viewport scissor rendering |
-| `frontend/js/command/plugins/amy.js` | Amy Commander plugin (refactored from panels/) |
-| `frontend/js/command/plugins/units.js` | Units plugin (refactored from panels/) |
-| `frontend/js/command/plugins/alerts.js` | Alerts plugin (refactored from panels/) |
-| `frontend/js/command/plugins/game-hud.js` | Game HUD plugin (refactored from panels/) |
-| `frontend/js/command/plugins/chat.js` | Chat plugin (extracted from main.js) |
-| `frontend/js/command/plugins/camera-stream.js` | Camera feed plugin |
-| `frontend/js/command/plugins/tactical-map.js` | Canvas 2D tactical map plugin |
-| `frontend/js/command/plugins/viewport-3d.js` | Three.js 3D viewport plugin |
-| `frontend/css/dockview-cybercore.css` | Dockview theme override for cybercore-v2 |
+| `src/frontend/js/command/plugin-registry.js` | Plugin registration and discovery |
+| `src/frontend/js/command/layout-manager.js` | Named layout save/recall/export/import |
+| `src/frontend/js/command/viewport-registry.js` | Three.js multi-viewport scissor rendering |
+| `src/frontend/js/command/plugins/amy.js` | Amy Commander plugin (refactored from panels/) |
+| `src/frontend/js/command/plugins/units.js` | Units plugin (refactored from panels/) |
+| `src/frontend/js/command/plugins/alerts.js` | Alerts plugin (refactored from panels/) |
+| `src/frontend/js/command/plugins/game-hud.js` | Game HUD plugin (refactored from panels/) |
+| `src/frontend/js/command/plugins/chat.js` | Chat plugin (extracted from main.js) |
+| `src/frontend/js/command/plugins/camera-stream.js` | Camera feed plugin |
+| `src/frontend/js/command/plugins/tactical-map.js` | Canvas 2D tactical map plugin |
+| `src/frontend/js/command/plugins/viewport-3d.js` | Three.js 3D viewport plugin |
+| `src/frontend/css/dockview-cybercore.css` | Dockview theme override for cybercore-v2 |
 
 ### Modified Files
 
 | File | Change |
 |------|--------|
-| `frontend/unified.html` | Add importmap for dockview, viewport canvas, layout selector UI |
-| `frontend/js/command/main.js` | Import plugins, create registry, init layout manager |
-| `frontend/js/command/panel-manager.js` | Kept as fallback; add LayoutManager compatibility |
-| `frontend/css/command.css` | Add viewport canvas layer, layout selector styles |
-| `frontend/css/panels.css` | Plugin-specific styles (keep existing, add new) |
+| `src/frontend/unified.html` | Add importmap for dockview, viewport canvas, layout selector UI |
+| `src/frontend/js/command/main.js` | Import plugins, create registry, init layout manager |
+| `src/frontend/js/command/panel-manager.js` | Kept as fallback; add LayoutManager compatibility |
+| `src/frontend/css/command.css` | Add viewport canvas layer, layout selector styles |
+| `src/frontend/css/panels.css` | Plugin-specific styles (keep existing, add new) |
 
 ### Not Modified
 
 | File | Why |
 |------|-----|
-| `frontend/js/command/store.js` | Already plugin-friendly (dot-path subscriptions) |
-| `frontend/js/command/events.js` | Already plugin-friendly (simple pub/sub) |
-| `frontend/js/command/websocket.js` | No changes needed |
-| `frontend/js/war.js` | Legacy war room stays separate |
+| `src/frontend/js/command/store.js` | Already plugin-friendly (dot-path subscriptions) |
+| `src/frontend/js/command/events.js` | Already plugin-friendly (simple pub/sub) |
+| `src/frontend/js/command/websocket.js` | No changes needed |
+| `src/frontend/js/war.js` | Legacy war room stays separate |
 
 ## 10. Testing Strategy
 
@@ -841,10 +841,10 @@ The plugin API is designed to work with both PanelManager and dockview.
    This gives the best of both worlds.
 
 2. **dockview CDN reliability**: Should we vendor the library (copy into
-   `frontend/vendor/`) or rely on jsDelivr CDN? Vendoring avoids external
+   `src/frontend/vendor/`) or rely on jsDelivr CDN? Vendoring avoids external
    dependency but adds maintenance burden.
 
-   **Recommendation**: Vendor it. Copy the ESM build into `frontend/vendor/dockview/`.
+   **Recommendation**: Vendor it. Copy the ESM build into `src/frontend/vendor/dockview/`.
    Update when needed. No external dependency at runtime.
 
 3. **Panel state persistence granularity**: Should per-panel config (camera URLs,

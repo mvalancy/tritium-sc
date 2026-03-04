@@ -117,7 +117,7 @@ TRITIUM-SC includes automatic deadzone handling, but you may need to adjust for 
 
 The default deadzone is 25% (0.25). To change:
 
-1. Open `frontend/js/input.js`
+1. Open `src/frontend/js/input.js`
 2. Find `const GAMEPAD_DEADZONE = 0.25;`
 3. Adjust value (0.1 = 10%, 0.3 = 30%)
 4. Refresh the page
@@ -135,7 +135,7 @@ TRITIUM-SC uses vibration for feedback on certain actions:
 - Selection confirmed: Brief pulse
 
 **Enable/Disable Vibration**:
-Currently always enabled when supported. To disable, modify the `vibrate()` method in `frontend/js/input.js`.
+Currently always enabled when supported. To disable, modify the `vibrate()` method in `src/frontend/js/input.js`.
 
 **Not Working?**
 - Not all controllers support vibration via Web API
@@ -191,7 +191,7 @@ Different controllers may have different button indices. The standard mapping is
 | 14 | D-Left | D-Left | D-Left |
 | 15 | D-Right | D-Right | D-Right |
 
-If your controller has different mapping, modify `GAMEPAD_BUTTONS` in `frontend/js/input.js`.
+If your controller has different mapping, modify `GAMEPAD_BUTTONS` in `src/frontend/js/input.js`.
 
 ### Input Lag
 

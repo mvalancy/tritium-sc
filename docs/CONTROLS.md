@@ -313,11 +313,11 @@ When a modal is open, focus is trapped within the modal. Press B or ESC to close
 
 ### Deadzone Adjustment
 
-The default stick deadzone is 25%. To adjust, modify `GAMEPAD_DEADZONE` in `frontend/js/input.js`.
+The default stick deadzone is 25%. To adjust, modify `GAMEPAD_DEADZONE` in `src/frontend/js/input.js`.
 
 ### Button Remapping
 
-Button mappings can be customized by modifying the `mapButtonToAction` method in `GamepadHandler` class in `frontend/js/input.js`.
+Button mappings can be customized by modifying the `mapButtonToAction` method in `GamepadHandler` class in `src/frontend/js/input.js`.
 
 ---
 
