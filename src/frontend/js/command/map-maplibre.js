@@ -139,7 +139,7 @@ const _state = {
     showHazardZones: true,     // environmental hazard zones (fire/flood/roadblock)
     showHostileObjectives: true, // hostile objective lines (dashed lines to targets)
     showCrowdDensity: true,    // crowd density heatmap (civil_unrest mode only)
-    showCoverPoints: true,     // tactical cover positions
+    showCoverPoints: false,    // tactical cover positions (off by default — too noisy during battle)
     showUnitSignals: true,     // unit communication signals (distress/contact/etc)
     showHostileIntel: true,    // hostile commander intel HUD
 
@@ -185,6 +185,18 @@ const _state = {
     effectsActive: false,   // repaint loop running
     effectAnimId: null,     // rAF handle
 
+    // Recently-fired tracker: unitId -> { time, targetId } (for combat ring + engagement lines)
+    recentlyFired: {},      // { unitId: { time, targetId } }
+    battleStartTime: 0,     // performance.now() when battle starts
+
+    // Wave direction/countdown
+    _waveDirection: null,          // current wave spawn_direction string
+    _nextWaveDirection: null,      // next wave spawn_direction (from wave_complete)
+    _nextWaveCountdown: 0,         // seconds until next wave
+    _nextWaveCountdownStart: 0,    // performance.now() when countdown started
+    _nextWaveName: null,           // name of next wave
+    _nextHostileCount: 0,          // hostile count for next wave
+
     // Vision system (fog of war + cones)
     visionSystem: null,
 
@@ -198,6 +210,7 @@ const _state = {
     _lastPatrolHash: null,
     _lastDispatchHash: null,
     _lastWeaponRangeHash: null,
+    _lastEngagementHash: null,
     _lastSwarmHullHash: null,
     _lastSquadHullHash: null,
     _lastHazardHash: null,
@@ -359,6 +372,9 @@ function _createMap(mapDiv) {
 
         // Add layer HUD
         _createLayerHud();
+
+        // Add compact map legend
+        _createMapLegend();
 
         // Combat effects system
         _initEffects();
@@ -976,6 +992,9 @@ const COVER_POINTS_ICON   = 'cover-points-icon';
 const UNIT_SIGNALS_SOURCE = 'unit-signals-source';
 const UNIT_SIGNALS_CIRCLE = 'unit-signals-circle';
 
+const ENGAGEMENT_LINES_SOURCE = 'engagement-lines-source';
+const ENGAGEMENT_LINES_LAYER  = 'engagement-lines-layer';
+
 // Hazard type colors
 const HAZARD_COLORS = {
     fire:      '#ff4400',
@@ -1421,8 +1440,8 @@ function _updateWeaponRange() {
     const selectedId = _state.selectedUnitId;
     const mode = _state.currentMode;
 
-    // Only show in tactical or setup mode
-    if (!_state.showWeaponRange || !selectedId || mode === 'observe') {
+    // Show in all modes when a unit is selected and weapon range is enabled
+    if (!_state.showWeaponRange || !selectedId) {
         _clearWeaponRange();
         return;
     }
@@ -2463,6 +2482,74 @@ function _clearUnitSignals() {
     _state._lastSignalsHash = null;
 }
 
+/**
+ * Draw dashed engagement lines between units actively firing and their targets.
+ * Uses the recentlyFired tracker populated by _onCombatProjectile().
+ * Lines persist for 3s after last shot — much more visible in screenshots than
+ * fast Three.js tracers (350-700ms).
+ */
+function _updateEngagementLines() {
+    if (!_state.map || !_state.initialized) return;
+
+    const now = performance.now();
+    const features = [];
+
+    for (const [srcId, entry] of Object.entries(_state.recentlyFired)) {
+        if (now - entry.time > 3000) continue; // expired
+        if (!entry.targetId) continue;
+
+        const src = TritiumStore.units.get(srcId);
+        const tgt = TritiumStore.units.get(entry.targetId);
+        if (!src?.position || !tgt?.position) continue;
+
+        const srcLL = _gameToLngLat(src.position.x || 0, src.position.y || 0);
+        const tgtLL = _gameToLngLat(tgt.position.x || 0, tgt.position.y || 0);
+
+        const alliance = src.alliance || 'unknown';
+        const color = alliance === 'friendly' ? '#05ffa1' : alliance === 'hostile' ? '#ff2a6d' : '#ffa500';
+        const age = now - entry.time;
+        const opacity = Math.max(0.15, 0.6 * (1 - age / 3000));
+
+        features.push({
+            type: 'Feature',
+            geometry: {
+                type: 'LineString',
+                coordinates: [srcLL, tgtLL],
+            },
+            properties: { color, opacity: parseFloat(opacity.toFixed(2)) },
+        });
+    }
+
+    const geojson = { type: 'FeatureCollection', features };
+    const hash = features.map(f =>
+        f.geometry.coordinates[0][0].toFixed(5) + ',' + f.properties.opacity
+    ).join(';');
+
+    if (_state.map.getSource(ENGAGEMENT_LINES_SOURCE)) {
+        if (hash !== _state._lastEngagementHash) {
+            _state._lastEngagementHash = hash;
+            _state.map.getSource(ENGAGEMENT_LINES_SOURCE).setData(geojson);
+        }
+    } else {
+        _state._lastEngagementHash = hash;
+        _state.map.addSource(ENGAGEMENT_LINES_SOURCE, {
+            type: 'geojson',
+            data: geojson,
+        });
+        _state.map.addLayer({
+            id: ENGAGEMENT_LINES_LAYER,
+            type: 'line',
+            source: ENGAGEMENT_LINES_SOURCE,
+            paint: {
+                'line-color': ['get', 'color'],
+                'line-width': 2,
+                'line-opacity': ['get', 'opacity'],
+                'line-dasharray': [6, 4],
+            },
+        });
+    }
+}
+
 // ============================================================
 // Hostile Intel HUD (DOM overlay in bottom-left corner)
 // ============================================================
@@ -2896,20 +2983,27 @@ function _updateUnits() {
     // Unit signals need per-tick update (expanding rings that fade)
     _updateUnitSignals();
 
+    // Engagement lines — dashed lines between firing units and their targets
+    _updateEngagementLines();
+
+    // Combat status bar at bottom of map
+    if (slowTick) _updateCombatStatusBar();
+
     // Slow-tick overlays: hostile objectives, crowd density, cover points, hostile intel
     if (slowTick) {
         _updateHostileObjectives();
         _updateCrowdDensity();
         _updateCoverPoints();
         _updateHostileIntel();
-    }
-}
 
-function _resolveModalType(unit) {
-    const type = unit.asset_type || unit.type || 'generic';
-    const alliance = unit.alliance || 'unknown';
-    const npcTypes = ['person', 'animal', 'vehicle'];
-    return (npcTypes.includes(type) && alliance === 'neutral') ? 'npc' : type;
+        // Prune stale recentlyFired entries (>5s old)
+        const pruneThreshold = performance.now() - 5000;
+        for (const uid of Object.keys(_state.recentlyFired)) {
+            if (_state.recentlyFired[uid].time < pruneThreshold) {
+                delete _state.recentlyFired[uid];
+            }
+        }
+    }
 }
 
 function _resolveModalType(unit) {
@@ -2951,9 +3045,34 @@ function _createUnitMarker(id, unit, lngLat) {
         .setLngLat(lngLat)
         .addTo(_state.map);
 
-    // Hover effect
-    outer.addEventListener('mouseenter', () => outer.classList.add('unit-marker-hovered'));
-    outer.addEventListener('mouseleave', () => outer.classList.remove('unit-marker-hovered'));
+    // Hover effect + tooltip
+    const tooltip = document.createElement('div');
+    tooltip.className = 'unit-tooltip';
+    tooltip.style.cssText = 'position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);' +
+        'background:rgba(10,10,20,0.95);border:1px solid var(--cyan);border-radius:3px;padding:4px 8px;' +
+        'font-size:0.55rem;white-space:nowrap;pointer-events:none;display:none;z-index:100;' +
+        'font-family:var(--font-mono);color:var(--text);box-shadow:0 2px 8px rgba(0,0,0,0.5);';
+    outer.appendChild(tooltip);
+
+    outer.addEventListener('mouseenter', () => {
+        outer.classList.add('unit-marker-hovered');
+        const u = TritiumStore.units.get(id);
+        if (u) {
+            const hpPct = u.maxHealth ? Math.round((u.health / u.maxHealth) * 100) : '?';
+            const hpColor = hpPct > 60 ? 'var(--green)' : hpPct > 30 ? 'var(--amber)' : 'var(--magenta)';
+            const fsm = u.fsmState ? ` <span style="color:var(--text-ghost)">${u.fsmState}</span>` : '';
+            const kills = u.kills ? ` <span style="color:var(--amber)">${u.kills} kills</span>` : '';
+            const ammo = (u.ammoCount != null && u.ammoMax) ? ` <span style="color:#aaa">${u.ammoCount}/${u.ammoMax}</span>` : '';
+            tooltip.innerHTML = `<div style="color:${ALLIANCE_COLORS[u.alliance] || 'var(--cyan)'};font-weight:bold">${u.name || id}</div>` +
+                `<div>${u.type || '?'}${fsm}</div>` +
+                `<div>HP: <span style="color:${hpColor}">${hpPct}%</span>${kills}${ammo}</div>`;
+            tooltip.style.display = 'block';
+        }
+    });
+    outer.addEventListener('mouseleave', () => {
+        outer.classList.remove('unit-marker-hovered');
+        tooltip.style.display = 'none';
+    });
 
     // Click handler for selection + open inspector
     outer.addEventListener('click', (e) => {
@@ -3076,7 +3195,11 @@ function _applyMarkerStyle(el, unit) {
     // Position is handled by setLngLat() so it's not included here.
     const moraleState = _getMoraleState(unit.morale);
     const unitSource = unit.source || 'sim';
-    const styleHash = `${alliance}|${type}|${hpRatio.toFixed(2)}|${dead}|${selected}|${has3D}|${modelsVisible}|${_state.showLabels}|${_state.showHealthBars}|${_state.showSelectionFx}|${moraleState}|${unitSource}|${unit.name || ''}`;
+    const fsmState = (unit.fsmState || unit.fsm_state || '').toLowerCase();
+    const firedEntry = _state.recentlyFired[unit.id];
+    const inCombat = firedEntry && (performance.now() - firedEntry.time) < 3000;
+    const firedTime = firedEntry ? Math.round(firedEntry.time / 100) : 0;  // 100ms granularity for re-fire detection
+    const styleHash = `${alliance}|${type}|${hpRatio.toFixed(2)}|${dead}|${selected}|${has3D}|${modelsVisible}|${_state.showLabels}|${_state.showHealthBars}|${_state.showSelectionFx}|${moraleState}|${unitSource}|${unit.name || ''}|${inCombat}|${firedTime}`;
     if (el._lastStyleHash === styleHash) return;
     el._lastStyleHash = styleHash;
 
@@ -3086,8 +3209,8 @@ function _applyMarkerStyle(el, unit) {
         css.id = 'tritium-marker-css';
         css.textContent = [
             '@keyframes hostile-pulse {',
-            '  0%, 100% { box-shadow: 0 0 6px #ff2a6d66; }',
-            '  50% { box-shadow: 0 0 16px #ff2a6d, 0 0 30px #ff2a6d44; }',
+            '  0%, 100% { box-shadow: 0 0 8px #ff2a6d88; }',
+            '  50% { box-shadow: 0 0 20px #ff2a6d, 0 0 40px #ff2a6d66; }',
             '}',
             '',
             '/* Morale state animations */',
@@ -3115,6 +3238,18 @@ function _applyMarkerStyle(el, unit) {
             '.unit-marker-emboldened .tritium-unit-inner {',
             '  animation: morale-emboldened-glow 2s ease-in-out infinite !important;',
             '  transform: scale(1.1);',
+            '}',
+            '',
+            '/* Combat firing indicator */',
+            '@keyframes combat-fire-pulse {',
+            '  0%, 100% { box-shadow: 0 0 8px var(--fire-color), 0 0 16px var(--fire-color); transform: scale(1); }',
+            '  50% { box-shadow: 0 0 16px var(--fire-color), 0 0 32px var(--fire-color), 0 0 48px var(--fire-color); transform: scale(1.15); }',
+            '}',
+            '.unit-combat-ring {',
+            '  position: absolute; inset: -8px; border-radius: 50%;',
+            '  border: 2px solid var(--fire-color);',
+            '  pointer-events: none;',
+            '  animation: combat-fire-pulse 0.6s ease-in-out infinite;',
             '}',
             '',
             '/* Morale badge positioning */',
@@ -3218,23 +3353,23 @@ function _applyMarkerStyle(el, unit) {
 
     } else {
         // ----- 2D mode: classic circle icon with health bar -----
-        const size = alliance === 'hostile' ? 28 : 32;
+        const size = alliance === 'hostile' ? 22 : 26;
         const pulse = (_state.showSelectionFx && alliance === 'hostile' && !dead) ? 'animation: hostile-pulse 1.5s ease-in-out infinite;' : '';
         const selGlow = selected && _state.showSelectionFx;
         el.style.cssText = `
             width: ${size}px; height: ${size}px;
             border-radius: ${alliance === 'hostile' ? '4px' : '50%'};
             background: ${dead ? '#33333366' : `radial-gradient(circle, ${color}55, ${color}22)`};
-            border: 2px solid ${color};
+            border: 1.5px solid ${color};
             display: flex; align-items: center; justify-content: center;
             font-family: 'JetBrains Mono', monospace;
-            font-size: ${alliance === 'hostile' ? '12px' : '13px'}; font-weight: bold;
+            font-size: ${alliance === 'hostile' ? '10px' : '11px'}; font-weight: bold;
             color: ${color};
             cursor: pointer;
             opacity: ${opacity};
             transition: transform 0.15s, box-shadow 0.15s;
-            box-shadow: 0 0 ${selGlow ? '15' : '6'}px ${color}${selGlow ? '' : '44'};
-            ${selGlow ? 'transform: scale(1.4);' : ''}
+            box-shadow: 0 0 ${selGlow ? '14' : '5'}px ${color}${selGlow ? '' : '44'};
+            ${selGlow ? 'transform: scale(1.3);' : ''}
             ${pulse}
             position: relative;
             text-shadow: 0 0 4px ${color};
@@ -3265,6 +3400,63 @@ function _applyMarkerStyle(el, unit) {
             damageGlow.remove();
         }
 
+        // Combat firing indicator — pulsing ring when unit is actively engaging
+        let combatRing = el.querySelector('.unit-combat-ring');
+        if (inCombat && !dead) {
+            if (!combatRing) {
+                combatRing = document.createElement('div');
+                combatRing.className = 'unit-combat-ring';
+                el.appendChild(combatRing);
+            }
+            const fireColor = alliance === 'hostile' ? '#ff2a6d' : '#ffa500';
+            combatRing.style.setProperty('--fire-color', fireColor);
+            combatRing.style.borderRadius = alliance === 'hostile' ? '7px' : '50%';
+        } else if (combatRing) {
+            combatRing.remove();
+        }
+
+        // Weapon cooldown arc — SVG circle that sweeps from 0→360° as weapon recharges
+        let cdArc = el.querySelector('.unit-cd-arc');
+        const weaponCooldown = unit.weapon_cooldown || unit.weaponCooldown || 0;
+        if (inCombat && !dead && weaponCooldown > 0 && alliance !== 'hostile') {
+            const arcSize = size + 16;
+            const arcR = (arcSize - 4) / 2;  // radius inside the SVG
+            const circumference = 2 * Math.PI * arcR;
+            if (!cdArc) {
+                cdArc = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                cdArc.setAttribute('class', 'unit-cd-arc');
+                cdArc.style.cssText = `position:absolute; pointer-events:none; z-index:3;`;
+                const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                circle.setAttribute('class', 'cd-arc-circle');
+                circle.setAttribute('fill', 'none');
+                circle.setAttribute('stroke-linecap', 'round');
+                cdArc.appendChild(circle);
+                el.appendChild(cdArc);
+            }
+            cdArc.setAttribute('width', arcSize);
+            cdArc.setAttribute('height', arcSize);
+            cdArc.style.top = `${-(arcSize - size) / 2}px`;
+            cdArc.style.left = `${-(arcSize - size) / 2}px`;
+            const circle = cdArc.querySelector('.cd-arc-circle');
+            circle.setAttribute('cx', arcSize / 2);
+            circle.setAttribute('cy', arcSize / 2);
+            circle.setAttribute('r', arcR);
+            circle.setAttribute('stroke', '#05ffa1');
+            circle.setAttribute('stroke-width', '2.5');
+            circle.setAttribute('stroke-dasharray', circumference);
+            // Animate: offset goes from circumference (empty) to 0 (full)
+            circle.style.strokeDashoffset = circumference;
+            circle.style.transition = 'none';
+            circle.style.transform = 'rotate(-90deg)';
+            circle.style.transformOrigin = '50% 50%';
+            // Force reflow then animate
+            void circle.offsetWidth;
+            circle.style.transition = `stroke-dashoffset ${weaponCooldown}s linear`;
+            circle.style.strokeDashoffset = '0';
+        } else if (cdArc) {
+            cdArc.remove();
+        }
+
         // Operator control indicator — pulsing cyan ring
         let ctrlRing = el.querySelector('.unit-ctrl-ring');
         if (controlled) {
@@ -3280,6 +3472,25 @@ function _applyMarkerStyle(el, unit) {
             ctrlRing.remove();
         }
 
+        // Eliminated X overlay
+        let elimX = el.querySelector('.unit-elim-x');
+        if (dead) {
+            if (!elimX) {
+                elimX = document.createElement('div');
+                elimX.className = 'unit-elim-x';
+                elimX.textContent = '\u2716';
+                elimX.style.cssText = [
+                    'position:absolute; inset:0;',
+                    'display:flex; align-items:center; justify-content:center;',
+                    'font-size:24px; color:#ff2a6d; pointer-events:none;',
+                    'text-shadow:0 0 6px #ff2a6d, 0 0 12px #000;',
+                ].join('');
+                el.appendChild(elimX);
+            }
+        } else if (elimX) {
+            elimX.remove();
+        }
+
         // Health bar below marker (respects showHealthBars toggle)
         let healthBar = el.querySelector('.unit-hp-bar');
         if (_state.showHealthBars) {
@@ -3287,8 +3498,9 @@ function _applyMarkerStyle(el, unit) {
                 healthBar = document.createElement('div');
                 healthBar.className = 'unit-hp-bar';
                 healthBar.style.cssText = `
-                    position: absolute; bottom: -4px; left: 1px; right: 1px; height: 2px;
-                    background: #333; border-radius: 1px; overflow: hidden;
+                    position: absolute; bottom: -5px; left: 0px; right: 0px; height: 3px;
+                    background: #222; border-radius: 2px; overflow: hidden;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.5);
                 `;
                 const fill = document.createElement('div');
                 fill.className = 'unit-hp-fill';
@@ -4126,7 +4338,12 @@ async function _loadGeoLayers() {
 async function _loadGeoLayer(layerMeta) {
     const { id, name, type: geomType, color, endpoint } = layerMeta;
     try {
-        const resp = await fetch(endpoint);
+        // Append geo center coordinates if the endpoint requires them
+        const sep = endpoint.includes('?') ? '&' : '?';
+        const url = _state.geoCenter
+            ? `${endpoint}${sep}lat=${_state.geoCenter.lat}&lng=${_state.geoCenter.lng}`
+            : endpoint;
+        const resp = await fetch(url);
         if (!resp.ok) return;
         const geojson = await resp.json();
         if (!geojson.features || geojson.features.length === 0) return;
@@ -4200,6 +4417,26 @@ async function _loadGeoLayer(layerMeta) {
 
         _state.geoLayerIds.push(layerId);
         console.log(`[MAP-ML] Layer: ${name} (${geojson.features.length} features)`);
+
+        // Tooltip on hover for GIS features
+        _state.map.on('mouseenter', layerId, () => {
+            _state.map.getCanvas().style.cursor = 'pointer';
+        });
+        _state.map.on('mouseleave', layerId, () => {
+            _state.map.getCanvas().style.cursor = '';
+        });
+        _state.map.on('click', layerId, (e) => {
+            const props = e.features?.[0]?.properties || {};
+            const lines = [`<strong>${name}</strong>`];
+            for (const [k, v] of Object.entries(props)) {
+                if (k.startsWith('_') || k === 'id') continue;
+                lines.push(`<span style="color:var(--text-ghost)">${k}:</span> ${v}`);
+            }
+            new maplibregl.Popup({ closeButton: true, maxWidth: '260px' })
+                .setLngLat(e.lngLat)
+                .setHTML(`<div style="font-family:var(--font-mono);font-size:0.65rem;line-height:1.5;color:var(--text)">${lines.join('<br>')}</div>`)
+                .addTo(_state.map);
+        });
 
     } catch (e) {
         console.warn(`[MAP-ML] Layer ${id} failed:`, e.message);
@@ -4299,6 +4536,17 @@ function _onWaveStart(data) {
     const wave = data.wave || data.wave_number || '?';
     const name = data.wave_name || '';
     const hostiles = data.hostile_count || '?';
+    const direction = data.spawn_direction || 'random';
+
+    // Track wave direction for directional threat arrows
+    _state._waveDirection = direction;
+    // Clear between-wave countdown
+    _state._nextWaveCountdown = 0;
+    _state._nextWaveCountdownStart = 0;
+    _state._nextWaveDirection = null;
+
+    // Show directional threat indicators on map edges
+    _showDirectionalThreatArrows(direction);
 
     _showMapBanner(
         'WAVE ' + wave,
@@ -4307,6 +4555,7 @@ function _onWaveStart(data) {
         3500
     );
     _triggerScreenFlash('#ff2a6d', 200);
+    _triggerScanLine('#ff2a6d');
 }
 
 function _onWaveComplete(data) {
@@ -4320,6 +4569,27 @@ function _onWaveComplete(data) {
         3000
     );
 
+    // Clear current wave direction arrows
+    _state._waveDirection = null;
+    _removeDirectionalThreatArrows();
+
+    // Start countdown to next wave if info available
+    const delay = data.next_wave_delay || 5;
+    if (data.next_wave_name || data.next_hostile_count) {
+        _state._nextWaveCountdown = delay;
+        _state._nextWaveCountdownStart = performance.now();
+        _state._nextWaveName = data.next_wave_name || '';
+        _state._nextHostileCount = data.next_hostile_count || 0;
+        _state._nextWaveDirection = data.next_spawn_direction || 'random';
+
+        // Show preview direction arrows for next wave after banner clears
+        setTimeout(() => {
+            if (_state._nextWaveDirection) {
+                _showDirectionalThreatArrows(_state._nextWaveDirection, true);
+            }
+        }, 3200);
+    }
+
     // Fetch and render combat zone heatmap after wave completes
     _fetchAndRenderHeatmap();
 }
@@ -4332,17 +4602,32 @@ function _onGameStateChange(data) {
     } else if (data.state === 'active') {
         // Start polling hostile objectives during active game
         _startHostileObjectivePoll();
+        _showBattleVignette(true);
+        if (!_state.battleStartTime) _state.battleStartTime = performance.now();
     } else if (data.state === 'victory') {
-        _showMapBanner('VICTORY', 'All waves cleared', '#05ffa1', 5000);
-        _triggerScreenFlash('#05ffa1', 400);
+        _showMapBanner('VICTORY', 'All waves cleared', '#05ffa1', 8000);
+        _triggerScreenFlash('#05ffa1', 600);
+        _showGameOverOverlay('victory', data);
         _stopHostileObjectivePoll();
+        _showBattleVignette(false);
+        _removeDirectionalThreatArrows();
     } else if (data.state === 'defeat') {
-        _showMapBanner('DEFEAT', 'Perimeter breached', '#ff2a6d', 5000);
-        _triggerScreenFlash('#ff2a6d', 400);
+        _showMapBanner('DEFEAT', 'Perimeter breached', '#ff2a6d', 8000);
+        _triggerScreenFlash('#ff2a6d', 600);
         _triggerScreenShake(500, 8);
+        _showGameOverOverlay('defeat', data);
         _stopHostileObjectivePoll();
+        _showBattleVignette(false);
+        _removeDirectionalThreatArrows();
     } else if (data.state === 'idle') {
         _stopHostileObjectivePoll();
+        _showBattleVignette(false);
+        _removeDirectionalThreatArrows();
+        _removeGameOverOverlay();
+        _state.battleStartTime = 0;
+        _state._waveDirection = null;
+        _state._nextWaveCountdown = 0;
+        _state._nextWaveCountdownStart = 0;
         _clearHazardZones();
         _clearHostileObjectives();
         _clearCrowdDensity();
@@ -4442,48 +4727,48 @@ function _startCountdownOverlay(seconds) {
 const _WEAPON_VFX = {
     nerf_missile_launcher: {
         color: 0xff2a6d, glowColor: 0xff6644,
-        headR: 6, glowR: 14, duration: 700, flashR: 12,
+        headR: 10, glowR: 25, duration: 700, flashR: 18,
         trail: true, smoke: true, screenShake: true,
     },
     nerf_tank_cannon: {
         color: 0xffcc00, glowColor: 0xff8800,
-        headR: 5, glowR: 12, duration: 550, flashR: 10,
+        headR: 9, glowR: 22, duration: 550, flashR: 16,
         trail: true, smoke: false, screenShake: true,
     },
     nerf_heavy_turret: {
         color: 0x00f0ff, glowColor: 0x0088ff,
-        headR: 5, glowR: 11, duration: 450, flashR: 10,
+        headR: 8, glowR: 20, duration: 450, flashR: 14,
         trail: true, smoke: false, screenShake: false, twin: true,
     },
     nerf_turret_gun: {
         color: 0x05ffa1, glowColor: 0x00cc88,
-        headR: 4, glowR: 10, duration: 500, flashR: 8,
+        headR: 7, glowR: 18, duration: 500, flashR: 12,
         trail: true, smoke: false, screenShake: false,
     },
     nerf_cannon: {
         color: 0xffa500, glowColor: 0xff8800,
-        headR: 4, glowR: 10, duration: 500, flashR: 8,
+        headR: 7, glowR: 18, duration: 500, flashR: 12,
         trail: true, smoke: false, screenShake: false,
     },
     nerf_apc_mg: {
         color: 0xffa500, glowColor: 0xff6600,
-        headR: 2.5, glowR: 7, duration: 350, flashR: 6,
-        trail: false, smoke: false, screenShake: false,
+        headR: 5, glowR: 14, duration: 350, flashR: 10,
+        trail: true, smoke: false, screenShake: false,
     },
     nerf_dart_gun: {
         color: 0x00f0ff, glowColor: 0x0088ff,
-        headR: 2.5, glowR: 6, duration: 400, flashR: 5,
-        trail: false, smoke: false, screenShake: false,
+        headR: 5, glowR: 13, duration: 400, flashR: 9,
+        trail: true, smoke: false, screenShake: false,
     },
     nerf_scout_gun: {
         color: 0x00ccff, glowColor: 0x0066cc,
-        headR: 2, glowR: 5, duration: 350, flashR: 4,
+        headR: 4, glowR: 11, duration: 350, flashR: 8,
         trail: false, smoke: false, screenShake: false,
     },
     nerf_pistol: {
         color: 0xff2a6d, glowColor: 0xcc0044,
-        headR: 2.5, glowR: 6, duration: 450, flashR: 5,
-        trail: false, smoke: false, screenShake: false,
+        headR: 5, glowR: 13, duration: 450, flashR: 9,
+        trail: true, smoke: false, screenShake: false,
     },
 };
 
@@ -4499,6 +4784,14 @@ function _getWeaponVFX(projectileType) {
 // ------ Projectile tracer (source → target) ------
 
 function _onCombatProjectile(data) {
+    // Track recently-fired units for combat ring indicator + engagement lines
+    if (data.source_id) {
+        _state.recentlyFired[data.source_id] = {
+            time: performance.now(),
+            targetId: data.target_id || null,
+        };
+    }
+
     if (!_state.threeScene || !_state.map) return;
     if (!_state.showTracers) return;
 
@@ -4555,7 +4848,7 @@ function _onCombatProjectile(data) {
         const headGeo = new THREE.SphereGeometry(ms * vfx.headR, 6, 6);
         const headMat = new THREE.MeshBasicMaterial({
             color: vfx.color, transparent: true, opacity: 0.95,
-            depthWrite: false, blending: THREE.NormalBlending,
+            depthWrite: false, blending: THREE.AdditiveBlending,
         });
         const head = new THREE.Mesh(headGeo, headMat);
         head.position.copy(oSrc);
@@ -4563,8 +4856,8 @@ function _onCombatProjectile(data) {
         // Outer glow
         const glowGeo = new THREE.SphereGeometry(ms * vfx.glowR, 6, 6);
         const glowMat = new THREE.MeshBasicMaterial({
-            color: vfx.glowColor, transparent: true, opacity: 0.4,
-            depthWrite: false, blending: THREE.NormalBlending,
+            color: vfx.glowColor, transparent: true, opacity: 0.6,
+            depthWrite: false, blending: THREE.AdditiveBlending,
         });
         const glow = new THREE.Mesh(glowGeo, glowMat);
         glow.position.copy(oSrc);
@@ -4666,8 +4959,10 @@ function _onCombatHit(data) {
     // DOM hit flash
     _spawnDomFlash(px || 0, py || 0, vfx.color, 350);
 
-    // DOM flash at the hit location provides positioned feedback;
-    // skip the full-screen overlay to avoid distracting edge artifacts.
+    // Brief vignette pulse when a friendly takes heavy damage
+    if (hitUnit && hitUnit.alliance === 'friendly' && dmg >= 20) {
+        _pulseVignetteDamage();
+    }
 }
 
 // ------ Elimination explosion ------
@@ -4703,9 +4998,9 @@ function _onCombatElimination(data) {
         );
         const ringMat = new THREE.MeshBasicMaterial({
             color: methodVfx.color,
-            transparent: true, opacity: 0.7,
+            transparent: true, opacity: 0.8,
             side: THREE.DoubleSide, depthWrite: false,
-            blending: THREE.NormalBlending,
+            blending: THREE.AdditiveBlending,
         });
         const ring = new THREE.Mesh(ringGeo, ringMat);
         ring.position.set(mc.x, mc.y, mc.z || 0);
@@ -4715,9 +5010,9 @@ function _onCombatElimination(data) {
             ms * rStart * 0.5, ms * rStart * 0.9, 32
         );
         const ring2Mat = new THREE.MeshBasicMaterial({
-            color: 0xffa500, transparent: true, opacity: 0.5,
+            color: 0xffa500, transparent: true, opacity: 0.6,
             side: THREE.DoubleSide, depthWrite: false,
-            blending: THREE.NormalBlending,
+            blending: THREE.AdditiveBlending,
         });
         const ring2 = new THREE.Mesh(ring2Geo, ring2Mat);
         ring2.position.set(mc.x, mc.y, mc.z || 0);
@@ -4727,9 +5022,9 @@ function _onCombatElimination(data) {
         const coreMat = new THREE.MeshBasicMaterial({
             color: 0xffffff,
             transparent: true,
-            opacity: 0.9,
+            opacity: 0.95,
             depthWrite: false,
-            blending: THREE.NormalBlending,
+            blending: THREE.AdditiveBlending,
         });
         const core = new THREE.Mesh(coreGeo, coreMat);
         core.position.set(mc.x, mc.y, (mc.z || 0) + ms * 2);
@@ -4785,6 +5080,9 @@ function _onCombatElimination(data) {
     // Floating "ELIMINATED" text rising from the explosion
     _spawnFloatingText(pos.x || 0, pos.y || 0, 'ELIMINATED', '#ff2a6d', 2000);
 
+    // Score popup slightly offset
+    _spawnFloatingText(pos.x || 0, (pos.y || 0) + 5, '+100', '#fcee0a', 1500);
+
     // Kill feed entry with weapon method
     const methodLabel = _weaponDisplayName(method);
     _addKillFeedEntry(killerName, targetName, methodLabel);
@@ -4814,6 +5112,9 @@ function _onCombatStreak(data) {
 
     // Big center streak banner
     _showStreakBanner(streakName, color, 3000);
+
+    // Scan line sweep
+    _triggerScanLine(color);
 
     // Screen shake (bigger for higher streaks)
     _triggerScreenShake(400, 4 + streak);
@@ -4874,9 +5175,9 @@ function _spawnFlash(mc, ms, color, radiusMeters, durationMs) {
     const mat = new THREE.MeshBasicMaterial({
         color: color,
         transparent: true,
-        opacity: 0.8,
+        opacity: 0.9,
         depthWrite: false,
-        blending: THREE.NormalBlending,
+        blending: THREE.AdditiveBlending,
     });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.set(mc.x, mc.y, mc.z || 0);
@@ -4903,9 +5204,9 @@ function _spawnParticleBurst(mc, ms, color, count, durationMs) {
         const mat = new THREE.MeshBasicMaterial({
             color: color,
             transparent: true,
-            opacity: 0.8,
+            opacity: 0.85,
             depthWrite: false,
-            blending: THREE.NormalBlending,
+            blending: THREE.AdditiveBlending,
         });
         const mesh = new THREE.Mesh(geo, mat);
         mesh.position.set(mc.x, mc.y, mc.z || 0);
@@ -5057,10 +5358,10 @@ function _spawnDomFlash(gx, gy, color, durationMs) {
     // Outer glow ring
     const outer = document.createElement('div');
     outer.style.cssText = [
-        'width:80px; height:80px; border-radius:50%;',
+        'width:120px; height:120px; border-radius:50%;',
         'pointer-events:none; position:relative;',
-        'background:radial-gradient(circle, ' + hexColor + 'cc, ' + hexColor + '44 40%, transparent 70%);',
-        'box-shadow: 0 0 30px ' + hexColor + ', 0 0 60px ' + hexColor + '66;',
+        'background:radial-gradient(circle, ' + hexColor + 'ee, ' + hexColor + '66 35%, transparent 70%);',
+        'box-shadow: 0 0 40px ' + hexColor + ', 0 0 80px ' + hexColor + '88;',
         'animation: fx-hit-pulse ' + durationMs + 'ms ease-out forwards;',
     ].join('');
 
@@ -5068,7 +5369,7 @@ function _spawnDomFlash(gx, gy, color, durationMs) {
     const inner = document.createElement('div');
     inner.style.cssText = [
         'position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);',
-        'width:30px; height:30px; border-radius:50%;',
+        'width:50px; height:50px; border-radius:50%;',
         'background:radial-gradient(circle, #ffffff, ' + hexColor + ' 60%, transparent);',
         'animation: fx-hit-pulse ' + (durationMs * 0.6) + 'ms ease-out forwards;',
     ].join('');
@@ -5076,7 +5377,7 @@ function _spawnDomFlash(gx, gy, color, durationMs) {
 
     // Clip wrapper to prevent spill
     const wrap = document.createElement('div');
-    wrap.style.cssText = 'width:160px; height:160px; overflow:hidden;'
+    wrap.style.cssText = 'width:240px; height:240px; overflow:hidden;'
         + ' border-radius:50%; pointer-events:none;'
         + ' display:flex; align-items:center; justify-content:center;';
     wrap.appendChild(outer);
@@ -5095,7 +5396,7 @@ function _spawnDomFlash(gx, gy, color, durationMs) {
 function _spawnDomExplosion(gx, gy, durationMs) {
     if (!_state.map || !_state.showExplosions) return;
     const lngLat = _gameToLngLat(gx, gy);
-    const CLIP = 200; // max visual diameter in px
+    const CLIP = 300; // max visual diameter in px
 
     // Helper: wrap an animated element in a clipping circle so expanding
     // CSS animations don't spill across the entire viewport.
@@ -5112,10 +5413,10 @@ function _spawnDomExplosion(gx, gy, durationMs) {
     // Layer 1: Expanding magenta ring
     const ring = document.createElement('div');
     ring.style.cssText = [
-        'width:30px; height:30px; border-radius:50%;',
+        'width:50px; height:50px; border-radius:50%;',
         'pointer-events:none;',
-        'border: 4px solid #ff2a6d;',
-        'box-shadow: 0 0 30px #ff2a6d, 0 0 60px #ff2a6d88, inset 0 0 20px #ff2a6d44;',
+        'border: 5px solid #ff2a6d;',
+        'box-shadow: 0 0 40px #ff2a6d, 0 0 80px #ff2a6daa, inset 0 0 30px #ff2a6d66;',
         'animation: fx-explode ' + durationMs + 'ms ease-out forwards;',
     ].join('');
     const ringMarker = _clippedMarker(ring);
@@ -5123,10 +5424,10 @@ function _spawnDomExplosion(gx, gy, durationMs) {
     // Layer 2: Orange secondary ring (slightly delayed via slower animation)
     const ring2 = document.createElement('div');
     ring2.style.cssText = [
-        'width:20px; height:20px; border-radius:50%;',
+        'width:35px; height:35px; border-radius:50%;',
         'pointer-events:none;',
-        'border: 3px solid #ffa500;',
-        'box-shadow: 0 0 20px #ffa500, 0 0 40px #ffa50066;',
+        'border: 4px solid #ffa500;',
+        'box-shadow: 0 0 30px #ffa500, 0 0 60px #ffa50088;',
         'animation: fx-explode ' + (durationMs * 1.2) + 'ms ease-out forwards;',
     ].join('');
     const ring2Marker = _clippedMarker(ring2);
@@ -5134,10 +5435,10 @@ function _spawnDomExplosion(gx, gy, durationMs) {
     // Layer 3: Bright white core flash (fast)
     const core = document.createElement('div');
     core.style.cssText = [
-        'width:80px; height:80px; border-radius:50%;',
+        'width:120px; height:120px; border-radius:50%;',
         'pointer-events:none;',
-        'background:radial-gradient(circle, #ffffff, #ffcc00 30%, #ff2a6d 60%, transparent 80%);',
-        'box-shadow: 0 0 40px #ffffff88, 0 0 80px #ff2a6d44;',
+        'background:radial-gradient(circle, #ffffff, #ffcc00 25%, #ff2a6d 55%, transparent 75%);',
+        'box-shadow: 0 0 60px #ffffffaa, 0 0 120px #ff2a6d66;',
         'animation: fx-flash ' + (durationMs * 0.35) + 'ms ease-out forwards;',
     ].join('');
     const coreMarker = _clippedMarker(core);
@@ -5145,9 +5446,9 @@ function _spawnDomExplosion(gx, gy, durationMs) {
     // Layer 4: Shockwave ring (thin, fast, wide)
     const shock = document.createElement('div');
     shock.style.cssText = [
-        'width:10px; height:10px; border-radius:50%;',
+        'width:15px; height:15px; border-radius:50%;',
         'pointer-events:none;',
-        'border: 2px solid #ffffff88;',
+        'border: 2px solid #ffffffaa;',
         'animation: fx-shockwave ' + (durationMs * 0.7) + 'ms ease-out forwards;',
     ].join('');
     const shockMarker = _clippedMarker(shock);
@@ -5172,10 +5473,10 @@ function _spawnFloatingText(gx, gy, text, color, durationMs) {
     el.style.cssText = [
         'pointer-events:none; white-space:nowrap;',
         'font-family:"JetBrains Mono",monospace;',
-        'font-size:16px; font-weight:bold; letter-spacing:2px;',
+        'font-size:20px; font-weight:bold; letter-spacing:2px;',
         'color:' + color + '; text-transform:uppercase;',
-        'text-shadow: 0 0 8px ' + color + ', 0 0 16px ' + color + '66, 0 2px 4px #000;',
-        'max-width:200px; overflow:hidden; text-overflow:ellipsis;',
+        'text-shadow: 0 0 12px ' + color + ', 0 0 24px ' + color + '88, 0 2px 6px #000;',
+        'max-width:250px; overflow:hidden; text-overflow:ellipsis;',
         'animation: fx-float-text ' + durationMs + 'ms ease-out forwards;',
     ].join('');
     el.textContent = text;
@@ -5199,6 +5500,420 @@ function _triggerScreenShake(durationMs, intensity) {
     container.style.setProperty('--shake-intensity', intensity + 'px');
     container.style.animation = 'fx-screen-shake ' + durationMs + 'ms ease-out';
     setTimeout(() => { container.style.animation = ''; }, durationMs);
+}
+
+/**
+ * Render wave progress dots: filled for completed, pulsing for current, empty for future.
+ */
+function _waveProgressDots(currentWave, totalWaves) {
+    const dots = [];
+    for (let i = 1; i <= totalWaves; i++) {
+        if (i < currentWave) {
+            // Completed wave — solid cyan
+            dots.push('<span style="width:6px;height:6px;border-radius:50%;background:#00f0ff;display:inline-block"></span>');
+        } else if (i === currentWave) {
+            // Current wave — pulsing
+            dots.push('<span style="width:8px;height:8px;border-radius:50%;background:#00f0ff;display:inline-block;box-shadow:0 0 6px #00f0ff;animation:hostile-pulse 1s infinite"></span>');
+        } else {
+            // Future wave — dim outline
+            dots.push('<span style="width:6px;height:6px;border-radius:50%;border:1px solid #333;display:inline-block"></span>');
+        }
+    }
+    return dots.join('');
+}
+
+/**
+ * Update the on-map combat status bar during active battle.
+ * Shows: wave, hostiles alive, friendly health, threat level.
+ */
+function _updateCombatStatusBar() {
+    const container = _state.container;
+    if (!container) return;
+
+    const gameState = TritiumStore.get('game.phase');
+    if (gameState !== 'active' && gameState !== 'countdown' && gameState !== 'wave_complete') {
+        const bar = container.querySelector('.fx-combat-status');
+        if (bar) bar.style.display = 'none';
+        return;
+    }
+    // Auto-detect active battle if we missed the state change event (late-joining browser)
+    if (gameState === 'active' && !_state.battleStartTime) {
+        _state.battleStartTime = performance.now();
+        _showBattleVignette(true);
+        // Restore directional arrows from store if we missed the wave_start event
+        const storedDir = TritiumStore.get('game.waveDirection');
+        if (storedDir && storedDir !== 'random' && !_state._waveDirection) {
+            _state._waveDirection = storedDir;
+            _showDirectionalThreatArrows(storedDir);
+        }
+    }
+
+    let bar = container.querySelector('.fx-combat-status');
+    if (!bar) {
+        bar = document.createElement('div');
+        bar.className = 'fx-combat-status';
+        bar.style.cssText = [
+            'position:absolute; bottom:12px; left:50%; transform:translateX(-50%);',
+            'z-index:100; pointer-events:none;',
+            'display:flex; align-items:center; gap:16px;',
+            'background:rgba(6,6,9,0.85); border:1px solid rgba(0,240,255,0.25);',
+            'border-radius:4px; padding:6px 16px;',
+            'font-family:"JetBrains Mono",monospace; font-size:12px;',
+            'box-shadow: 0 4px 12px rgba(0,0,0,0.4), inset 0 0 20px rgba(0,240,255,0.03);',
+        ].join('');
+        container.appendChild(bar);
+    }
+    bar.style.display = 'flex';
+
+    // Count hostiles alive and friendly health
+    let hostilesAlive = 0;
+    let friendlyTotal = 0;
+    let friendlyHealth = 0;
+    let friendlyMaxHealth = 0;
+
+    TritiumStore.units.forEach((u) => {
+        if (u.status === 'eliminated' || u.status === 'destroyed') return;
+        if (u.alliance === 'hostile') hostilesAlive++;
+        if (u.alliance === 'friendly' && u.isCombatant) {
+            friendlyTotal++;
+            friendlyHealth += u.health || 0;
+            friendlyMaxHealth += u.maxHealth || 100;
+        }
+    });
+
+    const healthPct = friendlyMaxHealth > 0 ? Math.round((friendlyHealth / friendlyMaxHealth) * 100) : 100;
+    const healthColor = healthPct > 60 ? '#05ffa1' : healthPct > 30 ? '#fcee0a' : '#ff2a6d';
+
+    const wave = TritiumStore.get('game.wave') || '?';
+    const totalWaves = TritiumStore.get('game.totalWaves') || 10;
+
+    // Elapsed battle timer
+    let timerStr = '0:00';
+    if (_state.battleStartTime) {
+        const elapsed = Math.floor((performance.now() - _state.battleStartTime) / 1000);
+        const mins = Math.floor(elapsed / 60);
+        const secs = elapsed % 60;
+        timerStr = mins + ':' + String(secs).padStart(2, '0');
+    }
+
+    // Pulse the border when hostiles are present
+    if (hostilesAlive > 0) {
+        bar.style.borderColor = 'rgba(255,42,109,0.5)';
+        bar.style.boxShadow = '0 4px 12px rgba(0,0,0,0.4), 0 0 15px rgba(255,42,109,0.15), inset 0 0 20px rgba(255,42,109,0.05)';
+    } else {
+        bar.style.borderColor = 'rgba(5,255,161,0.3)';
+        bar.style.boxShadow = '0 4px 12px rgba(0,0,0,0.4), inset 0 0 20px rgba(0,240,255,0.03)';
+    }
+
+    // Between-wave countdown
+    let countdownHtml = '';
+    if (_state._nextWaveCountdownStart > 0 && hostilesAlive === 0) {
+        const elapsed = (performance.now() - _state._nextWaveCountdownStart) / 1000;
+        const remaining = Math.max(0, _state._nextWaveCountdown - elapsed);
+        if (remaining > 0) {
+            const nextName = _state._nextWaveName || 'NEXT';
+            countdownHtml = [
+                '<span style="color:#333">|</span>',
+                '<span style="color:#fcee0a;letter-spacing:1px;animation:wave-countdown-pulse 1s ease-in-out infinite">NEXT WAVE</span>',
+                '<span style="color:#fcee0a;font-weight:bold;font-size:14px">' + Math.ceil(remaining) + 's</span>',
+            ].join(' ');
+        }
+    }
+
+    bar.innerHTML = [
+        '<span style="color:#ff2a6d;font-weight:bold;letter-spacing:1px">',
+        hostilesAlive > 0 ? '\u26A0' : '\u2714',
+        '</span>',
+        '<span style="color:' + (hostilesAlive > 0 ? '#ff2a6d' : '#666') + ';letter-spacing:1px">' + (hostilesAlive > 0 ? 'THREAT' : 'CLEAR') + '</span>',
+        '<span style="color:#ff2a6d;font-weight:bold;font-size:14px">' + (hostilesAlive > 0 ? hostilesAlive : '') + '</span>',
+        '<span style="color:#333">|</span>',
+        '<span style="color:#aaa;letter-spacing:1px">DEFENDERS</span>',
+        '<span style="color:' + healthColor + ';font-weight:bold;font-size:14px">' + friendlyTotal + '</span>',
+        '<span style="color:' + healthColor + ';font-size:10px">' + healthPct + '%</span>',
+        '<span style="color:#333">|</span>',
+        '<span style="color:#aaa;letter-spacing:1px">WAVE</span>',
+        '<span style="color:#00f0ff;font-weight:bold;font-size:14px">' + wave + '/' + totalWaves + '</span>',
+        '<span style="display:inline-flex;gap:3px;align-items:center">' + _waveProgressDots(wave, totalWaves) + '</span>',
+        '<span style="color:#333">|</span>',
+        '<span style="color:#fcee0a;font-weight:bold;font-size:13px">' + (TritiumStore.get('game.score') || 0).toLocaleString() + '</span>',
+        '<span style="color:#333">|</span>',
+        '<span style="color:#555;font-size:11px;letter-spacing:1px">' + timerStr + '</span>',
+        countdownHtml,
+    ].join(' ');
+}
+
+/**
+ * Show/hide a subtle vignette border during active battle.
+ * Darkens edges to focus attention on the tactical area.
+ */
+function _showBattleVignette(show) {
+    const container = _state.container;
+    if (!container) return;
+    let vig = container.querySelector('.fx-battle-vignette');
+    if (show) {
+        if (!vig) {
+            vig = document.createElement('div');
+            vig.className = 'fx-battle-vignette';
+            vig.style.cssText = [
+                'position:absolute; inset:0; pointer-events:none; z-index:90;',
+                'background:radial-gradient(ellipse at center, transparent 45%, rgba(0,0,0,0.5) 100%);',
+                'border: 2px solid rgba(255,42,109,0.25);',
+                'box-shadow: inset 0 0 60px rgba(255,42,109,0.08), inset 0 0 120px rgba(0,0,0,0.3);',
+                'transition: opacity 1s ease-in;',
+                'opacity:0;',
+            ].join('');
+            container.appendChild(vig);
+        }
+        // Fade in
+        requestAnimationFrame(() => { vig.style.opacity = '1'; });
+    } else if (vig) {
+        vig.style.opacity = '0';
+        setTimeout(() => vig.remove(), 1000);
+    }
+}
+
+// ------ Scan line effect ------
+
+function _triggerScanLine(color) {
+    const container = _state.container;
+    if (!container || !_state.showScreenFx) return;
+    const line = document.createElement('div');
+    line.style.cssText = [
+        'position:absolute; left:0; right:0; top:0; height:3px;',
+        'z-index:160; pointer-events:none;',
+        'background:linear-gradient(90deg, transparent 0%, ' + color + ' 20%, ' + color + ' 80%, transparent 100%);',
+        'box-shadow: 0 0 20px ' + color + ', 0 0 40px ' + color + '66;',
+        'animation: fx-scan-line 0.8s ease-in-out forwards;',
+    ].join('');
+    container.appendChild(line);
+    setTimeout(() => line.remove(), 850);
+}
+
+// ------ Damage vignette pulse ------
+
+function _pulseVignetteDamage() {
+    const container = _state.container;
+    if (!container) return;
+    let pulse = container.querySelector('.fx-damage-pulse');
+    if (pulse) return; // Already pulsing
+    pulse = document.createElement('div');
+    pulse.className = 'fx-damage-pulse';
+    pulse.style.cssText = [
+        'position:absolute; inset:0; pointer-events:none; z-index:91;',
+        'box-shadow: inset 0 0 80px rgba(255,42,109,0.25), inset 0 0 160px rgba(255,0,0,0.1);',
+        'animation: fx-vignette-flash 0.4s ease-out forwards;',
+    ].join('');
+    container.appendChild(pulse);
+    setTimeout(() => pulse.remove(), 450);
+}
+
+// ------ Directional threat indicators ------
+
+/**
+ * Direction-to-CSS-position map: where to place threat arrows on screen edges.
+ * Each direction maps to an array of { position, rotation } entries.
+ */
+const _DIR_POSITIONS = {
+    north:   [{ css: 'top:8px;left:50%;transform:translateX(-50%) rotate(180deg)', label: 'N' }],
+    south:   [{ css: 'bottom:50px;left:50%;transform:translateX(-50%) rotate(0deg)', label: 'S' }],
+    east:    [{ css: 'top:50%;right:8px;transform:translateY(-50%) rotate(270deg)', label: 'E' }],
+    west:    [{ css: 'top:50%;left:8px;transform:translateY(-50%) rotate(90deg)', label: 'W' }],
+    pincer:  [
+        { css: 'top:50%;right:8px;transform:translateY(-50%) rotate(270deg)', label: 'E' },
+        { css: 'top:50%;left:8px;transform:translateY(-50%) rotate(90deg)', label: 'W' },
+    ],
+    surround: [
+        { css: 'top:8px;left:50%;transform:translateX(-50%) rotate(180deg)', label: 'N' },
+        { css: 'bottom:50px;left:50%;transform:translateX(-50%) rotate(0deg)', label: 'S' },
+        { css: 'top:50%;right:8px;transform:translateY(-50%) rotate(270deg)', label: 'E' },
+        { css: 'top:50%;left:8px;transform:translateY(-50%) rotate(90deg)', label: 'W' },
+    ],
+};
+
+function _showDirectionalThreatArrows(direction, preview) {
+    _removeDirectionalThreatArrows();
+    const container = _state.container;
+    if (!container || !direction || direction === 'random') return;
+
+    const positions = _DIR_POSITIONS[direction];
+    if (!positions) return;
+
+    const color = preview ? 'rgba(255,42,109,0.4)' : 'rgba(255,42,109,0.8)';
+    const glowColor = preview ? 'rgba(255,42,109,0.15)' : 'rgba(255,42,109,0.3)';
+    const animName = preview ? 'threat-arrow-pulse-preview' : 'threat-arrow-pulse';
+
+    positions.forEach((pos) => {
+        const arrow = document.createElement('div');
+        arrow.className = 'fx-threat-arrow';
+        arrow.style.cssText = [
+            'position:absolute;', pos.css, ';',
+            'z-index:120; pointer-events:none;',
+            'width:0; height:0;',
+            'border-left:20px solid transparent; border-right:20px solid transparent;',
+            'border-top:30px solid ' + color + ';',
+            'filter:drop-shadow(0 0 12px ' + glowColor + ');',
+            'animation:' + animName + ' 1s ease-in-out infinite;',
+        ].join('');
+        container.appendChild(arrow);
+
+        // Label below/beside arrow
+        const label = document.createElement('div');
+        label.className = 'fx-threat-arrow';
+        label.style.cssText = [
+            'position:absolute;', pos.css, ';',
+            'z-index:119; pointer-events:none;',
+            'font-family:"JetBrains Mono",monospace; font-size:10px;',
+            'color:' + color + '; letter-spacing:2px; font-weight:bold;',
+            'margin-top:34px;',
+        ].join('');
+        label.textContent = 'THREAT ' + pos.label;
+        container.appendChild(label);
+    });
+}
+
+function _removeDirectionalThreatArrows() {
+    const container = _state.container;
+    if (!container) return;
+    container.querySelectorAll('.fx-threat-arrow').forEach(el => el.remove());
+}
+
+// ------ Game-over overlay ------
+
+function _showGameOverOverlay(result, data) {
+    _removeGameOverOverlay();
+    const container = _state.container;
+    if (!container) return;
+
+    const isVictory = result === 'victory';
+    const color = isVictory ? '#05ffa1' : '#ff2a6d';
+    const bgColor = isVictory ? 'rgba(5,255,161,0.03)' : 'rgba(255,42,109,0.03)';
+    const borderColor = isVictory ? 'rgba(5,255,161,0.3)' : 'rgba(255,42,109,0.3)';
+
+    const score = data.score || data.final_score || TritiumStore.get('game.score') || 0;
+    const wave = data.wave || TritiumStore.get('game.wave') || '?';
+    const eliminations = data.total_eliminations || TritiumStore.get('game.eliminations') || 0;
+
+    // Battle duration
+    let durationStr = '';
+    if (_state.battleStartTime) {
+        const elapsed = Math.floor((performance.now() - _state.battleStartTime) / 1000);
+        const mins = Math.floor(elapsed / 60);
+        const secs = elapsed % 60;
+        durationStr = mins + ':' + String(secs).padStart(2, '0');
+    }
+
+    const overlay = document.createElement('div');
+    overlay.className = 'fx-game-over-overlay';
+    overlay.style.cssText = [
+        'position:absolute; inset:0; pointer-events:none; z-index:200;',
+        'display:flex; flex-direction:column; align-items:center; justify-content:center;',
+        'background:radial-gradient(ellipse at center, ' + bgColor + ' 0%, rgba(0,0,0,0.6) 100%);',
+        'opacity:0; transition:opacity 1.5s ease-in;',
+    ].join('');
+
+    overlay.innerHTML = [
+        '<div style="text-align:center;animation:fx-streak-pop 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards">',
+        // Main result
+        '<div style="font-family:Inter,sans-serif;font-weight:900;font-size:56px;letter-spacing:8px;',
+        'color:' + color + ';text-shadow:0 0 30px ' + color + ',0 0 60px ' + color + '44,0 4px 12px #000;',
+        'text-transform:uppercase">' + (isVictory ? 'VICTORY' : 'DEFEAT') + '</div>',
+        // Subtitle
+        '<div style="font-family:\'JetBrains Mono\',monospace;font-size:14px;color:#aaa;',
+        'letter-spacing:3px;margin-top:8px">' + (isVictory ? 'ALL WAVES CLEARED' : 'PERIMETER BREACHED') + '</div>',
+        // Divider
+        '<div style="width:200px;height:1px;background:linear-gradient(90deg,transparent,' + color + ',transparent);',
+        'margin:20px auto"></div>',
+        // Stats grid
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 32px;margin-top:8px">',
+        _gameOverStat('SCORE', score.toLocaleString(), color),
+        _gameOverStat('WAVES', wave, '#00f0ff'),
+        _gameOverStat('ELIMINATIONS', eliminations, '#fcee0a'),
+        _gameOverStat('TIME', durationStr || '--', '#aaa'),
+        '</div>',
+        // MVP slot (populated async)
+        '<div class="fx-mvp-slot" style="text-align:center;margin-top:16px;min-height:40px"></div>',
+        // PLAY AGAIN button
+        '<div style="margin-top:24px">',
+        '<button class="fx-play-again-btn" style="',
+        'pointer-events:auto;cursor:pointer;',
+        'font-family:Inter,sans-serif;font-weight:700;font-size:16px;letter-spacing:3px;',
+        'color:' + color + ';background:transparent;',
+        'border:2px solid ' + color + ';border-radius:4px;',
+        'padding:10px 32px;text-transform:uppercase;',
+        'text-shadow:0 0 8px ' + color + '44;',
+        'box-shadow:0 0 12px ' + color + '33,inset 0 0 12px ' + color + '11;',
+        'transition:all 0.2s;',
+        '">PLAY AGAIN</button>',
+        '</div>',
+        '</div>',
+    ].join('');
+
+    container.appendChild(overlay);
+    requestAnimationFrame(() => { overlay.style.opacity = '1'; });
+
+    // Fetch MVP data and display it
+    fetch('/api/game/stats/mvp')
+        .then(r => r.json())
+        .then(d => {
+            if (d.status === 'ready' && d.mvp) {
+                const mvpEl = overlay.querySelector('.fx-mvp-slot');
+                if (mvpEl) {
+                    const m = d.mvp;
+                    mvpEl.innerHTML = '<span style="color:#666;font-size:10px;letter-spacing:2px">MVP</span>'
+                        + '<br><span style="color:#fcee0a;font-weight:700;font-size:16px;text-shadow:0 0 8px #fcee0a44">'
+                        + _escFx(m.name || m.unit_name || 'Unknown') + '</span>'
+                        + '<br><span style="color:#aaa;font-size:11px">'
+                        + (m.kills || 0) + ' kills'
+                        + (m.accuracy ? ' / ' + Math.round(m.accuracy * 100) + '% acc' : '')
+                        + '</span>';
+                }
+            }
+        })
+        .catch(() => {});
+
+    // PLAY AGAIN button handler
+    const playAgainBtn = overlay.querySelector('.fx-play-again-btn');
+    if (playAgainBtn) {
+        playAgainBtn.addEventListener('mouseenter', () => {
+            playAgainBtn.style.background = color + '22';
+            playAgainBtn.style.boxShadow = '0 0 20px ' + color + '66, inset 0 0 20px ' + color + '22';
+        });
+        playAgainBtn.addEventListener('mouseleave', () => {
+            playAgainBtn.style.background = 'transparent';
+            playAgainBtn.style.boxShadow = '0 0 12px ' + color + '33, inset 0 0 12px ' + color + '11';
+        });
+        playAgainBtn.addEventListener('click', () => {
+            _removeGameOverOverlay();
+            if (window._mapActions) {
+                window._mapActions.resetGame();
+                setTimeout(() => window._mapActions.beginWar(), 500);
+            }
+        });
+    }
+
+    // Auto-dismiss after 30s (longer to allow PLAY AGAIN click)
+    overlay._dismissTimer = setTimeout(() => _removeGameOverOverlay(), 30000);
+}
+
+function _gameOverStat(label, value, color) {
+    return [
+        '<div style="text-align:center">',
+        '<div style="font-family:\'JetBrains Mono\',monospace;font-size:10px;color:#666;letter-spacing:2px">' + label + '</div>',
+        '<div style="font-family:Inter,sans-serif;font-weight:700;font-size:22px;color:' + color + ';',
+        'text-shadow:0 0 8px ' + color + '44">' + value + '</div>',
+        '</div>',
+    ].join('');
+}
+
+function _removeGameOverOverlay() {
+    const container = _state.container;
+    if (!container) return;
+    const overlay = container.querySelector('.fx-game-over-overlay');
+    if (overlay) {
+        clearTimeout(overlay._dismissTimer);
+        overlay.style.opacity = '0';
+        setTimeout(() => overlay.remove(), 1000);
+    }
 }
 
 /**
@@ -5246,14 +5961,15 @@ function _addKillFeedEntry(killerName, targetName, weaponLabel) {
 
     const entry = document.createElement('div');
     entry.style.cssText = [
-        'background:rgba(6,6,9,0.85); border:1px solid #ff2a6d44;',
-        'border-left:3px solid #ff2a6d; padding:4px 10px;',
-        'font-family:"JetBrains Mono",monospace; font-size:11px;',
+        'background:rgba(6,6,9,0.9); border:1px solid #ff2a6d66;',
+        'border-left:4px solid #ff2a6d; padding:6px 12px;',
+        'font-family:"JetBrains Mono",monospace; font-size:13px;',
         'color:#eee; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;',
+        'box-shadow: 0 2px 8px rgba(0,0,0,0.4), inset 0 0 20px rgba(255,42,109,0.05);',
         'animation: fx-killfeed-in 0.3s ease-out;',
     ].join('');
     const weaponTag = weaponLabel
-        ? ' <span style="color:#fcee0a88;font-size:9px;letter-spacing:1px">[' + _escFx(weaponLabel) + ']</span> '
+        ? ' <span style="color:#fcee0a;font-size:10px;letter-spacing:1px">[' + _escFx(weaponLabel) + ']</span> '
         : ' ';
     entry.innerHTML = '<span style="color:#05ffa1">' + _escFx(killerName) + '</span>'
         + weaponTag
@@ -5346,6 +6062,22 @@ function _injectFxCss() {
         '  50% { opacity: 0.8; transform: scale(1.5); }',
         '  100% { opacity: 0; transform: scale(0.5); }',
         '}',
+        '@keyframes threat-arrow-pulse {',
+        '  0%, 100% { opacity: 0.6; filter: drop-shadow(0 0 12px rgba(255,42,109,0.3)); }',
+        '  50% { opacity: 1; filter: drop-shadow(0 0 24px rgba(255,42,109,0.6)); }',
+        '}',
+        '@keyframes threat-arrow-pulse-preview {',
+        '  0%, 100% { opacity: 0.2; }',
+        '  50% { opacity: 0.5; }',
+        '}',
+        '@keyframes wave-countdown-pulse {',
+        '  0%, 100% { opacity: 0.7; }',
+        '  50% { opacity: 1; }',
+        '}',
+        '@keyframes fx-scan-line {',
+        '  0% { top: 0; opacity: 1; }',
+        '  100% { top: 100%; opacity: 0.3; }',
+        '}',
     ].join('\n');
     document.head.appendChild(style);
 }
@@ -5430,6 +6162,83 @@ function _createLayerHud() {
     ].join('');
     _state.container.appendChild(_state.layerHud);
     _updateLayerHud();
+}
+
+// ============================================================
+// Compact Map Legend (bottom-left, always visible)
+// ============================================================
+
+function _createMapLegend() {
+    if (document.getElementById('map-legend')) return;
+    const legend = document.createElement('div');
+    legend.id = 'map-legend';
+    legend.title = 'Map Legend — click to expand/collapse';
+    legend.style.cssText = [
+        'position:absolute; bottom:28px; left:8px; z-index:10;',
+        'font-family:"JetBrains Mono",monospace; font-size:9px;',
+        'background:rgba(6,6,9,0.85); border:1px solid rgba(0,240,255,0.15);',
+        'border-radius:4px; padding:0; cursor:pointer;',
+        'pointer-events:auto; max-width:180px;',
+        'backdrop-filter:blur(4px);',
+    ].join('');
+
+    const header = document.createElement('div');
+    header.style.cssText = 'padding:4px 8px; color:#00f0ff; font-weight:bold; letter-spacing:0.5px; font-size:8px;';
+    header.textContent = 'LEGEND';
+    legend.appendChild(header);
+
+    const body = document.createElement('div');
+    body.style.cssText = 'padding:0 8px 6px; display:block;';
+
+    const entries = [
+        { color: '#05ffa1', shape: 'circle', label: 'Friendly' },
+        { color: '#ff2a6d', shape: 'square', label: 'Hostile' },
+        { color: '#00a0ff', shape: 'circle', label: 'Neutral' },
+        { color: '#fcee0a', shape: 'circle', label: 'Unknown' },
+        { type: 'sep' },
+        { color: '#05ffa1', shape: 'dashed', label: 'Patrol Route' },
+        { color: '#ff2a6d', shape: 'dashed', label: 'Hostile Objective' },
+        { color: '#00f0ff', shape: 'line', label: 'Building Outline' },
+    ];
+
+    for (const e of entries) {
+        if (e.type === 'sep') {
+            const sep = document.createElement('div');
+            sep.style.cssText = 'border-top:1px solid rgba(0,240,255,0.08); margin:3px 0;';
+            body.appendChild(sep);
+            continue;
+        }
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex; align-items:center; gap:5px; padding:1px 0; color:#8a9aaa;';
+        const icon = document.createElement('span');
+        if (e.shape === 'circle') {
+            icon.style.cssText = `width:7px; height:7px; border-radius:50%; background:${e.color}; flex-shrink:0;`;
+        } else if (e.shape === 'square') {
+            icon.style.cssText = `width:7px; height:7px; border-radius:1px; background:${e.color}; flex-shrink:0;`;
+        } else if (e.shape === 'dashed') {
+            icon.style.cssText = `width:14px; height:0; border-top:2px dashed ${e.color}; flex-shrink:0;`;
+        } else if (e.shape === 'line') {
+            icon.style.cssText = `width:14px; height:0; border-top:1.5px solid ${e.color}; flex-shrink:0;`;
+        }
+        const lbl = document.createElement('span');
+        lbl.textContent = e.label;
+        row.appendChild(icon);
+        row.appendChild(lbl);
+        body.appendChild(row);
+    }
+
+    legend.appendChild(body);
+
+    // Collapse toggle
+    let collapsed = false;
+    header.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        collapsed = !collapsed;
+        body.style.display = collapsed ? 'none' : 'block';
+        header.textContent = collapsed ? 'LEGEND +' : 'LEGEND';
+    });
+
+    _state.container.appendChild(legend);
 }
 
 // ============================================================
@@ -5523,6 +6332,9 @@ function _updateLayerHud() {
 
     // Persist layer prefs on every toggle
     _saveLayerPrefs();
+
+    // Notify Layers panel of state change
+    EventBus.emit('map:layers-changed');
 }
 
 // ============================================================
@@ -5647,6 +6459,7 @@ export function setMapMode(mode) {
                 grid: false,
                 waterways: true,
                 parks: true,
+                geoLayers: true,
             });
             if (_state.map) {
                 _state.map.easeTo({ pitch: 0, duration: 500 });
@@ -5665,6 +6478,7 @@ export function setMapMode(mode) {
                 grid: true,
                 waterways: true,
                 parks: true,
+                geoLayers: false,
             });
             if (_state.map) {
                 _state.map.easeTo({ pitch: 45, duration: 500 });
@@ -5681,6 +6495,7 @@ export function setMapMode(mode) {
                 grid: true,
                 waterways: false,
                 parks: false,
+                geoLayers: false,
             });
             if (_state.map) {
                 _state.map.easeTo({ pitch: 0, duration: 500 });
@@ -6191,6 +7006,21 @@ export function togglePatrolRoutes() {
 }
 
 /**
+ * Toggle GIS data layers (traffic signals, water towers, power lines, etc.)
+ */
+export function toggleGeoLayers() {
+    _state.showGeoLayers = !_state.showGeoLayers;
+    const vis = _state.showGeoLayers ? 'visible' : 'none';
+    for (const id of _state.geoLayerIds) {
+        if (_state.map && _state.map.getLayer(id)) {
+            try { _state.map.setLayoutProperty(id, 'visibility', vis); } catch (e) {}
+        }
+    }
+    _updateLayerHud();
+    console.log(`[MAP-ML] GIS Layers ${_state.showGeoLayers ? 'ON' : 'OFF'}`);
+}
+
+/**
  * Toggle NPC thought bubbles on/off.
  */
 export function toggleThoughts() {
@@ -6212,9 +7042,11 @@ export function toggleAllLayers() {
     const defaultOnKeys = [
         'showSatellite', 'showRoads', 'showBuildings', 'showWaterways', 'showParks',
         'showUnits', 'showLabels', 'showMesh', 'showPatrolRoutes',
+        'showHealthBars', 'showSelectionFx', 'showWeaponRange',
+        'showSquadHulls', 'showSwarmHull', 'showHostileObjectives', 'showHostileIntel',
+        'showHazardZones', 'showUnitSignals', 'showCrowdDensity', 'showThoughts',
         'showTracers', 'showExplosions', 'showParticles', 'showHitFlashes', 'showFloatingText',
         'showKillFeed', 'showScreenFx', 'showBanners', 'showLayerHud',
-        'showHealthBars', 'showSelectionFx',
     ];
     const onCount = defaultOnKeys.filter(k => _state[k]).length;
     const target = onCount <= defaultOnKeys.length / 2;
@@ -6225,7 +7057,10 @@ export function toggleAllLayers() {
     // Set the FX/overlay/decoration flags that setLayers doesn't cover
     const fxKeys = [
         'showGrid', 'showMesh', 'showPatrolRoutes',
-        'showHealthBars', 'showSelectionFx',
+        'showHealthBars', 'showSelectionFx', 'showWeaponRange',
+        'showSquadHulls', 'showSwarmHull', 'showHostileObjectives', 'showHostileIntel',
+        'showCoverPoints', 'showHazardZones', 'showUnitSignals', 'showCrowdDensity',
+        'showThoughts',
         'showTracers', 'showExplosions', 'showParticles', 'showHitFlashes', 'showFloatingText',
         'showKillFeed', 'showScreenFx', 'showBanners', 'showLayerHud',
         'showFog', 'showTerrain',
