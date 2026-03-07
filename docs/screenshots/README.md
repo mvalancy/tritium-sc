@@ -8,19 +8,31 @@
 
 ## Hero Images (README)
 
-These are referenced directly in the top-level README.md. Regenerate with `./test.sh docs`.
+These are referenced directly in the top-level README.md. Regenerate with `scripts/capture_hero_screenshots.py`.
 
-**command-center.jpg**
-![Command Center — real satellite imagery, AI-controlled units, live tactical panels](command-center.jpg)
+**command-center.png**
+![Command Center — real satellite imagery, AI-controlled units, live tactical panels](command-center.png)
 *Command Center — real satellite imagery, AI-controlled units, live tactical panels*
 
-**game-combat.jpg**
-![Wave-based Nerf combat — turrets engage hostile intruders with projectile physics and kill streaks](game-combat.jpg)
+**game-combat.png**
+![Wave-based Nerf combat — turrets engage hostile intruders with projectile physics and kill streaks](game-combat.png)
 *Wave-based Nerf combat — turrets engage hostile intruders with projectile physics and kill streaks*
 
-**neighborhood-wide.jpg**
-![Your neighborhood becomes the battlefield — same pipeline monitors real security](neighborhood-wide.jpg)
+**neighborhood-wide.png**
+![Your neighborhood becomes the battlefield — same pipeline monitors real security](neighborhood-wide.png)
 *Your neighborhood becomes the battlefield — same pipeline monitors real security*
+
+**tactical-mode.png**
+![Tactical mode — tilted 3D perspective with building outlines and unit positions](tactical-mode.png)
+*Tactical mode — tilted 3D perspective with building outlines and unit positions*
+
+**layer-browser.png**
+![Layer Browser — Google Earth-style panel with 37 toggleable map layers](layer-browser.png)
+*Layer Browser — Google Earth-style panel with 37 toggleable map layers*
+
+**layers-all-off.png**
+![All layers off — complete blackout demonstrates full layer control](layers-all-off.png)
+*All layers off — complete blackout demonstrates full layer control*
 
 ---
 

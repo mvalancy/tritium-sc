@@ -13,13 +13,13 @@
 
 **[ NERF WAR BATTLESPACE MANAGEMENT ]**
 
-![Command Center](docs/screenshots/command-center.jpg)
+![Command Center](docs/screenshots/command-center.png)
 *Command Center — real satellite imagery, AI-controlled units, live tactical panels*
 
-![Combat](docs/screenshots/game-combat.jpg)
+![Combat](docs/screenshots/game-combat.png)
 *Wave-based Nerf combat — turrets engage hostile intruders with projectile physics and kill streaks*
 
-![Neighborhood](docs/screenshots/neighborhood-wide.jpg)
+![Neighborhood](docs/screenshots/neighborhood-wide.png)
 *Your neighborhood becomes the battlefield — same pipeline monitors real security*
 
 `▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀`
