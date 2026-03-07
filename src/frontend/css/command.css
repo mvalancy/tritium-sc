@@ -1988,10 +1988,10 @@ body.v2 {
 .mode-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--green); }
 .mode-badge[data-mode="live"] .mode-dot { background: var(--magenta); }
 
-.game-score { display: flex; align-items: center; gap: 8px; }
-.score-label { font-size: 0.5rem; color: var(--text-ghost); letter-spacing: 0.1em; }
-.score-value { font-size: 0.7rem; color: var(--cyan); font-weight: 500; }
-.score-sep { width: 1px; height: 12px; background: var(--border); }
+.game-score { display: flex; align-items: center; gap: 12px; padding: 2px 8px; background: rgba(0,240,255,0.06); border: 1px solid rgba(0,240,255,0.15); border-radius: 3px; }
+.score-label { font-size: 0.55rem; color: var(--text-ghost); letter-spacing: 0.12em; text-transform: uppercase; }
+.score-value { font-size: 0.85rem; color: var(--cyan); font-weight: 700; text-shadow: 0 0 8px rgba(0,240,255,0.4); letter-spacing: 0.05em; }
+.score-sep { width: 1px; height: 16px; background: var(--border); }
 
 .connection-indicator { display: flex; align-items: center; gap: 4px; }
 .conn-dot { width: 6px; height: 6px; border-radius: 50%; background: #4a5568; transition: background 0.3s ease, box-shadow 0.3s ease; }
@@ -2354,14 +2354,23 @@ body.v2 {
 
 .game-over-panel {
     text-align: center;
-    padding: 32px 48px;
     background: linear-gradient(135deg, var(--surface-2) 0%, var(--surface-1) 100%);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
-    max-height: 85vh;
-    overflow-y: auto;
-    min-width: 420px;
+    max-height: 90vh;
+    min-width: 360px;
     max-width: 640px;
+    width: 90vw;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.go-scroll-area {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 24px 32px 8px;
 }
 
 .game-over-title {
@@ -2371,16 +2380,16 @@ body.v2 {
     color: var(--cyan);
     text-shadow: 0 0 30px rgba(0, 240, 255, 0.3);
     letter-spacing: 0.2em;
-    margin-bottom: 20px;
+    margin-bottom: 16px;
 }
 
-.game-over-stats { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+.game-over-stats { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 16px; }
 .go-stat { text-align: center; }
 .go-stat-label { font-size: 0.55rem; color: var(--text-dim); letter-spacing: 0.1em; display: block; margin-bottom: 4px; }
 .go-stat-value { font-size: 1.2rem; color: var(--text-primary); font-weight: 600; }
 
 /* Game Over: MVP Spotlight */
-.go-mvp-section { margin-bottom: 16px; }
+.go-mvp-section { margin-bottom: 12px; }
 
 .go-mvp-spotlight {
     text-align: center;
@@ -2427,7 +2436,7 @@ body.v2 {
 .go-mvp-acc { color: #fcee0a; font-weight: 600; }
 
 /* Game Over: Combat Stats Grid */
-.go-combat-section { margin-bottom: 16px; }
+.go-combat-section { margin-bottom: 12px; }
 
 .go-combat-stats {
     display: grid;
@@ -2460,7 +2469,17 @@ body.v2 {
 }
 
 /* Game Over: Unit Performance Table */
-.go-units-section { margin-bottom: 16px; }
+.go-units-section { margin-bottom: 12px; }
+
+/* Game Over: Button row — always pinned at bottom, never scrolled away */
+.go-button-row {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    padding: 12px 32px 20px;
+    flex-shrink: 0;
+    border-top: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+}
 
 .go-unit-table {
     width: 100%;
