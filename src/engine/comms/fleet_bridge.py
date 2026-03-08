@@ -321,6 +321,7 @@ class FleetBridge:
             try:
                 self._poll_devices(urllib.request, urllib.error)
                 self._poll_ble_presence(urllib.request, urllib.error)
+                self._poll_node_diagnostics(urllib.request, urllib.error)
             except Exception as e:
                 logger.debug(f"Fleet REST poll error: {e}")
             time.sleep(self._poll_interval)
@@ -364,3 +365,37 @@ class FleetBridge:
             pass  # BLE endpoint may not exist on all fleet servers
         except Exception as e:
             logger.debug(f"Fleet REST /api/presence/ble error: {e}")
+
+    def _poll_node_diagnostics(self, request_mod, error_mod) -> None:
+        """Poll each node's /api/diag endpoint directly for real-time diagnostics.
+
+        For each tracked device with an IP, fetch its diagnostic report and emit
+        fleet.node_diag events. This enables the command center to show per-node
+        health, anomalies, and diagnostic events in real time.
+        """
+        for device_id, dev_data in list(self._devices.items()):
+            ip = dev_data.get("ip")
+            port = dev_data.get("port", 80)
+            if not ip:
+                continue
+            url = f"http://{ip}:{port}/api/diag"
+            try:
+                req = request_mod.Request(url, method="GET")
+                req.add_header("Accept", "application/json")
+                with request_mod.urlopen(req, timeout=3) as resp:
+                    diag = json.loads(resp.read().decode())
+                    self._event_bus.publish("fleet.node_diag", {
+                        "device_id": device_id,
+                        "ip": ip,
+                        "diagnostics": diag,
+                    })
+                    # Check for anomalies and emit separate events
+                    anomalies = diag.get("anomalies", [])
+                    if anomalies:
+                        self._event_bus.publish("fleet.node_anomaly", {
+                            "device_id": device_id,
+                            "anomalies": anomalies,
+                            "count": len(anomalies),
+                        })
+            except (error_mod.URLError, Exception):
+                pass  # Node may be offline or diag not enabled
