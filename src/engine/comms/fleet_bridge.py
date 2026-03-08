@@ -87,6 +87,12 @@ class FleetBridge:
         self._dashboard: dict = {}
         # Fleet health report cache
         self._health_report: dict = {}
+        # Correlation events cache
+        self._correlations: dict = {}
+        # Network topology cache
+        self._topology: dict = {}
+        # Heap trend analysis cache
+        self._heap_trends: dict = {}
 
     @property
     def connected(self) -> bool:
@@ -109,6 +115,9 @@ class FleetBridge:
             "config_sync": dict(self._config_sync) if self._config_sync else {},
             "dashboard": dict(self._dashboard) if self._dashboard else {},
             "health_report": dict(self._health_report) if self._health_report else {},
+            "correlations": dict(self._correlations) if self._correlations else {},
+            "topology": dict(self._topology) if self._topology else {},
+            "heap_trends": dict(self._heap_trends) if self._heap_trends else {},
         }
 
     @property
@@ -135,6 +144,21 @@ class FleetBridge:
     def health_report(self) -> dict:
         """Return latest fleet health report from REST polling."""
         return dict(self._health_report)
+
+    @property
+    def correlations(self) -> dict:
+        """Return latest fleet correlation events from REST polling."""
+        return dict(self._correlations)
+
+    @property
+    def topology(self) -> dict:
+        """Return latest fleet network topology from REST polling."""
+        return dict(self._topology)
+
+    @property
+    def heap_trends(self) -> dict:
+        """Return latest fleet heap trend analysis from REST polling."""
+        return dict(self._heap_trends)
 
     def start(self) -> None:
         """Connect to fleet server WebSocket in a background thread."""
@@ -349,6 +373,9 @@ class FleetBridge:
                 self._poll_fleet_config(urllib.request, urllib.error)
                 self._poll_fleet_dashboard(urllib.request, urllib.error)
                 self._poll_fleet_health_report(urllib.request, urllib.error)
+                self._poll_fleet_correlations(urllib.request, urllib.error)
+                self._poll_fleet_topology(urllib.request, urllib.error)
+                self._poll_fleet_heap_trends(urllib.request, urllib.error)
             except Exception as e:
                 logger.debug(f"Fleet REST poll error: {e}")
             time.sleep(self._poll_interval)
@@ -523,3 +550,78 @@ class FleetBridge:
             pass  # Health report endpoint may not exist on all fleet servers
         except Exception as e:
             logger.debug(f"Fleet REST /api/fleet/health-report error: {e}")
+
+    def _poll_fleet_correlations(self, request_mod, error_mod) -> None:
+        """GET /api/fleet/correlations and emit fleet.correlations.
+
+        Fetches cross-node event correlations: synchronized reboots,
+        cascading failures, and other correlated events with confidence
+        scores for the command center alerting UI.
+        """
+        url = f"{self._rest_url}/api/fleet/correlations"
+        try:
+            req = request_mod.Request(url, method="GET")
+            req.add_header("Accept", "application/json")
+            with request_mod.urlopen(req, timeout=5) as resp:
+                raw = json.loads(resp.read().decode())
+                data = raw if isinstance(raw, dict) else {"correlations": raw}
+                self._correlations = data
+                correlations = data.get("correlations", [])
+                self._event_bus.publish("fleet.correlations", {
+                    "correlations": correlations,
+                    "count": len(correlations),
+                })
+        except error_mod.URLError:
+            pass  # Correlations endpoint may not exist on all fleet servers
+        except Exception as e:
+            logger.debug(f"Fleet REST /api/fleet/correlations error: {e}")
+
+    def _poll_fleet_topology(self, request_mod, error_mod) -> None:
+        """GET /api/fleet/topology and emit fleet.topology.
+
+        Fetches the fleet network topology graph with node connectivity,
+        link quality metrics, and network structure for visualization
+        in the command center.
+        """
+        url = f"{self._rest_url}/api/fleet/topology"
+        try:
+            req = request_mod.Request(url, method="GET")
+            req.add_header("Accept", "application/json")
+            with request_mod.urlopen(req, timeout=5) as resp:
+                raw = json.loads(resp.read().decode())
+                data = raw if isinstance(raw, dict) else {"nodes": raw}
+                self._topology = data
+                self._event_bus.publish("fleet.topology", {
+                    "nodes": data.get("nodes", []),
+                    "edges": data.get("edges", []),
+                })
+        except error_mod.URLError:
+            pass  # Topology endpoint may not exist on all fleet servers
+        except Exception as e:
+            logger.debug(f"Fleet REST /api/fleet/topology error: {e}")
+
+    def _poll_fleet_heap_trends(self, request_mod, error_mod) -> None:
+        """GET /api/fleet/heap-trends and emit fleet.heap_trends.
+
+        Fetches per-node heap memory trend analysis including suspected
+        memory leaks, trend direction, and projected time-to-exhaustion.
+        """
+        url = f"{self._rest_url}/api/fleet/heap-trends"
+        try:
+            req = request_mod.Request(url, method="GET")
+            req.add_header("Accept", "application/json")
+            with request_mod.urlopen(req, timeout=5) as resp:
+                raw = json.loads(resp.read().decode())
+                data = raw if isinstance(raw, dict) else {"trends": raw}
+                self._heap_trends = data
+                trends = data.get("trends", [])
+                leak_suspects = data.get("leak_suspects", [])
+                self._event_bus.publish("fleet.heap_trends", {
+                    "trends": trends,
+                    "leak_suspects": leak_suspects,
+                    "count": len(trends),
+                })
+        except error_mod.URLError:
+            pass  # Heap trends endpoint may not exist on all fleet servers
+        except Exception as e:
+            logger.debug(f"Fleet REST /api/fleet/heap-trends error: {e}")

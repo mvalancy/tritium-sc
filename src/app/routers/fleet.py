@@ -185,6 +185,89 @@ async def fleet_health_report(request: Request):
     }
 
 
+@router.get("/correlations")
+async def fleet_correlations(request: Request):
+    """GET /api/fleet/correlations — cross-node event correlations.
+
+    Proxies to the fleet server /api/fleet/correlations endpoint.
+    Returns synchronized reboots, cascading failures, and other
+    correlated events across the fleet with confidence scores.
+    """
+    base = _get_fleet_url(request)
+    data = _proxy_get(f"{base}/api/fleet/correlations")
+
+    if data is not None:
+        return {**data, "source": "live"} if isinstance(data, dict) else {"correlations": data, "source": "live"}
+
+    # Fallback: cached correlations from bridge
+    bridge = getattr(request.app.state, "fleet_bridge", None)
+    if bridge is not None:
+        cached = getattr(bridge, "correlations", {})
+        if cached:
+            return {**cached, "source": "cached"}
+
+    return {
+        "correlations": [],
+        "count": 0,
+        "source": "unavailable",
+    }
+
+
+@router.get("/topology")
+async def fleet_topology(request: Request):
+    """GET /api/fleet/topology — fleet network topology and connectivity.
+
+    Proxies to the fleet server /api/fleet/topology endpoint.
+    Returns node connectivity graph, link quality, and network structure.
+    """
+    base = _get_fleet_url(request)
+    data = _proxy_get(f"{base}/api/fleet/topology")
+
+    if data is not None:
+        return {**data, "source": "live"} if isinstance(data, dict) else {"nodes": data, "source": "live"}
+
+    # Fallback: cached topology from bridge
+    bridge = getattr(request.app.state, "fleet_bridge", None)
+    if bridge is not None:
+        cached = getattr(bridge, "topology", {})
+        if cached:
+            return {**cached, "source": "cached"}
+
+    return {
+        "nodes": [],
+        "edges": [],
+        "source": "unavailable",
+    }
+
+
+@router.get("/heap-trends")
+async def fleet_heap_trends(request: Request):
+    """GET /api/fleet/heap-trends — per-node heap memory trend analysis.
+
+    Proxies to the fleet server /api/fleet/heap-trends endpoint.
+    Returns heap usage trends, suspected memory leaks, and trend
+    direction for each tracked node.
+    """
+    base = _get_fleet_url(request)
+    data = _proxy_get(f"{base}/api/fleet/heap-trends")
+
+    if data is not None:
+        return {**data, "source": "live"} if isinstance(data, dict) else {"trends": data, "source": "live"}
+
+    # Fallback: cached heap trends from bridge
+    bridge = getattr(request.app.state, "fleet_bridge", None)
+    if bridge is not None:
+        cached = getattr(bridge, "heap_trends", {})
+        if cached:
+            return {**cached, "source": "cached"}
+
+    return {
+        "trends": [],
+        "leak_suspects": [],
+        "source": "unavailable",
+    }
+
+
 @router.get("/node/{device_id}")
 async def fleet_node_detail(request: Request, device_id: str):
     """GET /api/fleet/node/{device_id} — detail for a specific edge node.

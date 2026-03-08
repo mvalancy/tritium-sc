@@ -191,6 +191,26 @@ export const FleetPanelDef = {
                 <div class="panel-section-label" style="color:var(--magenta)">FLEET ANOMALIES</div>
                 <div data-bind="anomaly-list"></div>
             </div>
+            <div class="fleet-correlation-bar" data-bind="correlation-bar" style="display:none">
+                <div class="panel-section-label" style="color:var(--cyan, #00e5ff)">CORRELATION EVENTS</div>
+                <div data-bind="correlation-list"></div>
+            </div>
+            <div class="fleet-heap-bar" data-bind="heap-bar" style="display:none">
+                <div class="panel-section-label" style="color:var(--yellow, #fcee0a)">HEAP TREND WARNINGS</div>
+                <div data-bind="heap-list"></div>
+            </div>
+            <div class="fleet-topology-bar" data-bind="topology-bar" style="display:none">
+                <div class="panel-section-label" style="color:var(--cyan, #00e5ff)">NETWORK TOPOLOGY</div>
+                <div class="panel-stat-row">
+                    <span class="panel-stat-label">NODES</span>
+                    <span class="panel-stat-value mono" data-bind="topo-nodes">--</span>
+                </div>
+                <div class="panel-stat-row">
+                    <span class="panel-stat-label">EDGES</span>
+                    <span class="panel-stat-value mono" data-bind="topo-edges">--</span>
+                </div>
+                <div data-bind="topo-detail"></div>
+            </div>
             <div class="fleet-status-bar" data-bind="status">
                 <span class="panel-dot panel-dot-neutral" data-bind="status-dot"></span>
                 <span class="mono" data-bind="status-label">POLLING</span>
@@ -220,6 +240,14 @@ export const FleetPanelDef = {
         const anomalyListEl = bodyEl.querySelector('[data-bind="anomaly-list"]');
         const mapPlaceholder = bodyEl.querySelector('[data-bind="map-placeholder"]');
         const mapNodeCount = bodyEl.querySelector('[data-bind="map-node-count"]');
+        const correlationBar = bodyEl.querySelector('[data-bind="correlation-bar"]');
+        const correlationListEl = bodyEl.querySelector('[data-bind="correlation-list"]');
+        const heapBar = bodyEl.querySelector('[data-bind="heap-bar"]');
+        const heapListEl = bodyEl.querySelector('[data-bind="heap-list"]');
+        const topologyBar = bodyEl.querySelector('[data-bind="topology-bar"]');
+        const topoNodesEl = bodyEl.querySelector('[data-bind="topo-nodes"]');
+        const topoEdgesEl = bodyEl.querySelector('[data-bind="topo-edges"]');
+        const topoDetailEl = bodyEl.querySelector('[data-bind="topo-detail"]');
 
         // node tracking: device_id -> merged node data
         let nodes = {};
@@ -699,6 +727,123 @@ export const FleetPanelDef = {
             }
         }
 
+        // --- Correlation events handler ---
+        function onCorrelations(data) {
+            if (!data) return;
+            const correlations = data.correlations || [];
+            if (correlations.length === 0) {
+                if (correlationBar) correlationBar.style.display = 'none';
+                return;
+            }
+            if (correlationBar) correlationBar.style.display = '';
+            if (correlationListEl) {
+                correlationListEl.innerHTML = correlations.map(c => {
+                    const type = _esc((c.type || c.event_type || 'UNKNOWN').toUpperCase());
+                    const affected = (c.affected_nodes || c.devices || []).map(d => _esc(d)).join(', ') || '--';
+                    const confidence = c.confidence !== undefined ? Math.round(c.confidence * 100) : null;
+                    const confidenceStr = confidence !== null ? `${confidence}%` : '';
+                    const confidenceClr = confidence !== null
+                        ? (confidence >= 80 ? 'var(--magenta)' : confidence >= 50 ? 'var(--yellow, #fcee0a)' : 'var(--text-dim, #888)')
+                        : 'var(--text-dim, #888)';
+                    const ts = c.timestamp ? _timeAgo(c.timestamp) : c.detected_at ? _timeAgo(c.detected_at) : '';
+                    const desc = _esc(c.description || c.message || '');
+                    return `<div class="fleet-correlation-row" style="margin-bottom:6px;padding:4px 0;border-bottom:1px solid rgba(0,229,255,0.1)">
+                        <div style="display:flex;justify-content:space-between;align-items:center">
+                            <span class="mono" style="color:var(--cyan, #00e5ff);font-weight:bold">${type}</span>
+                            ${confidenceStr ? `<span class="mono" style="color:${confidenceClr};font-size:0.85em" title="Confidence score">CONF ${confidenceStr}</span>` : ''}
+                        </div>
+                        ${desc ? `<div class="mono" style="font-size:0.85em;color:var(--text, #ddd);margin-top:2px">${desc}</div>` : ''}
+                        <div style="display:flex;justify-content:space-between;margin-top:2px">
+                            <span class="mono" style="font-size:0.8em;color:var(--text-dim, #888)">NODES: ${affected}</span>
+                            ${ts ? `<span class="mono" style="font-size:0.8em;color:var(--text-dim, #888)">${ts}</span>` : ''}
+                        </div>
+                    </div>`;
+                }).join('');
+            }
+        }
+
+        // --- Heap trends handler ---
+        function onHeapTrends(data) {
+            if (!data) return;
+            const trends = data.trends || [];
+            const leakSuspects = data.leak_suspects || [];
+            // Show bar if there are any leak suspects or declining trends
+            const warnings = trends.filter(t =>
+                t.trend === 'declining' || t.suspected_leak === true
+            );
+            const allWarnings = [...leakSuspects.map(s => ({
+                device_id: s.device_id || s.id,
+                suspected_leak: true,
+                rate_bytes_per_min: s.rate_bytes_per_min || s.leak_rate,
+                projected_exhaustion_min: s.projected_exhaustion_min || s.time_to_exhaustion,
+                current_heap: s.current_heap,
+                ...s,
+            })), ...warnings];
+
+            if (allWarnings.length === 0) {
+                if (heapBar) heapBar.style.display = 'none';
+                return;
+            }
+            if (heapBar) heapBar.style.display = '';
+            if (heapListEl) {
+                // Deduplicate by device_id
+                const seen = new Set();
+                const unique = allWarnings.filter(w => {
+                    const id = w.device_id || w.id || '';
+                    if (seen.has(id)) return false;
+                    seen.add(id);
+                    return true;
+                });
+                heapListEl.innerHTML = unique.map(w => {
+                    const id = _esc(w.device_id || w.id || '--');
+                    const isLeak = w.suspected_leak === true;
+                    const rate = w.rate_bytes_per_min !== undefined
+                        ? `${Math.round(w.rate_bytes_per_min)} B/min`
+                        : '--';
+                    const exhaust = w.projected_exhaustion_min !== undefined
+                        ? `${Math.round(w.projected_exhaustion_min)}m`
+                        : '--';
+                    const heap = w.current_heap !== undefined ? _formatBytes(w.current_heap) : '--';
+                    const sevClr = isLeak ? 'var(--magenta)' : 'var(--yellow, #fcee0a)';
+                    const label = isLeak ? 'LEAK SUSPECT' : 'DECLINING';
+                    return `<div class="panel-stat-row" style="color:${sevClr}">
+                        <span class="panel-stat-label mono">${id}</span>
+                        <span class="panel-stat-value mono">${label} | ${heap} | ${rate} | ETA ${exhaust}</span>
+                    </div>`;
+                }).join('');
+            }
+        }
+
+        // --- Topology handler ---
+        function onTopology(data) {
+            if (!data) return;
+            const nodes = data.nodes || [];
+            const edges = data.edges || [];
+            if (nodes.length === 0 && edges.length === 0) {
+                if (topologyBar) topologyBar.style.display = 'none';
+                return;
+            }
+            if (topologyBar) topologyBar.style.display = '';
+            if (topoNodesEl) topoNodesEl.textContent = `${nodes.length}`;
+            if (topoEdgesEl) topoEdgesEl.textContent = `${edges.length}`;
+            if (topoDetailEl) {
+                topoDetailEl.innerHTML = edges.map(e => {
+                    const from = _esc(e.from || e.source || '--');
+                    const to = _esc(e.to || e.target || '--');
+                    const quality = e.quality !== undefined ? Math.round(e.quality * 100) : null;
+                    const qualityClr = quality !== null
+                        ? (quality >= 80 ? 'var(--green)' : quality >= 50 ? 'var(--yellow, #fcee0a)' : 'var(--magenta)')
+                        : 'var(--text-dim, #888)';
+                    const latency = e.latency_ms !== undefined ? `${e.latency_ms}ms` : '';
+                    const linkType = _esc(e.type || e.link_type || 'wifi');
+                    return `<div class="panel-stat-row">
+                        <span class="panel-stat-label mono" style="color:var(--cyan, #00e5ff)">${from} → ${to}</span>
+                        <span class="panel-stat-value mono">${linkType.toUpperCase()}${quality !== null ? ` <span style="color:${qualityClr}">${quality}%</span>` : ''}${latency ? ` ${latency}` : ''}</span>
+                    </div>`;
+                }).join('');
+            }
+        }
+
         // --- Health report handler ---
         function onHealthReport(data) {
             if (!data) return;
@@ -776,6 +921,33 @@ export const FleetPanelDef = {
             } catch (_) {}
         }
 
+        async function fetchCorrelations() {
+            try {
+                const res = await fetch('/api/fleet/correlations');
+                if (!res.ok) return;
+                const data = await res.json();
+                onCorrelations(data);
+            } catch (_) {}
+        }
+
+        async function fetchTopology() {
+            try {
+                const res = await fetch('/api/fleet/topology');
+                if (!res.ok) return;
+                const data = await res.json();
+                onTopology(data);
+            } catch (_) {}
+        }
+
+        async function fetchHeapTrends() {
+            try {
+                const res = await fetch('/api/fleet/heap-trends');
+                if (!res.ok) return;
+                const data = await res.json();
+                onHeapTrends(data);
+            } catch (_) {}
+        }
+
         // --- EventBus subscriptions ---
         panel._unsubs.push(
             EventBus.on('fleet:heartbeat', onHeartbeat),
@@ -796,6 +968,9 @@ export const FleetPanelDef = {
             EventBus.on('fleet:dashboard', onDashboard),
             EventBus.on('fleet:health_report', onHealthReport),
             EventBus.on('fleet:anomalies', onFleetAnomalies),
+            EventBus.on('fleet:correlations', onCorrelations),
+            EventBus.on('fleet:topology', onTopology),
+            EventBus.on('fleet:heap_trends', onHeapTrends),
         );
 
         // Refresh button — fetch all data sources
@@ -805,6 +980,9 @@ export const FleetPanelDef = {
                 fetchHealthReport();
                 fetchDashboard();
                 fetchConfigSync();
+                fetchCorrelations();
+                fetchTopology();
+                fetchHeapTrends();
             });
         }
 
@@ -812,14 +990,23 @@ export const FleetPanelDef = {
         const refreshInterval = setInterval(() => {
             fetchNodes();
             fetchHealthReport();
+            fetchCorrelations();
+            fetchHeapTrends();
         }, 10000);
         panel._unsubs.push(() => clearInterval(refreshInterval));
+
+        // Topology refreshes less frequently (every 30s)
+        const topoInterval = setInterval(fetchTopology, 30000);
+        panel._unsubs.push(() => clearInterval(topoInterval));
 
         // Initial fetch
         fetchNodes();
         fetchHealthReport();
         fetchConfigSync();
         fetchDashboard();
+        fetchCorrelations();
+        fetchTopology();
+        fetchHeapTrends();
         updateStatusBar();
     },
 
