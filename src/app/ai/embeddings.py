@@ -16,12 +16,16 @@ try:
     from PIL import Image
     TORCH_AVAILABLE = True
 except ImportError:
+    torch = None  # type: ignore[assignment]
+    Image = None  # type: ignore[assignment,misc]
     TORCH_AVAILABLE = False
 
 try:
     from transformers import CLIPProcessor, CLIPModel
     CLIP_AVAILABLE = True
 except ImportError:
+    CLIPProcessor = None  # type: ignore[assignment,misc]
+    CLIPModel = None  # type: ignore[assignment,misc]
     CLIP_AVAILABLE = False
     logger.warning("CLIP not available. Run: pip install transformers")
 

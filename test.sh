@@ -401,7 +401,7 @@ main() {
     set +e
     case "${1:-}" in
         ""|fast)
-            tier1_syntax; tier2_unit; tier3_js; tier8_lib; tier8b_ros2; tier11_smoke ;;
+            tier1_syntax; tier2_unit; tier3_js; tier8_lib; tier8b_ros2 ;;
         all)
             tier1_syntax; tier2_unit; tier3_js; tier4_vision; tier4_gameplay; tier5_e2e; tier6_battle; tier7_visual; tier8_lib; tier8b_ros2; tier9_integration; tier10_quality; tier11_smoke; tier13_ux; tier14_defects; tier15_alignment; tier16_layer_isolation; tier17_ui_isolation; tier18_defense; tier19_user_stories; tier20_ui_overlap; tier21_panel_coverage; tier22_combat_effects ;;
         1) tier1_syntax ;;

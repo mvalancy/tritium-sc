@@ -12,8 +12,19 @@ import struct
 import tempfile
 from pathlib import Path
 
+import importlib
+
 import numpy as np
 import pytest
+
+
+def _has_module(name: str) -> bool:
+    """Check if a Python module is importable."""
+    try:
+        importlib.import_module(name)
+        return True
+    except ImportError:
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -226,6 +237,9 @@ class TestWavIO:
         from engine.audio.sound_effects import SoundEffectGenerator
         self.gen = SoundEffectGenerator()
 
+    @pytest.mark.skipif(
+        not _has_module("scipy"), reason="scipy not installed"
+    )
     def test_write_wav_scipy(self):
         """Write WAV with scipy, read back, verify PCM16 data."""
         audio = self.gen.nerf_shot(duration=0.3)
