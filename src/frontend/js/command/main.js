@@ -37,6 +37,7 @@ import { TakPanelDef } from './panels/tak.js';
 import { VideosPanelDef } from './panels/videos.js';
 import { ZonesPanelDef } from './panels/zones.js';
 import { LayersPanelDef } from './panels/layers.js';
+import { FleetPanelDef } from './panels/fleet.js';
 import { MissionModal, initMissionModal } from './mission-modal.js';
 
 // Make available on window for console debugging
@@ -449,6 +450,7 @@ function initPanelSystem(container) {
     panelManager.register(VideosPanelDef);
     panelManager.register(ZonesPanelDef);
     panelManager.register(LayersPanelDef);
+    panelManager.register(FleetPanelDef);
 
     // panel:request-open — allows map click to open panels by id
     EventBus.on('panel:request-open', (data) => {

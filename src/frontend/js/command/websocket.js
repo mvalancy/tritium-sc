@@ -695,6 +695,35 @@ export class WebSocketManager {
                 EventBus.emit('tak:geochat', msg.data || msg);
                 break;
 
+            // -- Fleet bridge events (tritium-edge sensor nodes) --------
+            case 'fleet_heartbeat':
+                EventBus.emit('fleet:heartbeat', msg.data || msg);
+                break;
+
+            case 'fleet_device_update':
+                EventBus.emit('fleet:device_update', msg.data || msg);
+                break;
+
+            case 'fleet_ble_presence':
+                EventBus.emit('fleet:ble_presence', msg.data || msg);
+                break;
+
+            case 'fleet_registered':
+                EventBus.emit('fleet:registered', msg.data || msg);
+                break;
+
+            case 'fleet_offline':
+                EventBus.emit('fleet:offline', msg.data || msg);
+                break;
+
+            case 'fleet_connected':
+                EventBus.emit('fleet:connected', msg.data || msg);
+                break;
+
+            case 'fleet_disconnected':
+                EventBus.emit('fleet:disconnected', msg.data || msg);
+                break;
+
             case 'mission_progress':
             case 'amy_mission_progress':
                 EventBus.emit('mission:progress', msg.data || msg);

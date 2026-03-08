@@ -112,6 +112,7 @@ class Settings(BaseSettings):
     # Fleet bridge — WebSocket connection to tritium-edge fleet server
     fleet_bridge_enabled: bool = False
     fleet_bridge_url: str = "ws://192.168.86.9:8080/ws"
+    fleet_server_url: str = "http://192.168.86.9:8080"  # REST base URL for edge fleet server
 
     # Backstory generation (distributed via Ollama fleet)
     backstory_enabled: bool = True

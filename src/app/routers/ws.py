@@ -377,6 +377,17 @@ def start_amy_event_bridge(amy_commander, loop: asyncio.AbstractEventLoop):
                         }),
                         loop,
                     )
+                elif event_type.startswith("fleet."):
+                    # Fleet bridge events pass through as fleet_* for frontend.
+                    ws_type = event_type.replace(".", "_")
+                    asyncio.run_coroutine_threadsafe(
+                        manager.broadcast({
+                            "type": ws_type,
+                            "data": data,
+                            "timestamp": datetime.now(tz=None).isoformat(),
+                        }),
+                        loop,
+                    )
                 elif event_type.startswith("mesh_"):
                     # Mesh events pass through without prefix mangling.
                     asyncio.run_coroutine_threadsafe(
@@ -521,6 +532,16 @@ def start_headless_event_bridge(event_bus, loop: asyncio.AbstractEventLoop,
                 ):
                     asyncio.run_coroutine_threadsafe(
                         broadcast_amy_event(event_type, data), loop
+                    )
+                elif event_type.startswith("fleet."):
+                    ws_type = event_type.replace(".", "_")
+                    asyncio.run_coroutine_threadsafe(
+                        manager.broadcast({
+                            "type": ws_type,
+                            "data": data,
+                            "timestamp": datetime.now(tz=None).isoformat(),
+                        }),
+                        loop,
                     )
                 elif event_type.startswith("mesh_"):
                     asyncio.run_coroutine_threadsafe(

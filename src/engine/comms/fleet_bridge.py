@@ -49,17 +49,29 @@ class FleetBridge:
         self,
         event_bus: EventBus,
         ws_url: str = "ws://192.168.86.9:8080/ws",
+        rest_url: str | None = None,
         reconnect_interval: float = 5.0,
         ping_interval: float = 30.0,
+        poll_interval: float = 10.0,
     ) -> None:
         self._event_bus = event_bus
         self._ws_url = ws_url
+        # Derive REST base URL from ws_url if not explicitly provided
+        if rest_url is not None:
+            self._rest_url = rest_url.rstrip("/")
+        else:
+            # ws://host:port/ws -> http://host:port
+            self._rest_url = ws_url.replace("ws://", "http://").replace("wss://", "https://").rstrip("/")
+            if self._rest_url.endswith("/ws"):
+                self._rest_url = self._rest_url[:-3]
         self._reconnect_interval = reconnect_interval
         self._ping_interval = ping_interval
+        self._poll_interval = poll_interval
         self._ws = None
         self._connected = False
         self._running = False
         self._thread: threading.Thread | None = None
+        self._poll_thread: threading.Thread | None = None
         self._lock = threading.Lock()
         # Stats
         self._messages_received: int = 0
@@ -67,10 +79,17 @@ class FleetBridge:
         self._last_heartbeat_ts: float = 0.0
         # Device tracking: device_id -> last heartbeat data
         self._devices: dict[str, dict] = {}
+        # BLE presence cache from REST polling
+        self._ble_presence: list[dict] = []
 
     @property
     def connected(self) -> bool:
         return self._connected
+
+    @property
+    def rest_url(self) -> str:
+        """Derive REST base URL from WebSocket URL."""
+        return self._rest_url
 
     @property
     def stats(self) -> dict:
@@ -87,6 +106,11 @@ class FleetBridge:
     def devices(self) -> dict[str, dict]:
         """Return dict of tracked devices (device_id -> last heartbeat data)."""
         return dict(self._devices)
+
+    @property
+    def ble_presence(self) -> list[dict]:
+        """Return latest BLE presence data from REST polling."""
+        return list(self._ble_presence)
 
     def start(self) -> None:
         """Connect to fleet server WebSocket in a background thread."""
@@ -106,6 +130,15 @@ class FleetBridge:
             daemon=True,
         )
         self._thread.start()
+
+        # Start REST polling thread for /api/devices and /api/presence/ble
+        self._poll_thread = threading.Thread(
+            target=self._poll_loop,
+            name="fleet-poll",
+            daemon=True,
+        )
+        self._poll_thread.start()
+
         logger.info(f"Fleet bridge starting, target: {self._ws_url}")
 
     def stop(self) -> None:
@@ -276,3 +309,58 @@ class FleetBridge:
             "server_timestamp": timestamp,
         })
         logger.info(f"Fleet device offline: {device_id}")
+
+    # --- REST polling loop ---
+
+    def _poll_loop(self) -> None:
+        """Poll fleet server REST API for device list and BLE presence."""
+        import urllib.request
+        import urllib.error
+
+        while self._running:
+            try:
+                self._poll_devices(urllib.request, urllib.error)
+                self._poll_ble_presence(urllib.request, urllib.error)
+            except Exception as e:
+                logger.debug(f"Fleet REST poll error: {e}")
+            time.sleep(self._poll_interval)
+
+    def _poll_devices(self, request_mod, error_mod) -> None:
+        """GET /api/devices and emit fleet.device_update."""
+        url = f"{self._rest_url}/api/devices"
+        try:
+            req = request_mod.Request(url, method="GET")
+            req.add_header("Accept", "application/json")
+            with request_mod.urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read().decode())
+                devices = data if isinstance(data, list) else data.get("devices", [])
+                for dev in devices:
+                    device_id = dev.get("device_id") or dev.get("id", "unknown")
+                    self._devices[device_id] = dev
+                self._event_bus.publish("fleet.device_update", {
+                    "devices": devices,
+                    "count": len(devices),
+                })
+        except error_mod.URLError as e:
+            logger.debug(f"Fleet REST /api/devices failed: {e}")
+        except Exception as e:
+            logger.debug(f"Fleet REST /api/devices error: {e}")
+
+    def _poll_ble_presence(self, request_mod, error_mod) -> None:
+        """GET /api/presence/ble and emit fleet.ble_presence."""
+        url = f"{self._rest_url}/api/presence/ble"
+        try:
+            req = request_mod.Request(url, method="GET")
+            req.add_header("Accept", "application/json")
+            with request_mod.urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read().decode())
+                devices = data if isinstance(data, list) else data.get("devices", [])
+                self._ble_presence = devices
+                self._event_bus.publish("fleet.ble_presence", {
+                    "devices": devices,
+                    "count": len(devices),
+                })
+        except error_mod.URLError:
+            pass  # BLE endpoint may not exist on all fleet servers
+        except Exception as e:
+            logger.debug(f"Fleet REST /api/presence/ble error: {e}")

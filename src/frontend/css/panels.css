@@ -2795,3 +2795,91 @@
 .legend-square {
     border-radius: 2px;
 }
+
+/* ============================================================
+   Fleet Nodes Panel
+   ============================================================ */
+.fleet-panel-inner {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+}
+.fleet-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--border, rgba(0,240,255,0.15));
+}
+.fleet-node-count {
+    font-size: 0.8em;
+    color: var(--cyan, #00f0ff);
+}
+.fleet-node-list {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+}
+.fleet-node-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+}
+.fleet-node-item:hover {
+    background: rgba(0, 240, 255, 0.06);
+}
+.fleet-node-item.active {
+    background: rgba(0, 240, 255, 0.12);
+    border-left: 2px solid var(--cyan, #00f0ff);
+}
+.fleet-node-id {
+    font-size: 0.8em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.fleet-node-meta {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    white-space: nowrap;
+}
+.fleet-rssi-bar {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    width: 50px;
+    height: 8px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 2px;
+    overflow: hidden;
+    position: relative;
+}
+.fleet-rssi-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.3s;
+}
+.fleet-rssi-label {
+    font-size: 0.7em;
+    color: var(--text-dim, #888);
+    margin-left: 4px;
+}
+.fleet-node-detail {
+    border-top: 1px solid var(--border, rgba(0,240,255,0.15));
+    padding: 6px 8px;
+    overflow-y: auto;
+    max-height: 50%;
+    font-size: 0.85em;
+}
+.fleet-status-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    border-top: 1px solid var(--border, rgba(0,240,255,0.15));
+    font-size: 0.75em;
+    color: var(--text-dim, #888);
+}

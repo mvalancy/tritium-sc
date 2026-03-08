@@ -40,6 +40,7 @@ from app.routers.npc import router as npc_router
 from app.routers.plugins import router as plugins_router
 from app.routers.devices import router as devices_router
 from app.routers.tak import router as tak_router
+from app.routers.fleet import router as fleet_router
 
 
 # ---------------------------------------------------------------------------
@@ -213,6 +214,7 @@ def _start_fleet_bridge(amy_instance) -> object | None:
         bridge = FleetBridge(
             event_bus=amy_instance.event_bus,
             ws_url=settings.fleet_bridge_url,
+            rest_url=settings.fleet_server_url,
         )
         bridge.start()
         logger.info(f"Fleet bridge started ({settings.fleet_bridge_url})")
@@ -716,6 +718,7 @@ app.include_router(npc_router)
 app.include_router(plugins_router)
 app.include_router(devices_router)
 app.include_router(tak_router)
+app.include_router(fleet_router)
 
 # Static files
 frontend_path = Path(__file__).parent.parent / "frontend"
