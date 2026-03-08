@@ -106,6 +106,26 @@ function _formatUptime(seconds) {
     return `${m}m`;
 }
 
+function _meshRssiBar(rssi) {
+    if (rssi === undefined || rssi === null) return '--';
+    // Mesh RSSI: -30 (excellent) to -100 (poor)
+    const clamped = Math.max(-100, Math.min(-30, rssi));
+    const pct = Math.round(((clamped + 100) / 70) * 100);
+    const color = pct > 60 ? 'var(--green)' : pct > 30 ? 'var(--yellow, #fcee0a)' : 'var(--magenta)';
+    return `<span class="fleet-rssi-bar" title="${rssi} dBm">
+        <span class="fleet-rssi-fill" style="width:${pct}%;background:${color}"></span>
+        <span class="fleet-rssi-label mono">${rssi}</span>
+    </span>`;
+}
+
+function _hopCountLabel(hops) {
+    if (hops === undefined || hops === null) return '--';
+    if (hops === 0) return '<span style="color:var(--green)">direct</span>';
+    if (hops === 1) return '<span style="color:var(--cyan, #00e5ff)">1 hop</span>';
+    const color = hops <= 3 ? 'var(--yellow, #fcee0a)' : 'var(--magenta)';
+    return `<span style="color:${color}">${hops} hops</span>`;
+}
+
 // ============================================================
 // Panel Definition
 // ============================================================
@@ -199,7 +219,7 @@ export const FleetPanelDef = {
                 <div class="panel-section-label" style="color:var(--yellow, #fcee0a)">HEAP TREND WARNINGS</div>
                 <div data-bind="heap-list"></div>
             </div>
-            <div class="fleet-topology-bar" data-bind="topology-bar" style="display:none">
+            <div class="fleet-topology-bar" data-bind="topology-bar" data-testid="topology-section" style="display:none">
                 <div class="panel-section-label" style="color:var(--cyan, #00e5ff)">NETWORK TOPOLOGY</div>
                 <div class="panel-stat-row">
                     <span class="panel-stat-label">NODES</span>
@@ -520,6 +540,25 @@ export const FleetPanelDef = {
                 }).join('');
             }
 
+            // --- Mesh peers section ---
+            const meshPeers = n.mesh_peers || n.sensors?.mesh?.peers || [];
+            let meshHtml = '';
+            if (meshPeers.length > 0) {
+                meshHtml += '<div class="panel-section-label" style="color:var(--cyan, #00e5ff)">MESH PEERS (' + meshPeers.length + ')</div>';
+                meshHtml += '<table class="fleet-mesh-table" data-testid="mesh-peers-table"><thead><tr><th>MAC</th><th>RSSI</th><th>HOPS</th><th>ROLE</th></tr></thead><tbody>';
+                meshHtml += meshPeers.map(p => {
+                    const mac = _esc(p.mac || p.addr || '--');
+                    const role = _esc((p.role || 'node').toUpperCase());
+                    return `<tr class="fleet-mesh-peer-row">
+                        <td class="mono">${mac}</td>
+                        <td>${_meshRssiBar(p.rssi)}</td>
+                        <td class="mono">${_hopCountLabel(p.hops ?? p.hop_count)}</td>
+                        <td class="mono" style="color:var(--cyan, #00e5ff)">${role}</td>
+                    </tr>`;
+                }).join('');
+                meshHtml += '</tbody></table>';
+            }
+
             // --- Close button ---
             const closeBtn = `<button class="panel-action-btn fleet-detail-close" data-action="close-detail" title="Close detail">X</button>`;
 
@@ -534,6 +573,7 @@ export const FleetPanelDef = {
                 ${i2cHtml}
                 ${eventsHtml}
                 ${anomalyHtml}
+                ${meshHtml}
                 ${sensorHtml ? '<div class="panel-section-label">SENSORS</div>' + sensorHtml : ''}
                 <div class="panel-section-label">BLE DEVICES (${bleDevices.length})</div>
                 ${bleHtml}
@@ -817,17 +857,18 @@ export const FleetPanelDef = {
         // --- Topology handler ---
         function onTopology(data) {
             if (!data) return;
-            const nodes = data.nodes || [];
+            const topoNodes = data.nodes || [];
             const edges = data.edges || [];
-            if (nodes.length === 0 && edges.length === 0) {
+            if (topoNodes.length === 0 && edges.length === 0) {
                 if (topologyBar) topologyBar.style.display = 'none';
                 return;
             }
             if (topologyBar) topologyBar.style.display = '';
-            if (topoNodesEl) topoNodesEl.textContent = `${nodes.length}`;
+            if (topoNodesEl) topoNodesEl.textContent = `${topoNodes.length}`;
             if (topoEdgesEl) topoEdgesEl.textContent = `${edges.length}`;
             if (topoDetailEl) {
-                topoDetailEl.innerHTML = edges.map(e => {
+                // Edge list
+                let edgeHtml = edges.map(e => {
                     const from = _esc(e.from || e.source || '--');
                     const to = _esc(e.to || e.target || '--');
                     const quality = e.quality !== undefined ? Math.round(e.quality * 100) : null;
@@ -836,11 +877,83 @@ export const FleetPanelDef = {
                         : 'var(--text-dim, #888)';
                     const latency = e.latency_ms !== undefined ? `${e.latency_ms}ms` : '';
                     const linkType = _esc(e.type || e.link_type || 'wifi');
+                    const rssi = e.rssi !== undefined ? ` ${e.rssi}dBm` : '';
+                    const hops = e.hops !== undefined ? ` ${e.hops}hop${e.hops !== 1 ? 's' : ''}` : '';
                     return `<div class="panel-stat-row">
                         <span class="panel-stat-label mono" style="color:var(--cyan, #00e5ff)">${from} → ${to}</span>
-                        <span class="panel-stat-value mono">${linkType.toUpperCase()}${quality !== null ? ` <span style="color:${qualityClr}">${quality}%</span>` : ''}${latency ? ` ${latency}` : ''}</span>
+                        <span class="panel-stat-value mono">${linkType.toUpperCase()}${quality !== null ? ` <span style="color:${qualityClr}">${quality}%</span>` : ''}${rssi}${hops}${latency ? ` ${latency}` : ''}</span>
                     </div>`;
                 }).join('');
+
+                // Build mesh adjacency list from edges and node mesh_peers
+                const adjacency = {};
+                for (const e of edges) {
+                    const from = e.from || e.source || '';
+                    const to = e.to || e.target || '';
+                    if (!from || !to) continue;
+                    if (!adjacency[from]) adjacency[from] = [];
+                    adjacency[from].push({
+                        peer: to,
+                        rssi: e.rssi,
+                        hops: e.hops,
+                        type: e.type || e.link_type || 'wifi',
+                    });
+                    // Add reverse if not already present (undirected mesh links)
+                    if (!adjacency[to]) adjacency[to] = [];
+                    const hasReverse = adjacency[to].some(p => p.peer === from);
+                    if (!hasReverse) {
+                        adjacency[to].push({
+                            peer: from,
+                            rssi: e.rssi,
+                            hops: e.hops,
+                            type: e.type || e.link_type || 'wifi',
+                        });
+                    }
+                }
+
+                // Also incorporate mesh_peers from individual nodes
+                for (const [nodeId, nodeData] of Object.entries(nodes)) {
+                    const meshPeers = nodeData.mesh_peers || nodeData.sensors?.mesh?.peers || [];
+                    if (meshPeers.length === 0) continue;
+                    if (!adjacency[nodeId]) adjacency[nodeId] = [];
+                    for (const p of meshPeers) {
+                        const peerId = p.mac || p.addr || p.device_id || '';
+                        if (!peerId) continue;
+                        const exists = adjacency[nodeId].some(a => a.peer === peerId);
+                        if (!exists) {
+                            adjacency[nodeId].push({
+                                peer: peerId,
+                                rssi: p.rssi,
+                                hops: p.hops ?? p.hop_count,
+                                type: 'mesh',
+                            });
+                        }
+                    }
+                }
+
+                // Render adjacency list if we have mesh data
+                let adjHtml = '';
+                const adjKeys = Object.keys(adjacency);
+                if (adjKeys.length > 0) {
+                    adjHtml += '<div class="panel-section-label" style="color:var(--cyan, #00e5ff);margin-top:8px" data-testid="mesh-adjacency-label">MESH ADJACENCY</div>';
+                    adjHtml += '<div class="fleet-mesh-adjacency" data-testid="mesh-adjacency">';
+                    for (const nodeId of adjKeys.sort()) {
+                        const peers = adjacency[nodeId];
+                        const peerList = peers.map(p => {
+                            const rssiStr = p.rssi !== undefined ? ` ${p.rssi}dBm` : '';
+                            const hopStr = p.hops !== undefined ? ` ${p.hops}h` : '';
+                            const typeStr = p.type === 'mesh' ? ' [mesh]' : '';
+                            return `<span class="mono" style="color:var(--text, #ddd)">${_esc(p.peer)}</span><span class="mono" style="color:var(--text-dim, #888);font-size:0.85em">${rssiStr}${hopStr}${typeStr}</span>`;
+                        }).join(', ');
+                        adjHtml += `<div class="fleet-adjacency-row" style="margin-bottom:4px;padding:2px 0;border-bottom:1px solid rgba(0,229,255,0.08)">
+                            <span class="mono" style="color:var(--cyan, #00e5ff);min-width:120px;display:inline-block">${_esc(nodeId)}</span>
+                            <span class="mono" style="color:var(--text-dim, #888)"> → </span>${peerList}
+                        </div>`;
+                    }
+                    adjHtml += '</div>';
+                }
+
+                topoDetailEl.innerHTML = edgeHtml + adjHtml;
             }
         }
 

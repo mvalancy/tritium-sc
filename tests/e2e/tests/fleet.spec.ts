@@ -93,4 +93,44 @@ test.describe('Fleet Panel', () => {
     expect(data).toHaveProperty('device_id');
     expect(data).toHaveProperty('source');
   });
+
+  test('fleet API returns mesh peers data', async ({ request }) => {
+    const resp = await request.get('/api/fleet/mesh-peers');
+    expect(resp.status()).toBe(200);
+    const data = await resp.json();
+    expect(data).toHaveProperty('nodes');
+    expect(data).toHaveProperty('source');
+    expect(Array.isArray(data.nodes)).toBe(true);
+  });
+
+  test('fleet node mesh peers returns data or unavailable', async ({ request }) => {
+    const resp = await request.get('/api/fleet/node/test-device/mesh-peers');
+    expect(resp.status()).toBe(200);
+    const data = await resp.json();
+    expect(data).toHaveProperty('device_id');
+    expect(data).toHaveProperty('mesh_peers');
+    expect(data).toHaveProperty('source');
+    expect(data.device_id).toBe('test-device');
+    expect(Array.isArray(data.mesh_peers)).toBe(true);
+  });
+
+  test('mesh peers response contains expected fields when populated', async ({ request }) => {
+    const resp = await request.get('/api/fleet/mesh-peers');
+    expect(resp.status()).toBe(200);
+    const data = await resp.json();
+    expect(data).toHaveProperty('count');
+    // count should match nodes array length
+    expect(data.count).toBe(data.nodes.length);
+  });
+
+  test('topology response includes edges array for mesh adjacency', async ({ request }) => {
+    const resp = await request.get('/api/fleet/topology');
+    expect(resp.status()).toBe(200);
+    const data = await resp.json();
+    expect(data).toHaveProperty('nodes');
+    expect(data).toHaveProperty('edges');
+    expect(data).toHaveProperty('source');
+    expect(Array.isArray(data.nodes)).toBe(true);
+    expect(Array.isArray(data.edges)).toBe(true);
+  });
 });

@@ -268,6 +268,68 @@ async def fleet_heap_trends(request: Request):
     }
 
 
+@router.get("/mesh-peers")
+async def fleet_mesh_peers(request: Request):
+    """GET /api/fleet/mesh-peers — mesh peer data from all edge nodes.
+
+    Proxies to the fleet server /api/fleet/mesh-peers endpoint.
+    Returns per-node mesh peer lists with MAC addresses, RSSI, and hop counts.
+    Falls back to extracting mesh_peers from cached device data.
+    """
+    base = _get_fleet_url(request)
+    data = _proxy_get(f"{base}/api/fleet/mesh-peers")
+
+    if data is not None:
+        return {**data, "source": "live"} if isinstance(data, dict) else {"nodes": data, "source": "live"}
+
+    # Fallback: extract mesh_peers from cached device data
+    bridge = getattr(request.app.state, "fleet_bridge", None)
+    if bridge is not None:
+        mesh_nodes = []
+        for dev_id, dev in bridge.devices.items():
+            peers = dev.get("mesh_peers", [])
+            if not peers:
+                sensors = dev.get("sensors", {})
+                mesh = sensors.get("mesh", {})
+                peers = mesh.get("peers", [])
+            if peers:
+                mesh_nodes.append({
+                    "device_id": dev_id,
+                    "mesh_peers": peers,
+                })
+        return {"nodes": mesh_nodes, "count": len(mesh_nodes), "source": "cached"}
+
+    return {"nodes": [], "count": 0, "source": "unavailable"}
+
+
+@router.get("/node/{device_id}/mesh-peers")
+async def fleet_node_mesh_peers(request: Request, device_id: str):
+    """GET /api/fleet/node/{device_id}/mesh-peers — mesh peers for a specific node.
+
+    Proxies to the fleet server /api/devices/{id}/mesh-peers endpoint.
+    Returns the mesh peer list with MAC, RSSI, and hop count for each peer.
+    """
+    base = _get_fleet_url(request)
+    data = _proxy_get(f"{base}/api/devices/{device_id}/mesh-peers")
+
+    if data is not None:
+        return {**data, "device_id": device_id, "source": "live"}
+
+    # Fallback: extract from cached device data
+    bridge = getattr(request.app.state, "fleet_bridge", None)
+    if bridge is not None:
+        dev = bridge.devices.get(device_id)
+        if dev:
+            peers = dev.get("mesh_peers", [])
+            if not peers:
+                sensors = dev.get("sensors", {})
+                mesh = sensors.get("mesh", {})
+                peers = mesh.get("peers", [])
+            return {"device_id": device_id, "mesh_peers": peers, "source": "cached"}
+
+    return {"device_id": device_id, "mesh_peers": [], "source": "unavailable"}
+
+
 @router.get("/node/{device_id}")
 async def fleet_node_detail(request: Request, device_id: str):
     """GET /api/fleet/node/{device_id} — detail for a specific edge node.
