@@ -19,6 +19,12 @@ import urllib.request
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
+from tritium_lib.models.correlation import (
+    CorrelationEvent,
+    classify_correlation_severity,
+    summarize_correlations,
+)
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/fleet", tags=["fleet"])
@@ -192,25 +198,72 @@ async def fleet_correlations(request: Request):
     Proxies to the fleet server /api/fleet/correlations endpoint.
     Returns synchronized reboots, cascading failures, and other
     correlated events across the fleet with confidence scores.
+    Each correlation is enriched with a severity badge and
+    devices_involved list via tritium-lib models.
     """
     base = _get_fleet_url(request)
     data = _proxy_get(f"{base}/api/fleet/correlations")
 
     if data is not None:
-        return {**data, "source": "live"} if isinstance(data, dict) else {"correlations": data, "source": "live"}
+        result = {**data, "source": "live"} if isinstance(data, dict) else {"correlations": data, "source": "live"}
+        result["correlations"] = _enrich_correlations(result.get("correlations", []))
+        result["summary"] = _correlation_summary(result.get("correlations", []))
+        return result
 
     # Fallback: cached correlations from bridge
     bridge = getattr(request.app.state, "fleet_bridge", None)
     if bridge is not None:
         cached = getattr(bridge, "correlations", {})
         if cached:
-            return {**cached, "source": "cached"}
+            result = {**cached, "source": "cached"}
+            result["correlations"] = _enrich_correlations(result.get("correlations", []))
+            result["summary"] = _correlation_summary(result.get("correlations", []))
+            return result
 
     return {
         "correlations": [],
         "count": 0,
+        "summary": {"total": 0, "high_confidence": 0, "by_type": {}, "affected_devices": 0},
         "source": "unavailable",
     }
+
+
+def _enrich_correlations(raw: list) -> list[dict]:
+    """Add severity badges and devices_involved to correlation dicts."""
+    enriched = []
+    for c in raw:
+        if not isinstance(c, dict):
+            enriched.append(c)
+            continue
+        # Skip if already enriched (from bridge cache)
+        if "severity" in c:
+            enriched.append(c)
+            continue
+        try:
+            event = CorrelationEvent(**c)
+            enriched.append({
+                **c,
+                "severity": classify_correlation_severity(event),
+                "devices_involved": event.devices_involved,
+            })
+        except Exception:
+            enriched.append(c)
+    return enriched
+
+
+def _correlation_summary(enriched: list) -> dict:
+    """Produce a compact summary from enriched correlation dicts."""
+    typed: list[CorrelationEvent] = []
+    for c in enriched:
+        if not isinstance(c, dict):
+            continue
+        try:
+            typed.append(CorrelationEvent(**{
+                k: v for k, v in c.items() if k != "severity"
+            }))
+        except Exception:
+            pass
+    return summarize_correlations(typed)
 
 
 @router.get("/topology")

@@ -28,6 +28,21 @@ import threading
 import time
 from typing import TYPE_CHECKING
 
+from tritium_lib.models.correlation import (
+    CorrelationEvent,
+    CorrelationSummary,
+    classify_correlation_severity,
+    summarize_correlations,
+)
+from tritium_lib.models.fleet import FleetNode, FleetStatus, NodeStatus, fleet_health_score
+from tritium_lib.models.topology import (
+    FleetTopology,
+    NetworkLink,
+    analyze_connectivity,
+    build_topology,
+)
+from tritium_lib.models.diagnostics import HeapTrend
+
 if TYPE_CHECKING:
     from engine.comms.event_bus import EventBus
 
@@ -521,8 +536,9 @@ class FleetBridge:
         """GET /api/fleet/health-report and emit fleet.health_report.
 
         Fetches per-node health classification and fleet-wide anomaly
-        detection from tritium-lib.  Emits separate events for anomalies
-        to enable command center alerting.
+        detection from tritium-lib.  Computes fleet health score via
+        the tritium-lib FleetStatus model when node data is available.
+        Emits separate events for anomalies to enable command center alerting.
         """
         url = f"{self._rest_url}/api/fleet/health-report"
         try:
@@ -532,12 +548,47 @@ class FleetBridge:
                 raw = json.loads(resp.read().decode())
                 data = raw if isinstance(raw, dict) else {}
                 self._health_report = data
+
+                total = data.get("total_nodes", 0)
+                healthy = data.get("healthy", 0)
+                warning = data.get("warning", 0)
+                critical = data.get("critical", 0)
+
+                # Compute fleet health score from tracked devices using
+                # tritium-lib's FleetStatus model when we have device data
+                health_score = data.get("health_score", 0.0)
+                if not health_score and self._devices:
+                    try:
+                        fleet_nodes = []
+                        for dev_id, dev in self._devices.items():
+                            online = dev.get("_online", True)
+                            fleet_nodes.append(FleetNode(
+                                device_id=dev_id,
+                                mac=dev.get("mac", ""),
+                                ip=dev.get("ip", ""),
+                                firmware_version=dev.get("version", "unknown"),
+                                uptime_s=dev.get("uptime_s", 0),
+                                wifi_rssi=dev.get("rssi", 0) or 0,
+                                free_heap=dev.get("free_heap", 0) or 0,
+                                status=NodeStatus.ONLINE if online else NodeStatus.OFFLINE,
+                                capabilities=dev.get("capabilities", []),
+                            ))
+                        fleet_status = FleetStatus(
+                            nodes=fleet_nodes,
+                            total_nodes=len(fleet_nodes),
+                            online_count=sum(1 for n in fleet_nodes if n.status == NodeStatus.ONLINE),
+                        )
+                        health_score = fleet_health_score(fleet_status)
+                    except Exception:
+                        pass
+
                 self._event_bus.publish("fleet.health_report", {
-                    "total_nodes": data.get("total_nodes", 0),
-                    "healthy": data.get("healthy", 0),
-                    "warning": data.get("warning", 0),
-                    "critical": data.get("critical", 0),
+                    "total_nodes": total,
+                    "healthy": healthy,
+                    "warning": warning,
+                    "critical": critical,
                     "anomaly_count": data.get("anomaly_count", 0),
+                    "health_score": health_score,
                 })
                 # Emit individual anomaly events for alerting
                 anomalies = data.get("anomalies", [])
@@ -556,7 +607,9 @@ class FleetBridge:
 
         Fetches cross-node event correlations: synchronized reboots,
         cascading failures, and other correlated events with confidence
-        scores for the command center alerting UI.
+        scores for the command center alerting UI.  Parses into
+        tritium-lib CorrelationEvent models for type-safe severity
+        classification and summary generation.
         """
         url = f"{self._rest_url}/api/fleet/correlations"
         try:
@@ -566,10 +619,29 @@ class FleetBridge:
                 raw = json.loads(resp.read().decode())
                 data = raw if isinstance(raw, dict) else {"correlations": raw}
                 self._correlations = data
-                correlations = data.get("correlations", [])
+                raw_correlations = data.get("correlations", [])
+
+                # Parse into typed models for severity classification
+                typed_events: list[CorrelationEvent] = []
+                enriched: list[dict] = []
+                for c in raw_correlations:
+                    try:
+                        event = CorrelationEvent(**c)
+                        typed_events.append(event)
+                        enriched.append({
+                            **c,
+                            "severity": classify_correlation_severity(event),
+                            "devices_involved": event.devices_involved,
+                        })
+                    except Exception:
+                        # Keep raw dict if it doesn't parse cleanly
+                        enriched.append(c)
+
+                summary = summarize_correlations(typed_events)
                 self._event_bus.publish("fleet.correlations", {
-                    "correlations": correlations,
-                    "count": len(correlations),
+                    "correlations": enriched,
+                    "count": len(enriched),
+                    "summary": summary,
                 })
         except error_mod.URLError:
             pass  # Correlations endpoint may not exist on all fleet servers
@@ -581,7 +653,8 @@ class FleetBridge:
 
         Fetches the fleet network topology graph with node connectivity,
         link quality metrics, and network structure for visualization
-        in the command center.
+        in the command center.  Runs connectivity analysis via tritium-lib
+        to provide isolated/connected node counts and transport breakdown.
         """
         url = f"{self._rest_url}/api/fleet/topology"
         try:
@@ -591,9 +664,29 @@ class FleetBridge:
                 raw = json.loads(resp.read().decode())
                 data = raw if isinstance(raw, dict) else {"nodes": raw}
                 self._topology = data
+                nodes = data.get("nodes", [])
+                edges = data.get("edges", [])
+
+                # Build typed topology and run connectivity analysis
+                connectivity = {}
+                try:
+                    links = [NetworkLink(**e) for e in edges if isinstance(e, dict)]
+                    topo = build_topology(links)
+                    # Merge in any nodes from the response that aren't in links
+                    node_ids = set(topo.nodes)
+                    for n in nodes:
+                        nid = n.get("id", n) if isinstance(n, dict) else str(n)
+                        if nid not in node_ids:
+                            topo.nodes.append(nid)
+                    report = analyze_connectivity(topo)
+                    connectivity = report.model_dump()
+                except Exception:
+                    pass  # Topology data may not match expected schema
+
                 self._event_bus.publish("fleet.topology", {
-                    "nodes": data.get("nodes", []),
-                    "edges": data.get("edges", []),
+                    "nodes": nodes,
+                    "edges": edges,
+                    "connectivity": connectivity,
                 })
         except error_mod.URLError:
             pass  # Topology endpoint may not exist on all fleet servers
@@ -605,6 +698,8 @@ class FleetBridge:
 
         Fetches per-node heap memory trend analysis including suspected
         memory leaks, trend direction, and projected time-to-exhaustion.
+        Validates trends against tritium-lib HeapTrend model for
+        consistent field names and leak detection.
         """
         url = f"{self._rest_url}/api/fleet/heap-trends"
         try:
@@ -614,12 +709,29 @@ class FleetBridge:
                 raw = json.loads(resp.read().decode())
                 data = raw if isinstance(raw, dict) else {"trends": raw}
                 self._heap_trends = data
-                trends = data.get("trends", [])
-                leak_suspects = data.get("leak_suspects", [])
+                raw_trends = data.get("trends", [])
+
+                # Parse into typed models for consistent leak detection
+                typed_trends: list[dict] = []
+                leak_suspects: list[dict] = []
+                for t in raw_trends:
+                    try:
+                        ht = HeapTrend(**t)
+                        trend_dict = ht.model_dump()
+                        typed_trends.append(trend_dict)
+                        if ht.leak_suspected:
+                            leak_suspects.append(trend_dict)
+                    except Exception:
+                        typed_trends.append(t)
+
+                # Fall back to raw leak_suspects if model parsing didn't find any
+                if not leak_suspects:
+                    leak_suspects = data.get("leak_suspects", [])
+
                 self._event_bus.publish("fleet.heap_trends", {
-                    "trends": trends,
+                    "trends": typed_trends,
                     "leak_suspects": leak_suspects,
-                    "count": len(trends),
+                    "count": len(typed_trends),
                 })
         except error_mod.URLError:
             pass  # Heap trends endpoint may not exist on all fleet servers

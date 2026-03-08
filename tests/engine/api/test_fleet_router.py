@@ -248,6 +248,45 @@ class TestFleetCorrelationsEndpoint:
             result = _run(fleet_correlations(request))
         assert result["source"] == "live"
         assert len(result["correlations"]) == 1
+        assert "summary" in result
+
+    def test_live_proxy_with_typed_correlation(self):
+        """Verify severity badges are added when correlation data is parseable."""
+        from app.routers.fleet import fleet_correlations
+        bridge = _make_bridge()
+        request = _make_request(bridge=bridge)
+        live_data = {
+            "correlations": [{
+                "type": "synchronized_reboot",
+                "description": "3 nodes rebooted within 30s",
+                "devices_involved": ["d1", "d2", "d3"],
+                "confidence": 0.85,
+            }],
+            "count": 1,
+        }
+        with patch("app.routers.fleet._proxy_get", return_value=live_data):
+            result = _run(fleet_correlations(request))
+        assert result["source"] == "live"
+        corr = result["correlations"][0]
+        assert corr["severity"] == "warning"
+        assert corr["devices_involved"] == ["d1", "d2", "d3"]
+        assert result["summary"]["total"] == 1
+        assert result["summary"]["high_confidence"] == 1
+        assert result["summary"]["affected_devices"] == 3
+
+    def test_fallback_cached(self):
+        from app.routers.fleet import fleet_correlations
+        bridge = _make_bridge(correlations={
+            "correlations": [{"type": "synchronized_reboot", "description": "test",
+                              "devices_involved": ["d1", "d2"], "confidence": 0.5}],
+            "count": 1,
+        })
+        request = _make_request(bridge=bridge)
+        with patch("app.routers.fleet._proxy_get", return_value=None):
+            result = _run(fleet_correlations(request))
+        assert result["source"] == "cached"
+        assert len(result["correlations"]) == 1
+        assert "summary" in result
 
     def test_unavailable(self):
         from app.routers.fleet import fleet_correlations
@@ -256,6 +295,7 @@ class TestFleetCorrelationsEndpoint:
             result = _run(fleet_correlations(request))
         assert result["source"] == "unavailable"
         assert result["correlations"] == []
+        assert result["summary"]["total"] == 0
 
 
 # ---------------------------------------------------------------------------
@@ -275,6 +315,19 @@ class TestFleetTopologyEndpoint:
             result = _run(fleet_topology(request))
         assert result["source"] == "live"
         assert len(result["nodes"]) == 1
+
+    def test_fallback_cached(self):
+        from app.routers.fleet import fleet_topology
+        bridge = _make_bridge(topology={
+            "nodes": [{"id": "n1"}, {"id": "n2"}],
+            "edges": [{"from": "n1", "to": "n2", "type": "wifi"}],
+        })
+        request = _make_request(bridge=bridge)
+        with patch("app.routers.fleet._proxy_get", return_value=None):
+            result = _run(fleet_topology(request))
+        assert result["source"] == "cached"
+        assert len(result["nodes"]) == 2
+        assert len(result["edges"]) == 1
 
     def test_unavailable(self):
         from app.routers.fleet import fleet_topology
@@ -302,6 +355,19 @@ class TestFleetHeapTrendsEndpoint:
             result = _run(fleet_heap_trends(request))
         assert result["source"] == "live"
         assert len(result["trends"]) == 1
+
+    def test_fallback_cached(self):
+        from app.routers.fleet import fleet_heap_trends
+        bridge = _make_bridge(heap_trends={
+            "trends": [{"device_id": "d1", "trend": "declining", "rate_bytes_per_min": 50}],
+            "leak_suspects": [{"device_id": "d1"}],
+        })
+        request = _make_request(bridge=bridge)
+        with patch("app.routers.fleet._proxy_get", return_value=None):
+            result = _run(fleet_heap_trends(request))
+        assert result["source"] == "cached"
+        assert len(result["trends"]) == 1
+        assert len(result["leak_suspects"]) == 1
 
     def test_unavailable(self):
         from app.routers.fleet import fleet_heap_trends
