@@ -418,6 +418,7 @@ export const FleetPanelDef = {
                 <div class="panel-stat-row"><span class="panel-stat-label">WIFI RSSI</span><span class="panel-stat-value">${_rssiBar(rssi)}</span></div>
                 <div class="panel-stat-row"><span class="panel-stat-label">UPTIME</span><span class="panel-stat-value mono">${_formatUptime(n.uptime_s || n.uptime)}</span></div>
                 <div class="panel-stat-row"><span class="panel-stat-label">FREE HEAP</span><span class="panel-stat-value mono">${_formatBytes(n.free_heap)}</span></div>
+                ${n.psram_free !== undefined && n.psram_free !== null ? `<div class="panel-stat-row"><span class="panel-stat-label">PSRAM FREE</span><span class="panel-stat-value mono">${_formatBytes(n.psram_free)}</span></div>` : ''}
                 <div class="panel-stat-row"><span class="panel-stat-label">PARTITION</span><span class="panel-stat-value mono">${_esc(n.partition || '--')}</span></div>
             `;
 
@@ -425,6 +426,12 @@ export const FleetPanelDef = {
             const battery = n.battery_pct ?? n.sensors?.power?.battery_pct;
             if (battery !== undefined && battery !== null) {
                 healthSnapshotHtml += `<div class="panel-stat-row"><span class="panel-stat-label">BATTERY</span><span class="panel-stat-value mono">${_batteryIcon(battery)}</span></div>`;
+            }
+
+            // Capabilities list
+            const caps = n.capabilities || [];
+            if (caps.length > 0) {
+                healthSnapshotHtml += `<div class="panel-stat-row"><span class="panel-stat-label">CAPABILITIES</span><span class="panel-stat-value mono" style="font-size:0.85em">${caps.map(c => _esc(c)).join(', ')}</span></div>`;
             }
 
             // Health report extra fields (from fleet:health_report per-node data)
@@ -779,7 +786,7 @@ export const FleetPanelDef = {
             if (correlationListEl) {
                 correlationListEl.innerHTML = correlations.map(c => {
                     const type = _esc((c.type || c.event_type || 'UNKNOWN').toUpperCase());
-                    const affected = (c.affected_nodes || c.devices || []).map(d => _esc(d)).join(', ') || '--';
+                    const affected = (c.devices_involved || c.affected_nodes || c.devices || []).map(d => _esc(d)).join(', ') || '--';
                     const confidence = c.confidence !== undefined ? Math.round(c.confidence * 100) : null;
                     const confidenceStr = confidence !== null ? `${confidence}%` : '';
                     const confidenceClr = confidence !== null
@@ -790,7 +797,10 @@ export const FleetPanelDef = {
                     return `<div class="fleet-correlation-row" style="margin-bottom:6px;padding:4px 0;border-bottom:1px solid rgba(0,229,255,0.1)">
                         <div style="display:flex;justify-content:space-between;align-items:center">
                             <span class="mono" style="color:var(--cyan, #00e5ff);font-weight:bold">${type}</span>
-                            ${confidenceStr ? `<span class="mono" style="color:${confidenceClr};font-size:0.85em" title="Confidence score">CONF ${confidenceStr}</span>` : ''}
+                            <span style="display:flex;gap:6px;align-items:center">
+                                ${c.severity ? `<span class="mono" style="font-size:0.8em;padding:1px 4px;border-radius:3px;background:${c.severity === 'critical' ? 'var(--magenta)' : c.severity === 'warning' ? 'var(--yellow, #fcee0a)' : 'var(--text-dim, #888)'};color:#000">${_esc(c.severity.toUpperCase())}</span>` : ''}
+                                ${confidenceStr ? `<span class="mono" style="color:${confidenceClr};font-size:0.85em" title="Confidence score">CONF ${confidenceStr}</span>` : ''}
+                            </span>
                         </div>
                         ${desc ? `<div class="mono" style="font-size:0.85em;color:var(--text, #ddd);margin-top:2px">${desc}</div>` : ''}
                         <div style="display:flex;justify-content:space-between;margin-top:2px">
@@ -1105,6 +1115,8 @@ export const FleetPanelDef = {
             fetchHealthReport();
             fetchCorrelations();
             fetchHeapTrends();
+            fetchDashboard();
+            fetchConfigSync();
         }, 10000);
         panel._unsubs.push(() => clearInterval(refreshInterval));
 
