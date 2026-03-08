@@ -43,12 +43,17 @@ test.describe('Fleet Panel', () => {
     expect(data).toHaveProperty('source');
   });
 
-  test('fleet API returns correlations', async ({ request }) => {
+  test('fleet API returns correlations with summary', async ({ request }) => {
     const resp = await request.get('/api/fleet/correlations');
     expect(resp.status()).toBe(200);
     const data = await resp.json();
     expect(data).toHaveProperty('correlations');
     expect(data).toHaveProperty('source');
+    expect(data).toHaveProperty('summary');
+    expect(data.summary).toHaveProperty('total');
+    expect(data.summary).toHaveProperty('high_confidence');
+    expect(data.summary).toHaveProperty('by_type');
+    expect(data.summary).toHaveProperty('affected_devices');
   });
 
   test('fleet API returns topology', async ({ request }) => {

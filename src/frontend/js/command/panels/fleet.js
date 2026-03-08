@@ -547,6 +547,27 @@ export const FleetPanelDef = {
                 }).join('');
             }
 
+            // --- Transport status section ---
+            const transports = n.transports || n.sensors?.transports || [];
+            let transportHtml = '';
+            if (transports.length > 0) {
+                transportHtml += '<div class="panel-section-label" style="color:var(--cyan, #00e5ff)">TRANSPORTS</div>';
+                transportHtml += transports.map(t => {
+                    const type = _esc((t.type || 'unknown').toUpperCase());
+                    const state = (t.state || 'unknown').toLowerCase();
+                    const stateClr = state === 'available' ? 'var(--green)' : state === 'degraded' ? 'var(--yellow, #fcee0a)' : 'var(--magenta)';
+                    let detail = '';
+                    if (t.rssi !== undefined) detail += ` ${t.rssi}dBm`;
+                    if (t.bandwidth_bps) detail += ` ${Math.round(t.bandwidth_bps / 1000)}kbps`;
+                    if (t.latency_ms) detail += ` ${t.latency_ms}ms`;
+                    if (t.packet_loss_pct) detail += ` loss:${t.packet_loss_pct.toFixed(1)}%`;
+                    return `<div class="panel-stat-row">
+                        <span class="panel-stat-label mono">${type}</span>
+                        <span class="panel-stat-value mono"><span style="color:${stateClr}">${_esc(state.toUpperCase())}</span>${detail}</span>
+                    </div>`;
+                }).join('');
+            }
+
             // --- Mesh peers section ---
             const meshPeers = n.mesh_peers || n.sensors?.mesh?.peers || [];
             let meshHtml = '';
@@ -580,6 +601,7 @@ export const FleetPanelDef = {
                 ${i2cHtml}
                 ${eventsHtml}
                 ${anomalyHtml}
+                ${transportHtml}
                 ${meshHtml}
                 ${sensorHtml ? '<div class="panel-section-label">SENSORS</div>' + sensorHtml : ''}
                 <div class="panel-section-label">BLE DEVICES (${bleDevices.length})</div>
@@ -784,7 +806,25 @@ export const FleetPanelDef = {
             }
             if (correlationBar) correlationBar.style.display = '';
             if (correlationListEl) {
-                correlationListEl.innerHTML = correlations.map(c => {
+                // Summary stats from tritium-lib
+                const summary = data.summary || {};
+                let summaryHtml = '';
+                if (summary.total) {
+                    const highConf = summary.high_confidence ?? 0;
+                    const affected = summary.affected_devices ?? 0;
+                    const byType = summary.by_type || {};
+                    const typeList = Object.entries(byType).map(([t, c]) =>
+                        `<span class="mono" style="color:var(--cyan, #00e5ff)">${_esc(t.toUpperCase().replace(/_/g, ' '))}</span>: ${c}`
+                    ).join(' | ');
+                    summaryHtml = `<div style="margin-bottom:8px;padding:4px 0;border-bottom:1px solid rgba(0,229,255,0.15);font-size:0.85em">
+                        <span class="mono">TOTAL: ${summary.total}</span>
+                        <span class="mono" style="margin-left:12px;color:${highConf > 0 ? 'var(--magenta)' : 'inherit'}">HIGH CONF: ${highConf}</span>
+                        <span class="mono" style="margin-left:12px">AFFECTED: ${affected} nodes</span>
+                        ${typeList ? `<div style="margin-top:2px">${typeList}</div>` : ''}
+                    </div>`;
+                }
+
+                correlationListEl.innerHTML = summaryHtml + correlations.map(c => {
                     const type = _esc((c.type || c.event_type || 'UNKNOWN').toUpperCase());
                     const affected = (c.devices_involved || c.affected_nodes || c.devices || []).map(d => _esc(d)).join(', ') || '--';
                     const confidence = c.confidence !== undefined ? Math.round(c.confidence * 100) : null;
@@ -877,6 +917,34 @@ export const FleetPanelDef = {
             if (topoNodesEl) topoNodesEl.textContent = `${topoNodes.length}`;
             if (topoEdgesEl) topoEdgesEl.textContent = `${edges.length}`;
             if (topoDetailEl) {
+                // Connectivity analysis (from tritium-lib via bridge)
+                const connectivity = data.connectivity || {};
+                let connectivityHtml = '';
+                if (connectivity.total_nodes || connectivity.connected_count || connectivity.isolated_count) {
+                    const connected = connectivity.connected_count ?? 0;
+                    const isolated = connectivity.isolated_count ?? 0;
+                    const components = connectivity.component_count ?? 0;
+                    const avgPath = connectivity.avg_path_length;
+                    const transports = connectivity.transport_breakdown || {};
+                    connectivityHtml += '<div style="margin-bottom:8px;padding:4px 0;border-bottom:1px solid rgba(0,229,255,0.15)">';
+                    connectivityHtml += `<div class="panel-stat-row"><span class="panel-stat-label">CONNECTED</span><span class="panel-stat-value mono" style="color:var(--green)">${connected}</span></div>`;
+                    if (isolated > 0) {
+                        connectivityHtml += `<div class="panel-stat-row"><span class="panel-stat-label">ISOLATED</span><span class="panel-stat-value mono" style="color:var(--magenta)">${isolated}</span></div>`;
+                    }
+                    if (components > 1) {
+                        connectivityHtml += `<div class="panel-stat-row"><span class="panel-stat-label">PARTITIONS</span><span class="panel-stat-value mono" style="color:var(--yellow, #fcee0a)">${components}</span></div>`;
+                    }
+                    if (avgPath !== undefined && avgPath !== null) {
+                        connectivityHtml += `<div class="panel-stat-row"><span class="panel-stat-label">AVG PATH</span><span class="panel-stat-value mono">${avgPath.toFixed(1)} hops</span></div>`;
+                    }
+                    const transportKeys = Object.keys(transports);
+                    if (transportKeys.length > 0) {
+                        const tList = transportKeys.map(t => `${_esc(t.toUpperCase())}: ${transports[t]}`).join(' | ');
+                        connectivityHtml += `<div class="panel-stat-row"><span class="panel-stat-label">TRANSPORTS</span><span class="panel-stat-value mono" style="font-size:0.85em">${tList}</span></div>`;
+                    }
+                    connectivityHtml += '</div>';
+                }
+
                 // Edge list
                 let edgeHtml = edges.map(e => {
                     const from = _esc(e.from || e.source || '--');
@@ -963,7 +1031,7 @@ export const FleetPanelDef = {
                     adjHtml += '</div>';
                 }
 
-                topoDetailEl.innerHTML = edgeHtml + adjHtml;
+                topoDetailEl.innerHTML = connectivityHtml + edgeHtml + adjHtml;
             }
         }
 
