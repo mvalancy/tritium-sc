@@ -1,5 +1,27 @@
 # TRITIUM-SC Documentation
 
+**Where you are:** `tritium-sc/docs/` — design documents, specs, and guides for the Command Center.
+
+**Parent:** [../CLAUDE.md](../CLAUDE.md) | [../../CLAUDE.md](../../CLAUDE.md) (tritium root)
+
+## Navigation
+
+```
+tritium/
+└── tritium-sc/               ← YOU ARE HERE
+    ├── CLAUDE.md             # Dev conventions, operating principles, API reference
+    ├── README.md             # Project overview, quick start
+    ├── docs/                 # ← This index
+    ├── src/
+    │   ├── engine/README.md  # System infrastructure subsystems
+    │   ├── amy/README.md     # AI commander architecture
+    │   ├── app/README.md     # FastAPI backend
+    │   └── frontend/README.md # Vanilla JS frontend
+    ├── tests/README.md       # Test suite guide
+    ├── plugins/README.md     # Plugin system
+    └── examples/README.md    # Reference implementations
+```
+
 ## For Users
 
 | Document | Description |
@@ -52,41 +74,48 @@
 | [WAR-ROOM-UX-REVIEW.md](WAR-ROOM-UX-REVIEW.md) | War Room frontend UX architecture review |
 | [DEMO-SPEC.md](DEMO-SPEC.md) | Demo project specifications for MQTT device examples |
 
+## Game Design
+
+| Document | Description |
+|----------|-------------|
+| [MISSION-TYPES-SPEC.md](MISSION-TYPES-SPEC.md) | Mission types and gameplay mechanics |
+| [FLEET-BACKSTORY-SPEC.md](FLEET-BACKSTORY-SPEC.md) | Fleet narrative and faction specifications |
+| [GRAND-PLAN.md](GRAND-PLAN.md) | Long-range vision and strategic roadmap |
+| [UX-ROADMAP.md](UX-ROADMAP.md) | UX improvements and feature ordering |
+
+## UI Design
+
+| Document | Description |
+|----------|-------------|
+| [UI-FEATURES-SPEC.md](UI-FEATURES-SPEC.md) | UI panel specifications and features |
+| [UI-VIEWS.md](UI-VIEWS.md) | Design intent for every panel, button, and element |
+| [UI-REDESIGN.md](UI-REDESIGN.md) | Command Center plugin architecture and layout |
+| [WINDOW-MANAGER.md](WINDOW-MANAGER.md) | dockview-core window manager integration plan |
+| [WAR-ROOM-UX-REVIEW.md](WAR-ROOM-UX-REVIEW.md) | War Room frontend UX architecture review |
+
 ## Quick Links
 
 ### For Users
-- **How to Play**: See [HOW-TO-PLAY.md](HOW-TO-PLAY.md)
-- **Getting Started**: See main [README.md](../README.md)
+- **How to Play**: [HOW-TO-PLAY.md](HOW-TO-PLAY.md)
 - **Controls**: Press `?` in the UI or see [CONTROLS.md](CONTROLS.md)
-- **Gamepad Setup**: See [GAMEPAD.md](GAMEPAD.md)
+- **Gamepad**: [GAMEPAD.md](GAMEPAD.md)
 
 ### For Developers
-- **Architecture**: See [ARCHITECTURE.md](ARCHITECTURE.md)
-- **Project Context**: See [CLAUDE.md](../CLAUDE.md)
-- **API Reference**: See CLAUDE.md API Endpoints section
-- **MQTT Protocol**: See [MQTT.md](MQTT.md)
-- **Robot Integration**: See `examples/robot-template/README.md`
-- **Plugin Development**: See [PLUGIN-SPEC.md](PLUGIN-SPEC.md)
-- **NPC System**: See [NPC-INTELLIGENCE.md](NPC-INTELLIGENCE.md)
-- **Demo Devices**: See [DEMO-SPEC.md](DEMO-SPEC.md)
+- **Architecture**: [ARCHITECTURE.md](ARCHITECTURE.md)
+- **Project Context**: [../CLAUDE.md](../CLAUDE.md)
+- **API Reference**: CLAUDE.md API Endpoints section
+- **MQTT Protocol**: [MQTT.md](MQTT.md)
+- **Engine Subsystems**: [../src/engine/README.md](../src/engine/README.md)
+- **Amy AI Commander**: [../src/amy/README.md](../src/amy/README.md)
+- **Frontend**: [../src/frontend/README.md](../src/frontend/README.md)
+- **Robot Integration**: [../examples/robot-template/README.md](../examples/robot-template/README.md)
+- **Plugin Development**: [PLUGIN-SPEC.md](PLUGIN-SPEC.md) + [../plugins/README.md](../plugins/README.md)
+- **NPC System**: [NPC-INTELLIGENCE.md](NPC-INTELLIGENCE.md)
+- **Demo Devices**: [DEMO-SPEC.md](DEMO-SPEC.md) + [../examples/README.md](../examples/README.md)
+- **Test Suite**: [../tests/README.md](../tests/README.md)
 
-### For Amy
-- **Threat Model**: See [ESCALATION.md](ESCALATION.md)
-- **Simulation**: See [SIMULATION.md](SIMULATION.md)
-- **Battlespace Overview**: See [ARCHITECTURE.md](ARCHITECTURE.md)
-
-## Document Conventions
-
-- All diagrams use mermaid syntax
-- API documentation uses OpenAPI/Swagger format
-- Each document stands alone but cross-references related docs
-- Architecture decisions include rationale ("Why X, not Y?")
-
-## Contributing Documentation
-
-When adding new features:
-1. Update relevant docs in this folder
-2. Add keyboard shortcuts to CONTROLS.md
-3. Add gamepad mappings to CONTROLS.md and GAMEPAD.md
-4. Add new files to the Important Files table in CLAUDE.md
-5. Update the table above if adding new documents
+### Cross-Project
+- **Parent System**: [../../docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md)
+- **System Status**: [../../docs/STATUS.md](../../docs/STATUS.md)
+- **Shared Library**: [../../tritium-lib/CLAUDE.md](../../tritium-lib/CLAUDE.md)
+- **Edge Integration**: [../../tritium-edge/docs/INTEGRATION.md](../../tritium-edge/docs/INTEGRATION.md)
