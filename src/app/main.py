@@ -64,6 +64,7 @@ from app.routers.lpr import router as lpr_router
 from app.routers.transponders import router as transponders_router
 from app.routers.terrain import router as terrain_router
 from app.routers.behavior import router as behavior_router
+from app.routers.bookmarks import router as bookmarks_router
 
 
 # ---------------------------------------------------------------------------
@@ -889,6 +890,7 @@ app.include_router(lpr_router)
 app.include_router(transponders_router)
 app.include_router(terrain_router)
 app.include_router(behavior_router)
+app.include_router(bookmarks_router)
 
 # Static files
 frontend_path = Path(__file__).parent.parent / "frontend"
