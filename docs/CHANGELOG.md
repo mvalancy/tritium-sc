@@ -14,7 +14,46 @@ Changes tracked with verification status. All changes on `dev` branch.
 
 ---
 
-## 2026-03-13
+## 2026-03-13 — Wave 3: Integration & Hardening
+
+### MQTT Integration
+| Change | Verification |
+|--------|-------------|
+| MQTTBridge subscribes to `tritium/+/sighting` for edge BLE/WiFi data | Unit Tested |
+| MQTTBridge `_on_edge_sighting()` → EventBus `fleet.ble_presence` / `fleet.wifi_presence` | Unit Tested |
+| MQTTBridge subscribes to `cameras/+/frame`, dispatches to camera feeds plugin | Unit Tested |
+| MQTTBridge `register_camera_callback()` API for plugin frame delivery | Unit Tested |
+| Camera feeds MQTTSource auto-registers with MQTTBridge on startup | Unit Tested |
+| Camera detection → TrackedTarget creation via MQTTSource.on_detection() | Unit Tested |
+
+### Frontend — Asset Management
+| Change | Verification |
+|--------|-------------|
+| `panels/assets.js` — asset placement panel (add/edit/delete/drag) | Integration Tested |
+| Map placement mode via EventBus `asset:placementMode` / `map:click` | Integration Tested |
+| Asset type selector (camera, sensor, mesh_radio, gateway) | Integration Tested |
+| Property editor (name, height, FOV, rotation, position) | Integration Tested |
+| CRUD via `/api/assets` endpoint | Integration Tested |
+
+### Examples
+| Change | Verification |
+|--------|-------------|
+| `examples/ros2-camera/` — ROS2 camera node with MQTT detection publisher | Unit Tested |
+| 53 tests (camera node + MQTT publisher) | Unit Tested |
+| Launch file, config YAML, package.xml for ROS2 integration | Unit Tested |
+
+### Test Coverage Expansion
+| Change | Verification |
+|--------|-------------|
+| 14 MQTT camera integration tests | Unit Tested |
+| 7 edge sighting MQTT routing tests | Unit Tested |
+| Camera feeds source lifecycle, error handling tests | Unit Tested |
+| Meshtastic node update, config, degradation tests | Unit Tested |
+| BLE tracking MAC normalization, multi-node, rapid update tests | Unit Tested |
+
+---
+
+## 2026-03-13 — Wave 2: Core Plugin Features
 
 ### Plugins — New
 | Change | Verification |
