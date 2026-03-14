@@ -46,6 +46,7 @@ from app.routers.geofence import router as geofence_router
 from app.routers.target_search import router as target_search_router
 from app.routers.layers import router as layers_router
 from app.routers.enrichment import router as enrichment_router
+from app.routers.dossiers import router as dossiers_router
 
 
 # ---------------------------------------------------------------------------
@@ -691,6 +692,26 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Enrichment pipeline failed to start: {e}")
 
+    # DossierManager — bridges TargetTracker (real-time) and DossierStore (persistent)
+    try:
+        from engine.tactical.dossier_manager import DossierManager
+        from tritium_lib.store.dossiers import DossierStore
+        _dossier_db = Path("data/dossiers.db")
+        _dossier_db.parent.mkdir(parents=True, exist_ok=True)
+        _dossier_store = DossierStore(_dossier_db)
+        _dossier_tracker = amy_instance.target_tracker if amy_instance else None
+        _dossier_bus = amy_instance.event_bus if amy_instance else None
+        dossier_manager = DossierManager(
+            store=_dossier_store,
+            tracker=_dossier_tracker,
+            event_bus=_dossier_bus,
+        )
+        dossier_manager.start()
+        app.state.dossier_manager = dossier_manager
+        logger.info("DossierManager started")
+    except Exception as e:
+        logger.warning(f"DossierManager failed to start: {e}")
+
     # Plugin system — discover, configure, and start all plugins
     plugin_manager = _start_plugins(app, amy_instance, sim_engine)
     if plugin_manager is not None:
@@ -708,6 +729,12 @@ async def lifespan(app: FastAPI):
     if plugin_manager is not None:
         logger.info("Stopping plugins...")
         plugin_manager.stop_all()
+
+    # Stop dossier manager
+    _dossier_mgr = getattr(app.state, "dossier_manager", None)
+    if _dossier_mgr is not None:
+        logger.info("Stopping DossierManager...")
+        _dossier_mgr.stop()
 
     # Stop enrichment pipeline listener
     _enrich_pipe = getattr(app.state, "enrichment_pipeline", None)
@@ -765,6 +792,7 @@ app.include_router(demo_router)
 app.include_router(geofence_router)
 app.include_router(layers_router)
 app.include_router(enrichment_router)
+app.include_router(dossiers_router)
 
 # Static files
 frontend_path = Path(__file__).parent.parent / "frontend"
