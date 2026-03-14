@@ -1,25 +1,49 @@
-version: '3.8'
+# Tritium-SC Production Stack
+# Copyright 2026 Valpatel Software LLC — AGPL-3.0
+#
+# Usage:
+#   docker compose up -d                    # Start all services
+#   docker compose up -d --build tritium    # Rebuild and start
+#   docker compose logs -f tritium          # Follow logs
+#   docker compose down                     # Stop all
 
 services:
   tritium:
     build: .
-    container_name: tritium
+    container_name: tritium-sc
     restart: unless-stopped
     ports:
       - "8000:8000"
     volumes:
-      # Application code (for development)
-      - ./app:/app/app
-      - ./frontend:/app/frontend
-      # Recordings (read-only)
-      - ${RECORDINGS_PATH:-./data/recordings}:/data:ro
-      # Database (persistent)
-      - tritium_db:/app/data
+      # Development: mount source for hot reload
+      - ./src:/app/src
+      # Persistent data
+      - tritium_data:/app/data
+      - ./assets:/app/assets:ro
     environment:
       - DATABASE_URL=sqlite+aiosqlite:///./data/tritium.db
-      - RECORDINGS_PATH=/data
-      - DEBUG=false
-    # GPU support for future phases
+      - RECORDINGS_PATH=/app/data/recordings
+      - MQTT_HOST=mosquitto
+      - MQTT_PORT=1883
+      - INFLUX_URL=http://influxdb:8086
+      - INFLUX_TOKEN=${INFLUX_TOKEN:-tritium-dev-token}
+      - INFLUX_ORG=${INFLUX_ORG:-tritium}
+      - INFLUX_BUCKET=${INFLUX_BUCKET:-telemetry}
+      # Auth (disabled by default for dev)
+      - AUTH_ENABLED=${AUTH_ENABLED:-false}
+      - AUTH_SECRET_KEY=${AUTH_SECRET_KEY:-}
+      - AUTH_ADMIN_PASSWORD=${AUTH_ADMIN_PASSWORD:-}
+      # TLS (optional)
+      - TLS_ENABLED=${TLS_ENABLED:-false}
+      - TLS_CERT_FILE=${TLS_CERT_FILE:-}
+      - TLS_KEY_FILE=${TLS_KEY_FILE:-}
+      # Rate limiting (optional)
+      - RATE_LIMIT_ENABLED=${RATE_LIMIT_ENABLED:-false}
+      - RATE_LIMIT_REQUESTS=${RATE_LIMIT_REQUESTS:-100}
+    depends_on:
+      - mosquitto
+      - influxdb
+    # GPU support for YOLO detection
     # deploy:
     #   resources:
     #     reservations:
@@ -28,28 +52,21 @@ services:
     #           count: 1
     #           capabilities: [gpu]
 
-  # go2rtc for RTSP streaming (Phase 2)
-  # go2rtc:
-  #   image: alexxit/go2rtc
-  #   container_name: go2rtc
-  #   restart: unless-stopped
-  #   network_mode: host
-  #   volumes:
-  #     - ./go2rtc.yaml:/config/go2rtc.yaml:ro
-
   mosquitto:
     image: eclipse-mosquitto:2
-    container_name: mosquitto
+    container_name: tritium-mqtt
     restart: unless-stopped
     ports:
       - "1883:1883"
+      - "9001:9001"
     volumes:
       - ./conf/mosquitto:/mosquitto/config:ro
       - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
 
   influxdb:
     image: influxdb:2.7
-    container_name: influxdb
+    container_name: tritium-influxdb
     restart: unless-stopped
     ports:
       - "8086:8086"
@@ -66,7 +83,7 @@ services:
 
   telegraf:
     image: telegraf:1.30
-    container_name: telegraf
+    container_name: tritium-telegraf
     restart: unless-stopped
     depends_on:
       - mosquitto
@@ -77,8 +94,9 @@ services:
       - INFLUX_TOKEN=${INFLUX_TOKEN:-tritium-dev-token}
 
 volumes:
-  tritium_db:
+  tritium_data:
   mosquitto_data:
+  mosquitto_log:
   influxdb_data:
 
 networks:

@@ -56,6 +56,7 @@ from app.routers.testing import router as testing_router
 from app.routers.heatmap import router as heatmap_router
 from app.routers.device_management import router as device_management_router
 from app.routers.auth import router as auth_router
+from app.routers.backup import router as backup_router
 
 
 # ---------------------------------------------------------------------------
@@ -499,6 +500,15 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("Database initialized")
 
+    # Database migrations
+    try:
+        from app.migrations import run_migrations
+        applied = await run_migrations()
+        if applied > 0:
+            logger.info(f"Applied {applied} database migrations")
+    except Exception as e:
+        logger.warning(f"Migration check failed (non-fatal): {e}")
+
     # Recordings path
     if settings.recordings_path.exists():
         logger.info(f"Recordings path: {settings.recordings_path}")
@@ -810,6 +820,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Rate limiting middleware (only active when rate_limit_enabled=True)
+from app.rate_limit import RateLimitMiddleware
+app.add_middleware(
+    RateLimitMiddleware,
+    max_requests=settings.rate_limit_requests,
+    window_seconds=settings.rate_limit_window_seconds,
+)
+
 # Include routers
 app.include_router(cameras_router)
 app.include_router(videos_router)
@@ -850,6 +868,7 @@ app.include_router(heatmap_router)
 app.include_router(testing_router)
 app.include_router(device_management_router)
 app.include_router(auth_router)
+app.include_router(backup_router)
 
 # Static files
 frontend_path = Path(__file__).parent.parent / "frontend"
