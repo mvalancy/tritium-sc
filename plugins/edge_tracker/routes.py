@@ -50,7 +50,11 @@ class SetNodePositionRequest(BaseModel):
 
 # -- Router factory --------------------------------------------------------
 
-def create_router(store: Any, ble_classifier: Any = None) -> APIRouter:
+def create_router(
+    store: Any,
+    ble_classifier: Any = None,
+    trilateration_engine: Any = None,
+) -> APIRouter:
     """Build and return the edge-tracker APIRouter.
 
     Parameters
@@ -60,6 +64,8 @@ def create_router(store: Any, ble_classifier: Any = None) -> APIRouter:
         installed — all endpoints will return 503 in that case).
     ble_classifier:
         Optional ``BLEClassifier`` instance for threat classification.
+    trilateration_engine:
+        Optional ``TrilaterationEngine`` for multi-node position estimation.
     """
     router = APIRouter(prefix="/api/edge/ble", tags=["edge-tracker"])
 
@@ -94,8 +100,19 @@ def create_router(store: Any, ble_classifier: Any = None) -> APIRouter:
             targets = {t["mac"]: t for t in s.list_targets()}
 
             for dev in devices:
-                # Position estimate
-                if len(dev.get("nodes", [])) >= 2 and node_positions:
+                mac = dev.get("mac", "")
+
+                # Position estimate — prefer trilateration engine (Kalman-
+                # filtered, sliding window) over per-request estimate_position
+                trilat_done = False
+                if trilateration_engine is not None and mac:
+                    est = trilateration_engine.estimate_position(mac)
+                    if est is not None:
+                        dev["position"] = est.to_dict()
+                        trilat_done = True
+
+                # Fallback: per-request trilateration from current node data
+                if not trilat_done and len(dev.get("nodes", [])) >= 2 and node_positions:
                     sightings = [
                         {"node_id": n["node_id"], "ble_rssi": n["rssi"]}
                         for n in dev["nodes"]

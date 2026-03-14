@@ -26,6 +26,7 @@ except ImportError:  # pragma: no cover
     BleStore = None  # type: ignore[assignment,misc]
 
 from engine.tactical.ble_classifier import BLEClassifier
+from engine.tactical.trilateration import TrilaterationEngine
 
 log = logging.getLogger("edge-tracker")
 
@@ -45,6 +46,7 @@ class EdgeTrackerPlugin(PluginInterface):
         self._logger: Optional[logging.Logger] = None
         self._store: Any = None
         self._ble_classifier: Optional[BLEClassifier] = None
+        self._trilateration: Optional[TrilaterationEngine] = None
 
         self._running = False
         self._event_queue: Optional[queue_mod.Queue] = None
@@ -94,6 +96,10 @@ class EdgeTrackerPlugin(PluginInterface):
         if self._event_bus is not None:
             self._ble_classifier = BLEClassifier(event_bus=self._event_bus)
             self._logger.info("BLE classifier initialized")
+
+        # Initialize trilateration engine for multi-node position estimation
+        self._trilateration = TrilaterationEngine()
+        self._logger.info("Trilateration engine initialized")
 
         # Register FastAPI routes
         self._register_routes()
@@ -188,6 +194,10 @@ class EdgeTrackerPlugin(PluginInterface):
         if sightings:
             self._store.record_sightings_batch(sightings)
 
+        # Record sightings in trilateration engine
+        if self._trilateration is not None and self._store is not None:
+            self._record_trilateration_sightings(devices, node_id)
+
         # Classify each device through the BLE classifier
         if self._ble_classifier is not None:
             for dev in devices:
@@ -247,6 +257,9 @@ class EdgeTrackerPlugin(PluginInterface):
                 })
             if sightings:
                 self._store.record_sightings_batch(sightings)
+                # Record sightings in trilateration engine
+                if self._trilateration is not None:
+                    self._record_trilateration_sightings(ble_data, node_id)
                 # Classify each device through the BLE classifier
                 if self._ble_classifier is not None:
                     for dev in ble_data:
@@ -274,6 +287,41 @@ class EdgeTrackerPlugin(PluginInterface):
                 self._store.record_wifi_sightings_batch(wifi_sightings)
                 self._emit_wifi_update()
 
+    def _record_trilateration_sightings(
+        self, devices: list[dict], node_id: str
+    ) -> None:
+        """Feed BLE device sightings into the trilateration engine."""
+        if self._trilateration is None or self._store is None:
+            return
+
+        try:
+            node_pos = self._store.get_node_position(node_id)
+        except Exception:
+            node_pos = None
+
+        if not node_pos:
+            return
+
+        lat = node_pos.get("lat")
+        lon = node_pos.get("lon")
+        if lat is None or lon is None:
+            return
+
+        for dev in devices:
+            mac = dev.get("mac", "")
+            rssi = dev.get("rssi", -100)
+            if mac:
+                self._trilateration.record_sighting(
+                    mac=mac,
+                    node_id=node_id,
+                    node_lat=lat,
+                    node_lon=lon,
+                    rssi=rssi,
+                )
+
+        # Prune stale sightings periodically
+        self._trilateration.prune_stale()
+
     def _emit_ble_update(self) -> None:
         """Emit edge:ble_update with current active devices and push to TargetTracker."""
         if self._event_bus is None or self._store is None:
@@ -290,6 +338,7 @@ class EdgeTrackerPlugin(PluginInterface):
             # Push BLE devices into TargetTracker so they appear on the tactical map
             if self._tracker is not None:
                 for dev in active:
+                    mac = dev.get("mac", "")
                     node_id = dev.get("node_id", "unknown")
                     node_pos = None
                     try:
@@ -299,12 +348,21 @@ class EdgeTrackerPlugin(PluginInterface):
                     except Exception:
                         pass
 
+                    # Use trilateration position if available
+                    trilat_pos = None
+                    if self._trilateration is not None and mac:
+                        est = self._trilateration.estimate_position(mac)
+                        if est is not None:
+                            trilat_pos = est.to_dict()
+                            dev["position"] = trilat_pos
+
                     self._tracker.update_from_ble({
-                        "mac": dev.get("mac", ""),
+                        "mac": mac,
                         "name": dev.get("name", ""),
                         "rssi": dev.get("rssi", -100),
                         "node_id": node_id,
                         "node_position": node_pos,
+                        "trilateration": trilat_pos,
                     })
         except Exception as exc:
             log.error("Failed to emit BLE update: %s", exc)
@@ -333,6 +391,10 @@ class EdgeTrackerPlugin(PluginInterface):
 
         from .routes import create_router
 
-        router, wifi_router = create_router(self._store, ble_classifier=self._ble_classifier)
+        router, wifi_router = create_router(
+            self._store,
+            ble_classifier=self._ble_classifier,
+            trilateration_engine=self._trilateration,
+        )
         self._app.include_router(router)
         self._app.include_router(wifi_router)
