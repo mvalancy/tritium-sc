@@ -54,6 +54,7 @@ def create_router(
     store: Any,
     ble_classifier: Any = None,
     trilateration_engine: Any = None,
+    gatt_profiles: Optional[dict] = None,
 ) -> APIRouter:
     """Build and return the edge-tracker APIRouter.
 
@@ -213,6 +214,37 @@ def create_router(
         """Database statistics."""
         s = _require_store()
         return s.get_stats()
+
+    # -- BLE device GATT profile -------------------------------------------
+
+    @router.get("/devices/{mac:path}/profile")
+    async def get_device_profile(mac: str):
+        """Return the GATT interrogation profile for a BLE device.
+
+        This is the richest classification data available -- exact
+        manufacturer, model, firmware, and service list read directly
+        from the device's GATT server.
+        """
+        profiles = gatt_profiles or {}
+        profile = profiles.get(mac.upper()) or profiles.get(mac)
+        if not profile:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No GATT profile for {mac}. Device may not have been interrogated yet.",
+            )
+        return {"mac": mac, "profile": profile}
+
+    @router.get("/profiles")
+    async def list_gatt_profiles():
+        """Return all cached GATT interrogation profiles."""
+        profiles = gatt_profiles or {}
+        return {
+            "profiles": [
+                {"mac": mac, **p} if isinstance(p, dict) else {"mac": mac}
+                for mac, p in profiles.items()
+            ],
+            "count": len(profiles),
+        }
 
     # -- BLE threat classification -----------------------------------------
 

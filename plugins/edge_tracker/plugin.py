@@ -31,6 +31,18 @@ try:
 except ImportError:  # pragma: no cover
     DeviceClassifier = None  # type: ignore[assignment,misc]
 
+# BLE interrogation models — GATT profile enrichment
+try:
+    from tritium_lib.models.ble_interrogation import (
+        BleDeviceProfile as BleGATTProfile,
+        BleInterrogationResult,
+        classify_device_from_profile,
+    )
+except ImportError:  # pragma: no cover
+    BleGATTProfile = None  # type: ignore[assignment,misc]
+    BleInterrogationResult = None  # type: ignore[assignment,misc]
+    classify_device_from_profile = None  # type: ignore[assignment]
+
 from engine.tactical.ble_classifier import BLEClassifier
 from engine.tactical.trilateration import TrilaterationEngine
 
@@ -60,6 +72,8 @@ class EdgeTrackerPlugin(PluginInterface):
         self._event_thread: Optional[threading.Thread] = None
         # Cache edge-sourced device type/class per MAC (from Apple Continuity etc.)
         self._edge_device_types: dict[str, str] = {}  # mac -> device_type
+        # Cache GATT interrogation profiles per MAC
+        self._gatt_profiles: dict[str, Any] = {}  # mac -> BleGATTProfile dict
 
     # -- PluginInterface identity ------------------------------------------
 
@@ -188,6 +202,8 @@ class EdgeTrackerPlugin(PluginInterface):
             self._on_wifi_presence(data)
         elif event_type == "fleet.heartbeat":
             self._on_fleet_heartbeat(data)
+        elif event_type == "fleet.ble_interrogation":
+            self._on_ble_interrogation(data)
 
     def _on_ble_presence(self, data: dict) -> None:
         """Handle fleet.ble_presence — record sightings and emit update."""
@@ -319,6 +335,69 @@ class EdgeTrackerPlugin(PluginInterface):
                 self._store.record_wifi_sightings_batch(wifi_sightings)
                 self._emit_wifi_update()
 
+    def _on_ble_interrogation(self, data: dict) -> None:
+        """Handle fleet.ble_interrogation — enrich device dossier with GATT profile."""
+        mac = data.get("mac", "")
+        success = data.get("success", False)
+        node_id = data.get("node_id", "unknown")
+
+        if not mac or not success:
+            if mac:
+                log.info("BLE interrogation failed for %s: %s", mac, data.get("error", ""))
+            return
+
+        profile_data = data.get("profile", {})
+        if not profile_data:
+            return
+
+        # Parse into BleGATTProfile if available
+        if BleGATTProfile is not None:
+            try:
+                profile = BleGATTProfile(**profile_data)
+            except Exception as exc:
+                log.warning("Failed to parse GATT profile for %s: %s", mac, exc)
+                profile = None
+        else:
+            profile = None
+
+        # Cache the profile
+        self._gatt_profiles[mac] = profile_data
+
+        # Classify device type from GATT profile
+        device_type = None
+        if profile is not None and classify_device_from_profile is not None:
+            device_type = classify_device_from_profile(profile)
+            if device_type and device_type != "unknown":
+                self._edge_device_types[mac] = device_type
+
+        # Emit enrichment event
+        if self._event_bus is not None:
+            enrichment = {
+                "mac": mac,
+                "node_id": node_id,
+                "source": "gatt_interrogation",
+                "profile": profile_data,
+                "device_type": device_type,
+                "timestamp": time.time(),
+            }
+            if profile is not None:
+                enrichment["manufacturer"] = profile.manufacturer
+                enrichment["model"] = profile.model
+                enrichment["device_name"] = profile.device_name
+                enrichment["battery_level"] = profile.battery_level
+                enrichment["service_count"] = len(profile.services)
+
+            self._event_bus.publish("edge:ble_interrogation", data=enrichment)
+
+        self._logger.info(
+            "BLE GATT profile for %s: mfr=%s model=%s type=%s (%d services)",
+            mac,
+            profile_data.get("manufacturer", "n/a"),
+            profile_data.get("model", "n/a"),
+            device_type or "unknown",
+            len(profile_data.get("services", [])),
+        )
+
     def _record_trilateration_sightings(
         self, devices: list[dict], node_id: str
     ) -> None:
@@ -445,6 +524,7 @@ class EdgeTrackerPlugin(PluginInterface):
             self._store,
             ble_classifier=self._ble_classifier,
             trilateration_engine=self._trilateration,
+            gatt_profiles=self._gatt_profiles,
         )
         self._app.include_router(router)
         self._app.include_router(wifi_router)
