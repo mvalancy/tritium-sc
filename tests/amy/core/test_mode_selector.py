@@ -265,6 +265,7 @@ class TestThinkingModeContext:
             time_of_day="morning",
             war_mode="",
             tactical_situation="",
+            edge_sensors="",
         )
         assert "SIMULATION MODE" in system
         assert "simulated targets" in system
@@ -287,6 +288,7 @@ class TestThinkingModeContext:
             time_of_day="morning",
             war_mode="",
             tactical_situation="",
+            edge_sensors="",
         )
         assert "LIVE SENSORS" in system
         assert "real cameras" in system
