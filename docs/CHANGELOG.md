@@ -14,6 +14,63 @@ Changes tracked with verification status. All changes on `dev` branch.
 
 ---
 
+## 2026-03-13 — Wave 9: Graph Ontology, Investigations & Entity Explorer
+
+### Graph Explorer — Force-Directed Entity Visualization
+| Change | Verification |
+|--------|-------------|
+| `graph-explorer` panel with force-directed D3-style entity relationship graph | Integration Tested |
+| Node rendering by entity type (person, device, vehicle, location, network) | Integration Tested |
+| Edge rendering with relationship labels and directional arrows | Integration Tested |
+| Click-to-inspect node detail sidebar with linked entities | Integration Tested |
+
+### Ontology REST API — Typed Search & Link Traversal
+| Change | Verification |
+|--------|-------------|
+| `/api/ontology/entities` — typed entity search with filters | Integration Tested |
+| `/api/ontology/entities/{id}/links` — relationship traversal | Integration Tested |
+| `/api/ontology/actions` — entity-scoped action dispatch | Integration Tested |
+| Graph store query wrappers for KuzuDB backend | Integration Tested |
+
+### Investigation Workflow Engine
+| Change | Verification |
+|--------|-------------|
+| `InvestigationEngine` — stateful workflow for entity intelligence analysis | Integration Tested |
+| Investigation lifecycle: create, add leads, analyze, resolve | Integration Tested |
+| Lead scoring and priority ranking across entities | Integration Tested |
+
+### Automation Engine Plugin
+| Change | Verification |
+|--------|-------------|
+| If-then rule engine with condition matching and action executors | Integration Tested |
+| Rule persistence and runtime evaluation loop | Integration Tested |
+
+### Amy Autonomous Dispatch
+| Change | Verification |
+|--------|-------------|
+| Threat response: automatic asset selection and dispatch on escalation | Integration Tested |
+| Fusion narration: Amy narrates correlation events in inner monologue | Integration Tested |
+
+### Target Timeline
+| Change | Verification |
+|--------|-------------|
+| `/api/targets/{id}/timeline` — chronological event history per entity | Integration Tested |
+| Timeline panel with scrollable event list and type filtering | Integration Tested |
+
+### Patrol Pattern System
+| Change | Verification |
+|--------|-------------|
+| Waypoint route definitions for autonomous asset patrol | Integration Tested |
+| Patrol state machine: idle, patrolling, returning, holding | Integration Tested |
+
+### Correlator Graph Integration
+| Change | Verification |
+|--------|-------------|
+| TargetCorrelator writes CARRIES/DETECTED_WITH edges to graph store | Integration Tested |
+| Multi-sensor fusion results persisted as graph relationships | Integration Tested |
+
+---
+
 ## 2026-03-13 — Wave 8: Smart Correlation, Dossiers, TAK Bridge & Fusion Demo
 
 ### Smart Correlator — Multi-Factor Identity Resolution
