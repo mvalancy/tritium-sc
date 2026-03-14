@@ -14,6 +14,25 @@ Changes tracked with verification status. All changes on `dev` branch.
 
 ---
 
+## 2026-03-14 — Wave 25: Maintenance & Quality
+
+### New Features
+| Change | Verification |
+|--------|-------------|
+| System Health panel — at-a-glance view of plugins, targets, dossiers, notifications, Amy, demo mode, test results | Syntax Verified |
+| Quick Start panel — new user orientation with demo launch button and panel links | Syntax Verified |
+| Edge-sourced Apple Continuity device types cached and used as fallback in TargetTracker | Unit Tested (50 plugin tests) |
+
+### Quality
+| Check | Status |
+|-------|--------|
+| Dead `oui_lookup` import removed from enrichment module | Fixed |
+| Federation plugin README added | Documented |
+| Motion sensor and swarm drone demo READMEs added | Documented |
+| Plugins README updated with federation plugin entry | Documented |
+
+---
+
 ## 2026-03-14 — Wave 15: Federation, TLS, Dossier Notifications
 
 ### New Features
