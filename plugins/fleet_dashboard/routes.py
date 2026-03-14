@@ -1,16 +1,44 @@
 # Created by Matthew Valancy
 # Copyright 2026 Valpatel Software LLC
 # Licensed under AGPL-3.0 — see LICENSE for details.
-"""FastAPI routes for the Fleet Dashboard plugin."""
+"""FastAPI routes for the Fleet Dashboard plugin.
+
+Includes fleet coordination, analytics, and config template endpoints.
+"""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
     from .plugin import FleetDashboardPlugin
+
+
+class FleetCommandRequest(BaseModel):
+    """Request body for POST /api/fleet/command."""
+    target_group: str
+    command_type: str  # reboot, scan_burst, increase_rate, decrease_rate, ota_update, apply_template
+    payload: dict = Field(default_factory=dict)
+
+
+class ConfigTemplateRequest(BaseModel):
+    """Request body for POST /api/fleet/templates."""
+    name: str
+    description: str = ""
+    ble_scan_interval_ms: int = 10000
+    wifi_scan_interval_ms: int = 30000
+    heartbeat_interval_ms: int = 30000
+    sighting_interval_ms: int = 15000
+    power_mode: str = "normal"
+    settings: dict = Field(default_factory=dict)
+
+
+class ApplyTemplateRequest(BaseModel):
+    """Request body for POST /api/fleet/templates/{template_id}/apply."""
+    target_group: str
 
 
 def create_router(plugin: FleetDashboardPlugin) -> APIRouter:
@@ -68,5 +96,118 @@ def create_router(plugin: FleetDashboardPlugin) -> APIRouter:
         """
         topology = plugin.get_topology()
         return topology
+
+    # -- Fleet coordination routes -----------------------------------------
+
+    @router.post("/command")
+    async def send_fleet_command(request: FleetCommandRequest):
+        """Send a command to all devices in a group.
+
+        Supported command_type values:
+        - reboot: Restart all devices in the group
+        - scan_burst: Trigger an immediate scan cycle
+        - increase_rate: Increase scan/report frequency
+        - decrease_rate: Decrease scan/report frequency
+        - ota_update: Initiate OTA update
+        - apply_template: Apply a config template (requires template_id in payload)
+        """
+        valid_types = {
+            "reboot", "scan_burst", "increase_rate", "decrease_rate",
+            "ota_update", "apply_template", "set_group", "identify", "sleep",
+        }
+        if request.command_type not in valid_types:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid command_type: {request.command_type}. "
+                       f"Valid types: {', '.join(sorted(valid_types))}",
+            )
+
+        result = plugin.send_fleet_command(
+            target_group=request.target_group,
+            command_type=request.command_type,
+            payload=request.payload,
+        )
+        return result
+
+    @router.get("/commands")
+    async def list_fleet_commands(limit: int = 50):
+        """List recent fleet commands with status."""
+        commands = plugin.get_fleet_commands(limit=limit)
+        return {"commands": commands, "count": len(commands)}
+
+    @router.get("/groups")
+    async def list_groups():
+        """List all device groups with their member devices."""
+        groups = plugin.get_groups()
+        return {
+            "groups": {
+                name: {"devices": devs, "count": len(devs)}
+                for name, devs in groups.items()
+            },
+            "group_count": len(groups),
+        }
+
+    @router.get("/groups/{group_name}/devices")
+    async def get_group_devices(group_name: str):
+        """List devices in a specific group."""
+        devices = plugin.get_devices_in_group(group_name)
+        return {"group": group_name, "devices": devices, "count": len(devices)}
+
+    # -- Config template routes --------------------------------------------
+
+    @router.get("/templates")
+    async def list_templates():
+        """List all configuration templates (built-in and custom)."""
+        templates = plugin.get_config_templates()
+        return {"templates": templates, "count": len(templates)}
+
+    @router.get("/templates/{template_id}")
+    async def get_template(template_id: str):
+        """Get a specific configuration template."""
+        template = plugin.get_config_template(template_id)
+        if template is None:
+            raise HTTPException(status_code=404, detail="Template not found")
+        return {"template": template}
+
+    @router.post("/templates")
+    async def create_template(request: ConfigTemplateRequest):
+        """Create a new custom configuration template."""
+        template = plugin.create_config_template(request.model_dump())
+        return {"template": template}
+
+    @router.post("/templates/{template_id}/apply")
+    async def apply_template(template_id: str, request: ApplyTemplateRequest):
+        """Apply a configuration template to all devices in a group.
+
+        Sends config_update commands to each device with template parameters.
+        """
+        result = plugin.apply_template_to_group(template_id, request.target_group)
+        if result.get("error"):
+            raise HTTPException(status_code=404, detail=result["error"])
+        return result
+
+    # -- Fleet analytics routes --------------------------------------------
+
+    @router.get("/analytics")
+    async def get_analytics():
+        """Get current fleet analytics snapshot.
+
+        Returns device uptime trends, sighting rates, coverage data,
+        and group distribution.
+        """
+        snapshot = plugin.get_analytics_snapshot()
+        return snapshot
+
+    @router.get("/analytics/history")
+    async def get_analytics_history(hours: int = 24):
+        """Get historical fleet analytics snapshots."""
+        history = plugin.get_analytics_history(hours=hours)
+        return {"snapshots": history, "count": len(history), "hours": hours}
+
+    @router.get("/coverage")
+    async def get_coverage_map():
+        """Get sensor coverage map showing device positions and overlap."""
+        coverage = plugin.get_coverage_map()
+        return {"coverage": coverage, "count": len(coverage)}
 
     return router

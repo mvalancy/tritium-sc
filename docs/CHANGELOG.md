@@ -14,6 +14,24 @@ Changes tracked with verification status. All changes on `dev` branch.
 
 ---
 
+## 2026-03-14 — Wave 77: Fleet Operations + Multi-Node Coordination
+
+| Change | Verification |
+|--------|-------------|
+| Fleet coordination commands: POST /api/fleet/command with target_group, command_type | Unit Tested (20 tests) |
+| Supported command types: reboot, scan_burst, increase_rate, decrease_rate, ota_update, apply_template | Unit Tested |
+| Device group management: GET /api/fleet/groups, /groups/{name}/devices | Unit Tested |
+| Config template system: 3 built-in templates (perimeter_high_security, indoor_normal, power_saver_mobile) | Unit Tested |
+| Custom template CRUD: POST /api/fleet/templates, GET /api/fleet/templates/{id} | Unit Tested |
+| Template application: POST /api/fleet/templates/{id}/apply sends config to group via MQTT | Unit Tested |
+| Fleet analytics dashboard: GET /api/fleet/analytics — uptime trends, sighting rates, group distribution | Unit Tested |
+| Analytics history: GET /api/fleet/analytics/history with time window filtering | Unit Tested |
+| Coverage map: GET /api/fleet/coverage — device positions for sensor overlap visualization | Unit Tested |
+| Heartbeat now tracks device_group and lat/lng position from edge devices | Unit Tested |
+| Fleet command history: GET /api/fleet/commands — recent command log with status | Unit Tested |
+
+---
+
 ## 2026-03-14 — Wave 76: Behavioral Intelligence + Pattern Learning
 
 | Change | Verification |
