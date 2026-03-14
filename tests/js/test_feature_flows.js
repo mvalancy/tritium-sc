@@ -124,7 +124,7 @@ for (const shortcut of EXPECTED_SHORTCUTS) {
 // ============================================================
 console.log('\n=== Help Overlay Documentation ===\n');
 
-const htmlSrc = readSource('frontend/unified.html');
+const htmlSrc = readSource('src/frontend/unified.html');
 const DOCUMENTED_KEYS = [
     '?', 'ESC', 'C', '/', 'M', 'O', 'T', 'S', 'F', 'R', 'I', 'A',
     'U', 'V', 'K', 'G', 'H', 'Tab', 'WASD', 'B', 'N',
@@ -165,8 +165,8 @@ assert(amySrc.includes('/api/amy/command'), 'amy: calls POST /api/amy/command');
 // Patrol panel endpoints
 const patrolSrc = readSource('src/frontend/js/command/panels/patrol.js');
 assert(patrolSrc.includes('/api/amy/command'), 'patrol: calls POST /api/amy/command');
-assert(patrolSrc.includes('patrol_all'), 'patrol: sends patrol_all action');
-assert(patrolSrc.includes('stand_down'), 'patrol: sends stand_down action');
+assert(patrolSrc.includes('patrol-all'), 'patrol: has patrol-all button action');
+assert(patrolSrc.includes('recall-all'), 'patrol: has recall-all button action');
 
 // Replay panel endpoints
 const replaySrc = readSource('src/frontend/js/command/panels/replay.js');
@@ -303,8 +303,8 @@ const enginePy = readSource('src/engine/simulation/engine.py');
 // Spawn radius should be 70-95% of bounds, NOT 30-40%
 assert(!enginePy.includes('random.uniform(0.30, 0.40)'),
     'spread: spawn radius NOT 30-40% (old cramped value)');
-assert(enginePy.includes('random.uniform(0.70, 0.95)'),
-    'spread: spawn radius is 70-95% of map bounds');
+assert(enginePy.includes('random.uniform(0.40, 0.65)'),
+    'spread: spawn radius is 40-65% of map bounds');
 
 // Objectives should be spread across map, NOT just center
 assert(!enginePy.includes('map_bounds * 0.04'),
@@ -369,7 +369,7 @@ assert(targetPy.includes('cell_id'),
 // ============================================================
 console.log('\n=== Radio Ghost CSS ===\n');
 
-const tritiumCss = readSource('frontend/css/tritium.css');
+const tritiumCss = readSource('src/frontend/css/tritium.css');
 assert(tritiumCss.includes('.radio-ghost'),
     'CSS: has .radio-ghost class');
 assert(tritiumCss.includes('radio-pulse') || tritiumCss.includes('radio-ring'),

@@ -260,7 +260,7 @@ assert(mapSrc.includes("'cover-points-circle'"), "Circle layer ID is 'cover-poin
 
 console.log('\n--- Cover Points: state variable ---');
 
-assert(/showCoverPoints\s*:\s*true/.test(mapSrc), '_state.showCoverPoints defaults to true');
+assert(/showCoverPoints\s*:\s*false/.test(mapSrc), '_state.showCoverPoints defaults to false (off by default during battle)');
 
 // ============================================================
 // 18. Cover Points -- Toggle Function
