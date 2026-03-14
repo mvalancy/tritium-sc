@@ -267,7 +267,7 @@ class MeshtasticPlugin(PluginInterface):
         # Push to TargetTracker if we have GPS coordinates
         if self._tracker and (lat != 0.0 or lng != 0.0):
             from engine.tactical.geo import latlng_to_local
-            local = latlng_to_local(lat, lng)
+            lx, ly, lz = latlng_to_local(lat, lng, alt)
             tid = f"mesh_{node_id.replace('!', '')}"
 
             # Use update_from_simulation path for friendly mesh nodes
@@ -276,7 +276,7 @@ class MeshtasticPlugin(PluginInterface):
                 "name": f"[Mesh] {name}",
                 "alliance": "friendly",
                 "asset_type": "mesh_radio",
-                "position": {"x": local["x"], "y": local["y"]},
+                "position": {"x": lx, "y": ly},
                 "heading": 0.0,
                 "speed": 0.0,
                 "battery": battery,
