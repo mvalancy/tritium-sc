@@ -14,6 +14,33 @@ Changes tracked with verification status. All changes on `dev` branch.
 
 ---
 
+## 2026-03-14 — Wave 56: RL Deepening + Anomaly Detection + Target Handoff
+
+### BLE Classification Learner (Unit Tested, 14 tests)
+- New `engine/intelligence/ble_classification_learner.py` — ML-based BLE device type classification
+- Trains Random Forest on labeled BLE features: OUI hash, name patterns, service UUIDs, appearance, company ID
+- `DeviceClassifierMLBackend` adapter integrates with tritium-lib's DeviceClassifier as optional ML signal
+- Feature extraction, model persistence (pickle), singleton pattern, retrain support
+
+### Anomaly Baseline Collector (Unit Tested, 7 tests)
+- New `engine/intelligence/anomaly_baseline.py` — background RF environment baselining
+- Samples BLE count, WiFi count, RSSI distribution, device churn every 5 minutes
+- After 288 samples (24h), deviations >2 sigma trigger anomaly alerts
+- Optional LLM-generated anomaly descriptions via callback
+- Daemon thread with responsive shutdown
+
+### Target Handoff Tracking (Unit Tested, 12 tests)
+- New `engine/tactical/target_handoff.py` — sensor-to-sensor coverage transitions
+- Detects when target leaves one camera/sensor FOV and appears at another
+- Confidence scoring based on gap duration (short gap = high confidence)
+- Critical for ReID: "person left camera A, appeared on camera B 30s later"
+- Departure memory with TTL, handoff history, sensor coverage status
+
+### Investigation Auto-Escalation (Unit Tested, 7 tests)
+- `InvestigationEngine.check_escalation()` — auto-escalate when 5+ entities have threat >= medium
+- Adds PRIORITY prefix to title, creates system annotation, invokes optional callback
+- No double-escalation (checks for existing PRIORITY prefix)
+
 ## 2026-03-14 — Wave 55: Skepticism + System Inventory + RL E2E
 
 ### Server Verification (Human Verified)

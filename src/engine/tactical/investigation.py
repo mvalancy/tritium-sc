@@ -649,6 +649,91 @@ class InvestigationEngine:
     # Auto-escalation
     # ------------------------------------------------------------------
 
+    def check_escalation(
+        self,
+        inv_id: str,
+        dossier_store=None,
+        on_escalate: object = None,
+    ) -> bool:
+        """Auto-escalate an investigation when it accumulates 5+ entities
+        with threat_level >= medium.
+
+        Checks all entities in the investigation against their dossiers'
+        threat levels. If 5 or more have threat_level in
+        (medium, high, critical), the investigation is upgraded to
+        priority status and an optional callback is invoked.
+
+        Parameters
+        ----------
+        inv_id:
+            Investigation ID to check.
+        dossier_store:
+            DossierStore to look up entity threat levels.
+            Falls back to self._dossier_store if None.
+        on_escalate:
+            Optional callback(investigation, threat_count) invoked on escalation.
+
+        Returns
+        -------
+        bool:
+            True if the investigation was escalated.
+        """
+        inv = self.get(inv_id)
+        if inv is None:
+            return False
+
+        store = dossier_store or self._dossier_store
+        if store is None:
+            return False
+
+        # Already escalated?
+        if inv.title.startswith("PRIORITY:"):
+            return False
+
+        threat_levels = {"medium", "high", "critical"}
+        threat_count = 0
+
+        for entity_id in inv.all_entity_ids():
+            try:
+                dossier = store.get_dossier(entity_id)
+                if dossier is None:
+                    continue
+                level = dossier.get("threat_level", "unknown")
+                if level in threat_levels:
+                    threat_count += 1
+            except Exception:
+                continue
+
+        if threat_count < 5:
+            return False
+
+        # Escalate
+        inv.title = f"PRIORITY: {inv.title}"
+        ann = Annotation(
+            entity_id="",
+            note=(
+                f"Auto-escalated: {threat_count} entities with "
+                f"threat_level >= medium"
+            ),
+            analyst="system",
+        )
+        inv.annotations.append(ann)
+        self._save_investigation(inv)
+        self._save_annotation(inv_id, ann)
+
+        logger.info(
+            "Investigation %s auto-escalated: %d medium+ threats",
+            inv_id[:8], threat_count,
+        )
+
+        if on_escalate is not None:
+            try:
+                on_escalate(inv, threat_count)  # type: ignore[operator]
+            except Exception as exc:
+                logger.warning("Escalation callback failed: %s", exc)
+
+        return True
+
     def auto_investigate_threat(
         self,
         dossier_id: str,
