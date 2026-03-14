@@ -57,6 +57,7 @@ const LAYER_CATEGORIES = [
             { id: 'fog', label: 'Fog of War', description: 'Areas outside unit vision radius are darkened', color: '#000000', source: 'Vision System', key: 'showFog' },
             { id: 'heatmap', label: 'Combat Heatmap', description: 'Heat overlay showing where combat is concentrated', color: '#ff4400', source: 'Replay System', key: 'showHeatmap' },
             { id: 'crowdDensity', label: 'Crowd Density', description: 'Civilian crowd density heatmap (civil unrest mode)', color: '#ff8800', source: 'Population Model', key: 'showCrowdDensity' },
+            { id: 'activityHeatmap', label: 'Activity Heatmap', description: 'Multi-source activity density: BLE, camera, motion sensors', color: '#ff2a6d', source: 'Heatmap Engine', key: 'showActivityHeatmap' },
         ],
     },
     {
