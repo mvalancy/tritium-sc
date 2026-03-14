@@ -14,6 +14,19 @@ Changes tracked with verification status. All changes on `dev` branch.
 
 ---
 
+## 2026-03-14 — Wave 74: Advanced 3D Visualization
+
+| Change | Verification |
+|--------|-------------|
+| 3D trajectory ribbons in war3d.js — target movement paths as colored ribbons, width=confidence, color=alliance | Code Complete |
+| Sensor coverage volume rendering — translucent cones (cameras), spheres (BLE/WiFi), cylinders (acoustic) | Code Complete |
+| Timeline scrubber for 3D view — play/pause/seek through time, configurable speed/loop | Code Complete |
+| AR export endpoint — GET /api/targets/ar-export, simplified JSON for AR headsets | Unit Tested (7 tests) |
+| war3d.js new exports: war3dSetCoverageVolumes, war3dSetTimeline, war3dTimelinePlay, war3dTimelineSeek | Code Complete |
+| Ribbon rendering integrates with warState.targetTrails, throttled at 500ms | Code Complete |
+
+---
+
 ## 2026-03-14 — Wave 73: Spatial Intelligence + Indoor Mapping
 
 | Change | Verification |

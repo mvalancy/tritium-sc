@@ -43,6 +43,23 @@ const war3d = {
     effectMeshes: [],
     selectionRings: {},    // target_id -> THREE.Mesh
 
+    // Trajectory ribbons (target_id -> THREE.Mesh)
+    trajectoryRibbons: {},
+    // Sensor coverage volumes (sensor_id -> THREE.Group)
+    coverageVolumes: {},
+    // Timeline scrubber state
+    timeline: {
+        enabled: false,
+        startTime: 0,
+        endTime: 0,
+        currentTime: 0,
+        playing: false,
+        speed: 1.0,
+        loop: false,
+        showTrails: true,
+        trailDuration: 30.0,
+    },
+
     // Reusable objects
     raycaster: null,
     mouseVec: null,
@@ -183,6 +200,8 @@ function destroyWar3D() {
     war3d.dispatchArrowMeshes = [];
     war3d.effectMeshes = [];
     war3d.selectionRings = {};
+    war3d.trajectoryRibbons = {};
+    war3d.coverageVolumes = {};
     war3d.materials = {};
     war3d.initialized = false;
 
@@ -1039,6 +1058,15 @@ function updateWar3D() {
     // Update placing ghost
     _updatePlacingGhost();
 
+    // Update trajectory ribbons
+    _updateRibbonsThrottled();
+
+    // Animate sensor coverage volumes
+    _animateCoverageVolumes();
+
+    // Update timeline playback
+    _updateTimeline(dt);
+
     // Render
     war3d.renderer.render(war3d.scene, war3d.camera);
 }
@@ -1364,6 +1392,403 @@ function war3dToggleTilt() {
 }
 
 // ---------------------------------------------------------------------------
+// Trajectory Ribbons — 3D movement trails with confidence-based width
+// ---------------------------------------------------------------------------
+
+const RIBBON_ALLIANCE_COLORS = {
+    friendly: 0x05ffa1,
+    hostile:  0xff2a6d,
+    neutral:  0x00a0ff,
+    unknown:  0xfcee0a,
+};
+
+/**
+ * Update trajectory ribbons for all targets with history data.
+ * Fetches trail data from warState.targetTrails if available.
+ * Width = confidence, color = alliance, height = time offset.
+ */
+function _updateTrajectoryRibbons() {
+    if (typeof warState === 'undefined') return;
+
+    const trails = warState.targetTrails || {};
+    const targets = typeof getTargets === 'function' ? getTargets() : {};
+
+    // Remove ribbons for targets that no longer exist
+    for (const tid of Object.keys(war3d.trajectoryRibbons)) {
+        if (!trails[tid] || !targets[tid]) {
+            const ribbon = war3d.trajectoryRibbons[tid];
+            war3d.scene.remove(ribbon);
+            if (ribbon.geometry) ribbon.geometry.dispose();
+            if (ribbon.material) ribbon.material.dispose();
+            delete war3d.trajectoryRibbons[tid];
+        }
+    }
+
+    for (const [tid, trail] of Object.entries(trails)) {
+        if (!trail || trail.length < 2) continue;
+        const target = targets[tid];
+        if (!target) continue;
+
+        // Remove existing ribbon to rebuild
+        const oldRibbon = war3d.trajectoryRibbons[tid];
+        if (oldRibbon) {
+            war3d.scene.remove(oldRibbon);
+            if (oldRibbon.geometry) oldRibbon.geometry.dispose();
+            if (oldRibbon.material) oldRibbon.material.dispose();
+        }
+
+        const alliance = (target.alliance || 'unknown').toLowerCase();
+        const color = RIBBON_ALLIANCE_COLORS[alliance] || RIBBON_ALLIANCE_COLORS.unknown;
+        const confidence = target.position_confidence || 0.5;
+
+        // Build ribbon geometry: two parallel strips offset by width
+        const minWidth = 0.1;
+        const maxWidth = 0.5;
+        const width = minWidth + (maxWidth - minWidth) * Math.min(1, confidence);
+        const timeHeightScale = 0.01; // Y offset per second of age
+
+        const positions = [];
+        const colors = [];
+        const baseTime = trail.length > 0 ? trail[0].t : 0;
+
+        for (let i = 0; i < trail.length; i++) {
+            const pt = trail[i];
+            const age = pt.t - baseTime;
+            const y = 0.05 + age * timeHeightScale;
+
+            // Perpendicular direction for ribbon width
+            let dx = 0, dy = 0;
+            if (i < trail.length - 1) {
+                dx = trail[i + 1].x - pt.x;
+                dy = trail[i + 1].y - pt.y;
+            } else if (i > 0) {
+                dx = pt.x - trail[i - 1].x;
+                dy = pt.y - trail[i - 1].y;
+            }
+            const len = Math.sqrt(dx * dx + dy * dy) || 1;
+            const nx = -dy / len * width * 0.5;
+            const nz = dx / len * width * 0.5;
+
+            // Left vertex
+            positions.push(pt.x + nx, y, -pt.y + nz);
+            // Right vertex
+            positions.push(pt.x - nx, y, -pt.y - nz);
+
+            // Fade alpha based on age (oldest = transparent)
+            const alpha = Math.max(0.1, 1.0 - (i / trail.length) * 0.7);
+            const c = new THREE.Color(color);
+            colors.push(c.r * alpha, c.g * alpha, c.b * alpha);
+            colors.push(c.r * alpha, c.g * alpha, c.b * alpha);
+        }
+
+        if (positions.length < 6) continue;
+
+        // Build indexed triangle strip
+        const indices = [];
+        const vertCount = positions.length / 3;
+        for (let i = 0; i < vertCount - 2; i += 2) {
+            indices.push(i, i + 1, i + 2);
+            indices.push(i + 1, i + 3, i + 2);
+        }
+
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+        geo.setIndex(indices);
+        geo.computeVertexNormals();
+
+        const mat = new THREE.MeshBasicMaterial({
+            vertexColors: true,
+            transparent: true,
+            opacity: 0.6,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+        });
+
+        const ribbonMesh = new THREE.Mesh(geo, mat);
+        ribbonMesh.userData.targetId = tid;
+        ribbonMesh.renderOrder = -1;
+
+        war3d.scene.add(ribbonMesh);
+        war3d.trajectoryRibbons[tid] = ribbonMesh;
+    }
+}
+
+// Throttle ribbon updates (trail data changes at lower frequency)
+let _lastRibbonUpdate = 0;
+function _updateRibbonsThrottled() {
+    const now = Date.now();
+    if (now - _lastRibbonUpdate > 500) {
+        _updateTrajectoryRibbons();
+        _lastRibbonUpdate = now;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Sensor Coverage Volumes — translucent cones/spheres showing detection range
+// ---------------------------------------------------------------------------
+
+/**
+ * Render sensor coverage volumes as translucent 3D shapes.
+ * Called with sensor data from warState.sensorVolumes or via API.
+ * @param {Array} volumes - [{sensor_id, type, x, y, z, range, fov_h, fov_v, heading, color}]
+ */
+function war3dSetCoverageVolumes(volumes) {
+    if (!war3d.scene) return;
+
+    // Remove old volumes
+    for (const [sid, group] of Object.entries(war3d.coverageVolumes)) {
+        war3d.scene.remove(group);
+        group.traverse(c => {
+            if (c.geometry) c.geometry.dispose();
+            if (c.material) c.material.dispose();
+        });
+    }
+    war3d.coverageVolumes = {};
+
+    if (!volumes || !Array.isArray(volumes)) return;
+
+    for (const vol of volumes) {
+        const group = new THREE.Group();
+        group.userData.sensorId = vol.sensor_id || vol.id || '';
+        const px = vol.x || vol.position_x || 0;
+        const py = vol.y || vol.position_y || 0;
+        const pz = vol.z || vol.position_z || 1;
+        const range = vol.range_m || vol.range || 10;
+        const heading = (vol.heading_deg || vol.heading || 0) * Math.PI / 180;
+        const tilt = (vol.tilt_deg || vol.tilt || 0) * Math.PI / 180;
+        const fovH = (vol.fov_horizontal_deg || vol.fov_h || 360) * Math.PI / 180;
+        const fovV = (vol.fov_vertical_deg || vol.fov_v || 180) * Math.PI / 180;
+        const volColor = vol.color ? new THREE.Color(vol.color) : new THREE.Color(0x00f0ff);
+        const opacity = vol.opacity || 0.08;
+        const wireframeOpacity = vol.wireframe_opacity || 0.2;
+        const volumeType = vol.volume_type || vol.type || 'sphere';
+
+        if (volumeType === 'cone' || volumeType === 'frustum') {
+            // Camera FOV cone
+            const coneRadius = Math.tan(fovH / 2) * range;
+            const geo = new THREE.ConeGeometry(coneRadius, range, 32, 1, true);
+
+            // Fill
+            const fillMat = new THREE.MeshBasicMaterial({
+                color: volColor,
+                transparent: true,
+                opacity: opacity,
+                side: THREE.DoubleSide,
+                depthWrite: false,
+            });
+            const cone = new THREE.Mesh(geo, fillMat);
+            // Orient cone: tip at sensor, opens outward
+            cone.rotation.x = Math.PI / 2 + tilt;
+            cone.rotation.y = -heading;
+            cone.position.set(0, 0, -range / 2);
+            group.add(cone);
+
+            // Wireframe overlay
+            const wireMat = new THREE.MeshBasicMaterial({
+                color: volColor,
+                transparent: true,
+                opacity: wireframeOpacity,
+                wireframe: true,
+                depthWrite: false,
+            });
+            const wireframe = new THREE.Mesh(geo.clone(), wireMat);
+            wireframe.rotation.copy(cone.rotation);
+            wireframe.position.copy(cone.position);
+            group.add(wireframe);
+        } else if (volumeType === 'cylinder') {
+            // Acoustic vertical detection
+            const geo = new THREE.CylinderGeometry(range, range, range * 0.5, 32, 1, true);
+            const fillMat = new THREE.MeshBasicMaterial({
+                color: volColor,
+                transparent: true,
+                opacity: opacity,
+                side: THREE.DoubleSide,
+                depthWrite: false,
+            });
+            const cyl = new THREE.Mesh(geo, fillMat);
+            cyl.position.y = range * 0.25;
+            group.add(cyl);
+
+            const wireMat = new THREE.MeshBasicMaterial({
+                color: volColor,
+                transparent: true,
+                opacity: wireframeOpacity,
+                wireframe: true,
+                depthWrite: false,
+            });
+            const wireframe = new THREE.Mesh(geo.clone(), wireMat);
+            wireframe.position.copy(cyl.position);
+            group.add(wireframe);
+        } else {
+            // Sphere (BLE/WiFi omnidirectional)
+            const geo = new THREE.SphereGeometry(range, 24, 16);
+            const fillMat = new THREE.MeshBasicMaterial({
+                color: volColor,
+                transparent: true,
+                opacity: opacity,
+                side: THREE.DoubleSide,
+                depthWrite: false,
+            });
+            const sphere = new THREE.Mesh(geo, fillMat);
+            group.add(sphere);
+
+            const wireMat = new THREE.MeshBasicMaterial({
+                color: volColor,
+                transparent: true,
+                opacity: wireframeOpacity,
+                wireframe: true,
+                depthWrite: false,
+            });
+            const wireframe = new THREE.Mesh(geo.clone(), wireMat);
+            group.add(wireframe);
+        }
+
+        // Sensor icon at origin (small emissive sphere)
+        const iconGeo = new THREE.SphereGeometry(0.15, 8, 6);
+        const iconMat = new THREE.MeshBasicMaterial({
+            color: volColor,
+            emissive: volColor,
+            emissiveIntensity: 0.5,
+        });
+        group.add(new THREE.Mesh(iconGeo, iconMat));
+
+        // Position group in world space
+        group.position.set(px, pz, -py);
+
+        // Apply heading rotation
+        group.rotation.y = -heading;
+
+        war3d.scene.add(group);
+        war3d.coverageVolumes[vol.sensor_id || vol.id || `vol_${Object.keys(war3d.coverageVolumes).length}`] = group;
+    }
+
+    console.log(`%c[WAR3D] Rendered ${volumes.length} sensor coverage volumes`, 'color: #00f0ff;');
+}
+
+/**
+ * Animate sensor coverage volumes (pulse effect).
+ */
+function _animateCoverageVolumes() {
+    const now = Date.now();
+    for (const group of Object.values(war3d.coverageVolumes)) {
+        // Gentle pulse on fill materials
+        group.traverse(child => {
+            if (child.isMesh && child.material && !child.material.wireframe && child.geometry.type !== 'SphereGeometry') return;
+            if (child.isMesh && child.material && !child.material.wireframe) {
+                const basePulse = 0.04 + Math.sin(now * 0.002) * 0.02;
+                if (child.material.opacity !== undefined && child.geometry.parameters && child.geometry.parameters.radius > 1) {
+                    child.material.opacity = basePulse;
+                }
+            }
+        });
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Timeline Scrubber — temporal playback controls for 3D view
+// ---------------------------------------------------------------------------
+
+/**
+ * Configure and enable the timeline scrubber.
+ * @param {Object} config - {startTime, endTime, speed, loop, showTrails, trailDuration}
+ */
+function war3dSetTimeline(config) {
+    if (!config) {
+        war3d.timeline.enabled = false;
+        return;
+    }
+    war3d.timeline.enabled = true;
+    war3d.timeline.startTime = config.startTime || config.start_time || 0;
+    war3d.timeline.endTime = config.endTime || config.end_time || 0;
+    war3d.timeline.currentTime = config.currentTime || config.current_time || war3d.timeline.startTime;
+    war3d.timeline.speed = config.speed || config.playback_speed || 1.0;
+    war3d.timeline.playing = config.playing || false;
+    war3d.timeline.loop = config.loop || false;
+    war3d.timeline.showTrails = config.showTrails !== undefined ? config.showTrails : (config.show_trails !== undefined ? config.show_trails : true);
+    war3d.timeline.trailDuration = config.trailDuration || config.trail_duration_s || 30.0;
+
+    console.log(`%c[WAR3D] Timeline: ${new Date(war3d.timeline.startTime * 1000).toISOString()} -> ${new Date(war3d.timeline.endTime * 1000).toISOString()}`, 'color: #fcee0a;');
+}
+
+/**
+ * Play/pause timeline playback.
+ */
+function war3dTimelinePlay() {
+    war3d.timeline.playing = !war3d.timeline.playing;
+}
+
+/**
+ * Seek timeline to a specific time or progress fraction.
+ * @param {number} value — if 0-1, treated as progress fraction; otherwise as timestamp
+ */
+function war3dTimelineSeek(value) {
+    if (!war3d.timeline.enabled) return;
+    const tl = war3d.timeline;
+    if (value >= 0 && value <= 1 && tl.endTime - tl.startTime > 1) {
+        // Treat as fraction
+        tl.currentTime = tl.startTime + value * (tl.endTime - tl.startTime);
+    } else {
+        tl.currentTime = Math.max(tl.startTime, Math.min(tl.endTime, value));
+    }
+}
+
+/**
+ * Advance timeline each frame.
+ * @param {number} dt — delta time in seconds
+ */
+function _updateTimeline(dt) {
+    const tl = war3d.timeline;
+    if (!tl.enabled || !tl.playing) return;
+
+    tl.currentTime += dt * tl.speed;
+
+    if (tl.currentTime >= tl.endTime) {
+        if (tl.loop) {
+            tl.currentTime = tl.startTime;
+        } else {
+            tl.currentTime = tl.endTime;
+            tl.playing = false;
+        }
+    }
+
+    // Publish timeline state for UI scrubber
+    if (typeof warState !== 'undefined') {
+        warState.timelineState = {
+            enabled: tl.enabled,
+            playing: tl.playing,
+            progress: tl.endTime > tl.startTime
+                ? (tl.currentTime - tl.startTime) / (tl.endTime - tl.startTime)
+                : 0,
+            currentTime: tl.currentTime,
+            speed: tl.speed,
+        };
+    }
+}
+
+/**
+ * Get current timeline state for UI rendering.
+ * @returns {Object} timeline state or null if disabled
+ */
+function war3dGetTimelineState() {
+    const tl = war3d.timeline;
+    if (!tl.enabled) return null;
+    return {
+        enabled: tl.enabled,
+        playing: tl.playing,
+        startTime: tl.startTime,
+        endTime: tl.endTime,
+        currentTime: tl.currentTime,
+        progress: tl.endTime > tl.startTime
+            ? (tl.currentTime - tl.startTime) / (tl.endTime - tl.startTime)
+            : 0,
+        speed: tl.speed,
+        loop: tl.loop,
+        duration: tl.endTime - tl.startTime,
+    };
+}
+
+// ---------------------------------------------------------------------------
 // Expose globally
 // ---------------------------------------------------------------------------
 
@@ -1375,4 +1800,9 @@ window.war3dDispatchTo = war3dDispatchTo;
 window.war3dSetGroundTexture = war3dSetGroundTexture;
 window.war3dAddBuildings = war3dAddBuildings;
 window.war3dToggleTilt = war3dToggleTilt;
+window.war3dSetCoverageVolumes = war3dSetCoverageVolumes;
+window.war3dSetTimeline = war3dSetTimeline;
+window.war3dTimelinePlay = war3dTimelinePlay;
+window.war3dTimelineSeek = war3dTimelineSeek;
+window.war3dGetTimelineState = war3dGetTimelineState;
 window.war3d = war3d;
