@@ -106,6 +106,31 @@ async def get_friendlies(request: Request):
     return {"targets": []}
 
 
+@router.get("/targets/{target_id}/trail")
+async def get_target_trail(
+    request: Request,
+    target_id: str,
+    max_points: int = Query(100, ge=1, le=1000, description="Max trail points"),
+):
+    """Return position history trail for a specific target."""
+    tracker = _get_tracker(request)
+    if tracker is None:
+        return {"error": "No tracker available", "trail": []}
+
+    target = tracker.get_target(target_id)
+    if target is None:
+        return {"error": "Target not found", "trail": []}
+
+    trail = tracker.history.get_trail_dicts(target_id, max_points=max_points)
+    return {
+        "target_id": target_id,
+        "trail": trail,
+        "speed": tracker.history.get_speed(target_id),
+        "heading": tracker.history.get_heading(target_id),
+        "point_count": len(trail),
+    }
+
+
 @router.post("/sighting")
 async def report_sighting(request: Request):
     """Accept a sighting report from camera or robot."""

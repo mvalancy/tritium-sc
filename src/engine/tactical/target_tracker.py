@@ -45,6 +45,8 @@ import threading
 import time
 from dataclasses import dataclass, field
 
+from .target_history import TargetHistory
+
 
 @dataclass
 class TrackedTarget:
@@ -64,10 +66,10 @@ class TrackedTarget:
     position_source: str = "unknown"  # "gps", "simulation", "mqtt", "fixed", "yolo", "unknown"
     position_confidence: float = 0.0  # 0.0 = no confidence, 1.0 = high
 
-    def to_dict(self) -> dict:
+    def to_dict(self, history: TargetHistory | None = None) -> dict:
         from .geo import local_to_latlng
         geo = local_to_latlng(self.position[0], self.position[1])
-        return {
+        d = {
             "target_id": self.target_id,
             "name": self.name,
             "alliance": self.alliance,
@@ -85,6 +87,9 @@ class TrackedTarget:
             "position_source": self.position_source,
             "position_confidence": self.position_confidence,
         }
+        if history is not None:
+            d["trail"] = history.get_trail_dicts(self.target_id, max_points=20)
+        return d
 
 
 class TargetTracker:
@@ -97,6 +102,7 @@ class TargetTracker:
         self._targets: dict[str, TrackedTarget] = {}
         self._lock = threading.Lock()
         self._detection_counter: int = 0
+        self.history = TargetHistory()
 
     def update_from_simulation(self, sim_data: dict) -> None:
         """Update or create a tracked target from simulation telemetry.
@@ -106,10 +112,11 @@ class TargetTracker:
         """
         tid = sim_data["target_id"]
         pos = sim_data.get("position", {})
+        position = (pos.get("x", 0.0), pos.get("y", 0.0))
         with self._lock:
             if tid in self._targets:
                 t = self._targets[tid]
-                t.position = (pos.get("x", 0.0), pos.get("y", 0.0))
+                t.position = position
                 t.heading = sim_data.get("heading", 0.0)
                 t.speed = sim_data.get("speed", 0.0)
                 t.battery = sim_data.get("battery", 1.0)
@@ -124,7 +131,7 @@ class TargetTracker:
                     name=sim_data.get("name", tid[:8]),
                     alliance=sim_data.get("alliance", "unknown"),
                     asset_type=sim_data.get("asset_type", "unknown"),
-                    position=(pos.get("x", 0.0), pos.get("y", 0.0)),
+                    position=position,
                     heading=sim_data.get("heading", 0.0),
                     speed=sim_data.get("speed", 0.0),
                     battery=sim_data.get("battery", 1.0),
@@ -134,6 +141,7 @@ class TargetTracker:
                     position_source="simulation",
                     position_confidence=1.0,
                 )
+        self.history.record(tid, position)
 
     def update_from_detection(self, detection: dict) -> None:
         """Update or create a tracked target from a YOLO detection.
@@ -181,6 +189,7 @@ class TargetTracker:
             if matched:
                 matched.position = (cx, cy)
                 matched.last_seen = time.monotonic()
+                tid = matched.target_id
             else:
                 self._detection_counter += 1
                 tid = f"det_{class_name}_{self._detection_counter}"
@@ -195,6 +204,7 @@ class TargetTracker:
                     position_source="yolo",
                     position_confidence=0.1,
                 )
+        self.history.record(tid, (cx, cy))
 
     # BLE sightings have longer stale timeout — devices can be stationary
     BLE_STALE_TIMEOUT = 120.0
@@ -253,6 +263,9 @@ class TargetTracker:
                     position_source=pos_source,
                     position_confidence=confidence,
                 )
+        # Only record position if we have a meaningful location
+        if pos_source != "unknown":
+            self.history.record(tid, position)
 
     def get_all(self) -> list[TrackedTarget]:
         """Return all tracked targets (pruning stale YOLO detections)."""
@@ -338,3 +351,4 @@ class TargetTracker:
             ]
             for tid in stale:
                 del self._targets[tid]
+                self.history.clear(tid)
