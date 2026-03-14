@@ -7,25 +7,29 @@ Bridges Meshtastic radio networks into the Tritium command center,
 enabling long-range command and control of remote sensor nodes, robots,
 and edge devices via LoRa mesh.
 
-Supports multiple connection methods:
-- Serial (USB-connected Meshtastic radio)
-- TCP (network-connected radio or meshtastic-web)
-- MQTT (Meshtastic MQTT gateway)
+Supports two operational modes:
+1. Direct connection — plugin connects to a local Meshtastic radio
+   (serial or TCP) and polls nodes directly.
+2. MQTT bridge mode — an external bridge script (scripts/meshtastic-bridge.py)
+   connects to the radio and publishes node data to MQTT topics.
+   The plugin subscribes to those topics and ingests the data.
+
+In both modes, each Meshtastic node appears as a TrackedTarget on the
+tactical map with real GPS coordinates.
 
 Messages are bridged bidirectionally:
-- Meshtastic → Tritium: node positions, telemetry, text messages
-- Tritium → Meshtastic: commands, waypoints, alerts
-
-Each Meshtastic node appears as a TrackedTarget on the tactical map
-with real GPS coordinates.
+- Meshtastic -> Tritium: node positions, telemetry, text messages
+- Tritium -> Meshtastic: commands, waypoints, alerts
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import threading
 import time
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from engine.plugins.base import PluginContext, PluginInterface
@@ -54,6 +58,7 @@ class MeshtasticConfig:
         self.enabled: bool = os.environ.get(
             "MESHTASTIC_ENABLED", "false"
         ).lower() in ("true", "1", "yes")
+        self.site_id: str = os.environ.get("MQTT_SITE_ID", "home")
 
 
 class MeshtasticPlugin(PluginInterface):
@@ -62,6 +67,9 @@ class MeshtasticPlugin(PluginInterface):
     Connects to Meshtastic radios and bridges their mesh network
     into the Tritium command center. Each radio node appears as a
     tracked target on the tactical map with real GPS coordinates.
+
+    Also subscribes to MQTT topics published by the external
+    meshtastic-bridge.py script for real hardware integration.
     """
 
     def __init__(self) -> None:
@@ -74,6 +82,10 @@ class MeshtasticPlugin(PluginInterface):
         self._running = False
         self._poll_thread: Optional[threading.Thread] = None
         self._nodes: dict[str, dict] = {}  # node_id -> last known state
+        self._messages: list[dict] = []  # recent mesh messages
+        self._max_messages = 500
+        self._bridge_online = False  # whether external bridge is connected
+        self._mqtt_bridge: Any = None  # reference to SC's MQTTBridge
 
     # -- PluginInterface identity ------------------------------------------
 
@@ -87,7 +99,7 @@ class MeshtasticPlugin(PluginInterface):
 
     @property
     def version(self) -> str:
-        return "0.1.0"
+        return "0.2.0"
 
     @property
     def capabilities(self) -> set[str]:
@@ -103,11 +115,240 @@ class MeshtasticPlugin(PluginInterface):
         self._logger = ctx.logger or log
 
         self._register_routes()
+
+        # Subscribe to MQTT meshtastic topics from external bridge
+        self._subscribe_mqtt_bridge(ctx)
+
         self._logger.info(
             "Meshtastic plugin configured (connection=%s, enabled=%s)",
             self._config.connection_type,
             self._config.enabled,
         )
+
+    def _subscribe_mqtt_bridge(self, ctx: PluginContext) -> None:
+        """Subscribe to MQTT topics published by meshtastic-bridge.py.
+
+        The bridge script publishes to:
+          tritium/{site}/meshtastic/{node_hex}/nodes    — node data
+          tritium/{site}/meshtastic/{node_hex}/message  — text messages
+          tritium/{site}/meshtastic/{node_hex}/position — position updates
+          tritium/{site}/meshtastic/{bridge_id}/status  — bridge online/offline
+          tritium/{site}/meshtastic/{bridge_id}/summary — aggregate stats
+        """
+        # Try to get the MQTTBridge from the context or app state
+        mqtt_bridge = getattr(ctx, "mqtt_bridge", None)
+        if mqtt_bridge is None and hasattr(ctx, "app") and ctx.app:
+            mqtt_bridge = getattr(ctx.app.state, "mqtt_bridge", None)
+
+        if mqtt_bridge is None:
+            self._logger.info(
+                "No MQTT bridge available — will rely on direct connection or API polling"
+            )
+            return
+
+        self._mqtt_bridge = mqtt_bridge
+        site = self._config.site_id
+        prefix = f"tritium/{site}/meshtastic"
+
+        # Subscribe to all meshtastic topics using wildcard
+        try:
+            mqtt_bridge.subscribe(
+                f"{prefix}/+/nodes",
+                self._on_mqtt_node_update,
+            )
+            mqtt_bridge.subscribe(
+                f"{prefix}/+/message",
+                self._on_mqtt_message,
+            )
+            mqtt_bridge.subscribe(
+                f"{prefix}/+/position",
+                self._on_mqtt_position,
+            )
+            mqtt_bridge.subscribe(
+                f"{prefix}/+/telemetry",
+                self._on_mqtt_telemetry,
+            )
+            mqtt_bridge.subscribe(
+                f"{prefix}/+/status",
+                self._on_mqtt_bridge_status,
+            )
+            self._logger.info("Subscribed to MQTT meshtastic topics: %s/+/#", prefix)
+        except Exception as exc:
+            self._logger.warning(
+                "Could not subscribe to MQTT meshtastic topics: %s — "
+                "MQTT bridge may not support topic subscriptions. "
+                "Plugin will work via direct connection or API polling.",
+                exc,
+            )
+
+    # -- MQTT callbacks from external bridge --------------------------------
+
+    def _on_mqtt_node_update(self, topic: str, payload: bytes | str) -> None:
+        """Handle node data from the external bridge."""
+        try:
+            data = json.loads(payload) if isinstance(payload, (bytes, str)) else payload
+            node_id = data.get("node_id", "")
+            if not node_id:
+                return
+            self._ingest_bridge_node(node_id, data)
+        except Exception as exc:
+            self._logger.error("Error processing MQTT node update: %s", exc)
+
+    def _on_mqtt_message(self, topic: str, payload: bytes | str) -> None:
+        """Handle text message from the external bridge."""
+        try:
+            data = json.loads(payload) if isinstance(payload, (bytes, str)) else payload
+            self._messages.append(data)
+            if len(self._messages) > self._max_messages:
+                self._messages = self._messages[-self._max_messages:]
+
+            # Emit event for UI
+            if self._event_bus:
+                self._event_bus.publish("meshtastic:text_received", data=data)
+        except Exception as exc:
+            self._logger.error("Error processing MQTT message: %s", exc)
+
+    def _on_mqtt_position(self, topic: str, payload: bytes | str) -> None:
+        """Handle position update from the external bridge."""
+        try:
+            data = json.loads(payload) if isinstance(payload, (bytes, str)) else payload
+            node_id = data.get("node_id", "")
+            if not node_id:
+                return
+
+            # Update position in cached node
+            if node_id in self._nodes:
+                if data.get("latitude") is not None:
+                    self._nodes[node_id]["lat"] = data["latitude"]
+                if data.get("longitude") is not None:
+                    self._nodes[node_id]["lng"] = data["longitude"]
+                if data.get("altitude") is not None:
+                    self._nodes[node_id]["alt"] = data["altitude"]
+
+                # Update tracker with new position
+                self._push_node_to_tracker(node_id, self._nodes[node_id])
+        except Exception as exc:
+            self._logger.error("Error processing MQTT position: %s", exc)
+
+    def _on_mqtt_telemetry(self, topic: str, payload: bytes | str) -> None:
+        """Handle telemetry update from the external bridge."""
+        try:
+            data = json.loads(payload) if isinstance(payload, (bytes, str)) else payload
+            node_id = data.get("node_id", "")
+            if not node_id or node_id not in self._nodes:
+                return
+
+            dm = data.get("device_metrics", {})
+            env = data.get("environment_metrics", {})
+            node = self._nodes[node_id]
+
+            if dm.get("batteryLevel") is not None:
+                node["battery"] = dm["batteryLevel"]
+            if dm.get("voltage") is not None:
+                node["voltage"] = dm["voltage"]
+            if dm.get("channelUtilization") is not None:
+                node["channel_utilization"] = dm["channelUtilization"]
+            if dm.get("airUtilTx") is not None:
+                node["air_util_tx"] = dm["airUtilTx"]
+            if env.get("temperature") is not None:
+                node["temperature"] = env["temperature"]
+            if env.get("relativeHumidity") is not None:
+                node["humidity"] = env["relativeHumidity"]
+            if env.get("barometricPressure") is not None:
+                node["pressure"] = env["barometricPressure"]
+
+        except Exception as exc:
+            self._logger.error("Error processing MQTT telemetry: %s", exc)
+
+    def _on_mqtt_bridge_status(self, topic: str, payload: bytes | str) -> None:
+        """Handle bridge status from the external bridge."""
+        try:
+            data = json.loads(payload) if isinstance(payload, (bytes, str)) else payload
+            self._bridge_online = data.get("online", False)
+            self._logger.info(
+                "Meshtastic bridge %s: %s",
+                data.get("bridge_id", "unknown"),
+                "ONLINE" if self._bridge_online else "OFFLINE",
+            )
+        except Exception as exc:
+            self._logger.error("Error processing MQTT bridge status: %s", exc)
+
+    def _ingest_bridge_node(self, node_id: str, data: dict) -> None:
+        """Ingest a node update from the external bridge and create TrackedTarget."""
+        pos = data.get("position") or {}
+        dm = data.get("device_metrics") or {}
+        env = data.get("environment") or {}
+
+        node_state = {
+            "node_id": node_id,
+            "long_name": data.get("long_name", ""),
+            "short_name": data.get("short_name", ""),
+            "name": data.get("long_name") or data.get("short_name") or node_id,
+            "hw_model": data.get("hw_model", ""),
+            "firmware_version": data.get("firmware_version", ""),
+            "role": data.get("role"),
+            "lat": pos.get("latitude"),
+            "lng": pos.get("longitude"),
+            "alt": pos.get("altitude"),
+            "battery": dm.get("battery_level"),
+            "voltage": dm.get("voltage"),
+            "channel_utilization": dm.get("channel_utilization"),
+            "air_util_tx": dm.get("air_util_tx"),
+            "snr": data.get("snr"),
+            "rssi": data.get("rssi"),
+            "last_heard": data.get("last_heard"),
+            "hops_away": data.get("hops_away"),
+            "is_favorite": data.get("is_favorite", False),
+            "via_mqtt": data.get("via_mqtt", False),
+            "temperature": env.get("temperature"),
+            "humidity": env.get("relative_humidity"),
+            "pressure": env.get("barometric_pressure"),
+            "position": {"lat": pos.get("latitude"), "lng": pos.get("longitude")},
+            "hardware": data.get("hw_model", ""),
+        }
+
+        self._nodes[node_id] = node_state
+
+        # Push to tracker
+        self._push_node_to_tracker(node_id, node_state)
+
+        # Publish event for UI
+        if self._event_bus:
+            self._event_bus.publish("meshtastic:node_updated", data=node_state)
+
+    def _push_node_to_tracker(self, node_id: str, node_state: dict) -> None:
+        """Push a mesh node to the TargetTracker as a TrackedTarget."""
+        lat = node_state.get("lat")
+        lng = node_state.get("lng")
+
+        if not self._tracker or lat is None or lng is None:
+            return
+        if lat == 0.0 and lng == 0.0:
+            return
+
+        try:
+            from engine.tactical.geo import latlng_to_local
+            lx, ly, lz = latlng_to_local(lat, lng, node_state.get("alt", 0.0) or 0.0)
+        except Exception:
+            # If geo conversion fails, skip tracker update
+            return
+
+        name = node_state.get("name", node_id)
+        tid = f"mesh_{node_id.replace('!', '')}"
+        battery_raw = node_state.get("battery")
+        battery = battery_raw / 100.0 if battery_raw is not None and battery_raw > 1 else (battery_raw or 1.0)
+
+        self._tracker.update_from_simulation({
+            "target_id": tid,
+            "name": f"[Mesh] {name}",
+            "alliance": "friendly",
+            "asset_type": "mesh_radio",
+            "position": {"x": lx, "y": ly},
+            "heading": 0.0,
+            "speed": 0.0,
+            "battery": battery,
+            "status": "active",
+        })
 
     def start(self) -> None:
         """Connect to Meshtastic radio and start listening."""
@@ -117,7 +358,9 @@ class MeshtasticPlugin(PluginInterface):
 
         if not self._config.enabled:
             self._logger.info(
-                "Meshtastic disabled (set MESHTASTIC_ENABLED=true to activate)"
+                "Meshtastic direct connection disabled "
+                "(set MESHTASTIC_ENABLED=true to activate). "
+                "MQTT bridge ingestion is always active."
             )
             return
 
@@ -240,48 +483,51 @@ class MeshtasticPlugin(PluginInterface):
             self._logger.error("Failed to poll Meshtastic nodes: %s", exc)
 
     def _update_node(self, node_id: str, node_info: dict) -> None:
-        """Update a single Meshtastic node in the tracker."""
+        """Update a single Meshtastic node in the tracker (direct connection mode)."""
         user = node_info.get("user", {})
         position = node_info.get("position", {})
+        device_metrics = node_info.get("deviceMetrics", {})
+        env_metrics = node_info.get("environmentMetrics", {})
 
         name = user.get("longName") or user.get("shortName") or node_id
-        lat = position.get("latitude", 0.0)
-        lng = position.get("longitude", 0.0)
+        lat = position.get("latitude")
+        lng = position.get("longitude")
         alt = position.get("altitude", 0.0)
-        battery = node_info.get("deviceMetrics", {}).get("batteryLevel", 100) / 100.0
+        battery_raw = device_metrics.get("batteryLevel")
         last_heard = node_info.get("lastHeard", 0)
-        snr = node_info.get("snr", 0.0)
+        snr = node_info.get("snr")
 
-        # Cache node state
+        # Cache node state with extended data
         self._nodes[node_id] = {
+            "node_id": node_id,
             "name": name,
+            "long_name": user.get("longName", ""),
+            "short_name": user.get("shortName", ""),
             "lat": lat,
             "lng": lng,
             "alt": alt,
-            "battery": battery,
+            "battery": battery_raw,
+            "voltage": device_metrics.get("voltage"),
+            "channel_utilization": device_metrics.get("channelUtilization"),
+            "air_util_tx": device_metrics.get("airUtilTx"),
             "last_heard": last_heard,
             "snr": snr,
+            "rssi": node_info.get("rssi"),
+            "hops_away": node_info.get("hopsAway"),
             "hw_model": user.get("hwModel", "unknown"),
+            "hardware": user.get("hwModel", "unknown"),
+            "firmware_version": node_info.get("firmwareVersion", ""),
+            "role": user.get("role"),
+            "is_favorite": node_info.get("isFavorite", False),
+            "via_mqtt": node_info.get("viaMqtt", False),
+            "temperature": env_metrics.get("temperature"),
+            "humidity": env_metrics.get("relativeHumidity"),
+            "pressure": env_metrics.get("barometricPressure"),
+            "position": {"lat": lat, "lng": lng},
         }
 
-        # Push to TargetTracker if we have GPS coordinates
-        if self._tracker and (lat != 0.0 or lng != 0.0):
-            from engine.tactical.geo import latlng_to_local
-            lx, ly, lz = latlng_to_local(lat, lng, alt)
-            tid = f"mesh_{node_id.replace('!', '')}"
-
-            # Use update_from_simulation path for friendly mesh nodes
-            self._tracker.update_from_simulation({
-                "target_id": tid,
-                "name": f"[Mesh] {name}",
-                "alliance": "friendly",
-                "asset_type": "mesh_radio",
-                "position": {"x": lx, "y": ly},
-                "heading": 0.0,
-                "speed": 0.0,
-                "battery": battery,
-                "status": "active",
-            })
+        # Push to tracker
+        self._push_node_to_tracker(node_id, self._nodes[node_id])
 
     # -- Send messages -----------------------------------------------------
 

@@ -14,6 +14,40 @@ Changes tracked with verification status. All changes on `dev` branch.
 
 ---
 
+## 2026-03-14 — Wave 63: Real Meshtastic Hardware Integration
+
+### Meshtastic Bridge Script (Code Reviewed)
+- New `scripts/meshtastic-bridge.py` — long-lived daemon connecting real Meshtastic radio to MQTT
+- Serial and TCP connection modes, configurable via env vars (no hardcoded IPs)
+- PubSub event callbacks: text messages, position, telemetry, node updates
+- Publishes to `tritium/{site}/meshtastic/{node_hex}/nodes|message|position|telemetry`
+- Graceful reconnection on serial disconnect, SIGINT/SIGTERM handling
+- LWT (Last Will and Testament) for bridge offline detection
+
+### Meshtastic Plugin v0.2.0 (Code Reviewed)
+- Plugin now subscribes to MQTT topics from external bridge script
+- Dual mode: direct serial connection OR MQTT bridge ingestion (or both)
+- MQTT callbacks ingest node data, messages, position, telemetry from bridge
+- Creates TrackedTargets with real GPS coordinates from bridge data
+- Stores messages for chat panel (up to 500 recent)
+- Enhanced API routes with sorting, filtering, search, aggregate stats
+- Backward-compatible `/api/mesh/*` routes alongside `/api/meshtastic/*`
+
+### Mesh Panel Enhancement (Visual — needs browser verification)
+- Node stats bar: total nodes, GPS count, recently heard count
+- Node search/filter input for finding nodes in large (250+) meshes
+- Sort by: last heard, name, signal (SNR), battery
+- Color-coded signal quality (green/cyan/yellow/magenta)
+- Color-coded battery levels (green/yellow/magenta)
+- Human-readable age display (30s, 5m, 2h, 3d)
+- Node detail shows: firmware version, role, voltage, channel utilization,
+  air utilization TX, temperature, humidity, pressure
+- Hop count and via-MQTT indicators
+- Favorite node markers
+- Bridge status indicator on Radio tab
+
+---
+
 ## 2026-03-14 — Wave 62: Security Audit + Self-Test + Self-Preservation
 
 ### Security Audit (Unit Tested — 42 tests)

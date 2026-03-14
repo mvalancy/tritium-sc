@@ -1,9 +1,10 @@
 // Created by Matthew Valancy
 // Copyright 2026 Valpatel Software LLC
 // Licensed under AGPL-3.0 — see LICENSE for details.
-// Mesh Radio Panel — Tabbed Meshtastic client
+// Mesh Radio Panel — Tabbed Meshtastic client with real hardware support
 // Tabs: Nodes | Chat | Radio | Scan
 // Subscribes to: mesh:text, mesh:position, mesh:telemetry, mesh:connected, mesh:disconnected
+// Enhanced for real Meshtastic hardware: 250+ nodes, signal quality, battery, environment
 
 import { TritiumStore } from '../store.js';
 import { EventBus } from '../events.js';
@@ -12,11 +13,37 @@ import { _esc } from '../panel-utils.js';
 
 const MESH_MSG_LIMIT = 228;
 
+function _formatAge(lastHeard) {
+    if (!lastHeard) return '--';
+    const now = Math.floor(Date.now() / 1000);
+    const delta = now - lastHeard;
+    if (delta < 0) return 'now';
+    if (delta < 60) return `${delta}s`;
+    if (delta < 3600) return `${Math.floor(delta / 60)}m`;
+    if (delta < 86400) return `${Math.floor(delta / 3600)}h`;
+    return `${Math.floor(delta / 86400)}d`;
+}
+
+function _signalClass(snr) {
+    if (snr === null || snr === undefined) return 'neutral';
+    if (snr >= 10) return 'green';
+    if (snr >= 0) return 'cyan';
+    if (snr >= -10) return 'yellow';
+    return 'magenta';
+}
+
+function _batteryClass(bat) {
+    if (bat === null || bat === undefined) return 'neutral';
+    if (bat >= 60) return 'green';
+    if (bat >= 30) return 'yellow';
+    return 'magenta';
+}
+
 export const MeshPanelDef = {
     id: 'mesh',
     title: 'MESHTASTIC',
     defaultPosition: { x: 16, y: 400 },
-    defaultSize: { w: 360, h: 460 },
+    defaultSize: { w: 400, h: 520 },
 
     create(panel) {
         const el = document.createElement('div');
@@ -30,6 +57,23 @@ export const MeshPanelDef = {
             </div>
             <div class="mesh-tab-content" data-bind="tab-content">
                 <div class="mesh-tab-pane active" data-pane="nodes">
+                    <div class="mesh-node-header">
+                        <div class="mesh-node-stats-bar" data-bind="stats-bar">
+                            <span class="mono" data-bind="total-nodes">0 total</span>
+                            <span class="mono" data-bind="gps-nodes">0 GPS</span>
+                            <span class="mono" data-bind="recent-nodes">0 recent</span>
+                        </div>
+                        <div class="mesh-node-sort">
+                            <select class="panel-filter mesh-sort-select" data-bind="sort-select">
+                                <option value="last_heard">Last heard</option>
+                                <option value="name">Name</option>
+                                <option value="snr">Signal (SNR)</option>
+                                <option value="battery">Battery</option>
+                            </select>
+                            <input type="text" class="panel-filter mesh-node-search" data-bind="node-search"
+                                   placeholder="Filter nodes..." autocomplete="off" />
+                        </div>
+                    </div>
                     <ul class="panel-list mesh-node-list" data-bind="node-list" role="listbox" aria-label="Mesh nodes">
                         <li class="panel-empty">No nodes discovered</li>
                     </ul>
@@ -67,6 +111,10 @@ export const MeshPanelDef = {
                         <div class="panel-stat-row">
                             <span class="panel-stat-label">STATUS</span>
                             <span class="panel-stat-value" data-bind="radio-status">DISCONNECTED</span>
+                        </div>
+                        <div class="panel-stat-row">
+                            <span class="panel-stat-label">BRIDGE</span>
+                            <span class="panel-stat-value" data-bind="bridge-status">--</span>
                         </div>
                         <div class="panel-stat-row">
                             <span class="panel-stat-label">HOST</span>
@@ -129,6 +177,7 @@ export const MeshPanelDef = {
         const dmTargetEl = bodyEl.querySelector('[data-bind="dm-target"]');
         const clearDmBtn = bodyEl.querySelector('[data-action="clear-dm"]');
         const radioStatusEl = bodyEl.querySelector('[data-bind="radio-status"]');
+        const bridgeStatusEl = bodyEl.querySelector('[data-bind="bridge-status"]');
         const radioHostEl = bodyEl.querySelector('[data-bind="radio-host"]');
         const radioHostInput = bodyEl.querySelector('[data-bind="radio-host-input"]');
         const radioPortInput = bodyEl.querySelector('[data-bind="radio-port-input"]');
@@ -138,12 +187,18 @@ export const MeshPanelDef = {
         const scanBtn = bodyEl.querySelector('[data-action="scan"]');
         const scanStatusEl = bodyEl.querySelector('[data-bind="scan-status"]');
         const scanResultsEl = bodyEl.querySelector('[data-bind="scan-results"]');
+        const totalNodesEl = bodyEl.querySelector('[data-bind="total-nodes"]');
+        const gpsNodesEl = bodyEl.querySelector('[data-bind="gps-nodes"]');
+        const recentNodesEl = bodyEl.querySelector('[data-bind="recent-nodes"]');
+        const sortSelect = bodyEl.querySelector('[data-bind="sort-select"]');
+        const searchInput = bodyEl.querySelector('[data-bind="node-search"]');
 
         let nodes = {};
         let messages = [];
         let msgCount = 0;
         let selectedNodeId = null;
         let activeTab = 'nodes';
+        let searchFilter = '';
 
         // --- Tab switching ---
         function switchTab(tabName) {
@@ -174,8 +229,8 @@ export const MeshPanelDef = {
         }
 
         // --- Status updates ---
-        function updateStatus() {
-            const connected = TritiumStore.get('mesh.connected');
+        function updateStatus(data) {
+            const connected = data ? (data.connected || data.bridge_online) : TritiumStore.get('mesh.connected');
             if (statusDot) {
                 statusDot.className = connected
                     ? 'panel-dot panel-dot-green'
@@ -186,8 +241,14 @@ export const MeshPanelDef = {
                 statusLabel.style.color = connected ? 'var(--green)' : 'var(--text-dim)';
             }
             if (radioStatusEl) {
-                radioStatusEl.textContent = connected ? 'CONNECTED' : 'DISCONNECTED';
-                radioStatusEl.style.color = connected ? 'var(--green)' : 'var(--text-dim)';
+                const directConnected = data ? data.connected : false;
+                radioStatusEl.textContent = directConnected ? 'CONNECTED' : 'DISCONNECTED';
+                radioStatusEl.style.color = directConnected ? 'var(--green)' : 'var(--text-dim)';
+            }
+            if (bridgeStatusEl) {
+                const bridgeOnline = data ? data.bridge_online : false;
+                bridgeStatusEl.textContent = bridgeOnline ? 'ONLINE' : 'OFFLINE';
+                bridgeStatusEl.style.color = bridgeOnline ? 'var(--green)' : 'var(--text-dim)';
             }
         }
 
@@ -196,31 +257,78 @@ export const MeshPanelDef = {
             const nodeArr = Object.values(nodes);
             if (nodeCountEl) nodeCountEl.textContent = `${nodeArr.length} nodes`;
 
+            // Update stats bar
+            const now = Math.floor(Date.now() / 1000);
+            const withGps = nodeArr.filter(n =>
+                n.lat !== undefined && n.lat !== null && n.lng !== undefined && n.lng !== null &&
+                (n.lat !== 0 || n.lng !== 0)
+            ).length;
+            const recent = nodeArr.filter(n =>
+                n.last_heard && (now - n.last_heard) < 3600
+            ).length;
+
+            if (totalNodesEl) totalNodesEl.textContent = `${nodeArr.length} total`;
+            if (gpsNodesEl) gpsNodesEl.textContent = `${withGps} GPS`;
+            if (recentNodesEl) recentNodesEl.textContent = `${recent} recent`;
+
             if (!nodeListEl) return;
 
-            if (nodeArr.length === 0) {
-                nodeListEl.innerHTML = '<li class="panel-empty">No nodes discovered</li>';
+            // Apply search filter
+            let filtered = nodeArr;
+            if (searchFilter) {
+                const q = searchFilter.toLowerCase();
+                filtered = nodeArr.filter(n => {
+                    const name = (n.long_name || n.short_name || n.name || n.node_id || '').toLowerCase();
+                    const hw = (n.hw_model || n.hardware || '').toLowerCase();
+                    const nid = (n.node_id || '').toLowerCase();
+                    return name.includes(q) || hw.includes(q) || nid.includes(q);
+                });
+            }
+
+            // Apply sort
+            const sortBy = sortSelect ? sortSelect.value : 'last_heard';
+            if (sortBy === 'last_heard') {
+                filtered.sort((a, b) => (b.last_heard || 0) - (a.last_heard || 0));
+            } else if (sortBy === 'name') {
+                filtered.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+            } else if (sortBy === 'snr') {
+                filtered.sort((a, b) => (b.snr || -999) - (a.snr || -999));
+            } else if (sortBy === 'battery') {
+                filtered.sort((a, b) => (b.battery || 0) - (a.battery || 0));
+            }
+
+            if (filtered.length === 0) {
+                nodeListEl.innerHTML = `<li class="panel-empty">${searchFilter ? 'No matching nodes' : 'No nodes discovered'}</li>`;
                 return;
             }
 
-            nodeListEl.innerHTML = nodeArr.map(n => {
+            nodeListEl.innerHTML = filtered.map(n => {
                 const nodeId = n.node_id || n.id || '';
-                const name = _esc(n.short_name || n.long_name || nodeId || '???');
+                const name = _esc(n.short_name || n.long_name || n.name || nodeId || '???');
+                const longName = _esc(n.long_name || '');
                 const bat = n.battery !== undefined && n.battery !== null
                     ? `${Math.round(n.battery)}%` : '--';
+                const batClass = _batteryClass(n.battery);
                 const snr = n.snr !== undefined && n.snr !== null
-                    ? `${Number(n.snr).toFixed(1)}dB` : '--';
-                const lastHeard = n.last_heard
-                    ? new Date(n.last_heard * 1000).toLocaleTimeString().substr(0, 5)
-                    : '--';
+                    ? `${Number(n.snr).toFixed(1)}` : '--';
+                const snrClass = _signalClass(n.snr);
+                const age = _formatAge(n.last_heard);
+                const hw = _esc(n.hw_model || n.hardware || '');
                 const isSelected = selectedNodeId === nodeId;
-                return `<li class="panel-list-item mesh-node-item${isSelected ? ' active' : ''}" data-node-id="${_esc(nodeId)}" role="option">
+                const hopsStr = n.hops_away !== undefined && n.hops_away !== null
+                    ? `${n.hops_away}hop` : '';
+                const favStar = n.is_favorite ? '<span style="color:var(--yellow)" title="Favorite">*</span>' : '';
+                const mqttTag = n.via_mqtt ? '<span class="mono" style="color:var(--text-dim);font-size:0.7em" title="Via MQTT">MQTT</span>' : '';
+
+                return `<li class="panel-list-item mesh-node-item${isSelected ? ' active' : ''}" data-node-id="${_esc(nodeId)}" role="option" title="${longName} [${hw}]">
                     <span class="panel-icon-badge" style="color:var(--cyan);border-color:var(--cyan)">M</span>
-                    <span class="mesh-node-name">${name}</span>
+                    <span class="mesh-node-name">${favStar}${name}</span>
                     <span class="mono mesh-node-stats">
-                        <span title="Battery">${bat}</span>
-                        <span title="SNR">${snr}</span>
-                        <span title="Last heard">${lastHeard}</span>
+                        <span title="Battery" style="color:var(--${batClass})">${bat}</span>
+                        <span title="SNR" style="color:var(--${snrClass})">${snr}dB</span>
+                        <span title="Last heard">${age}</span>
+                        ${hopsStr ? `<span title="Hops away" style="color:var(--text-dim)">${hopsStr}</span>` : ''}
+                        ${mqttTag}
                     </span>
                 </li>`;
             }).join('');
@@ -242,11 +350,11 @@ export const MeshPanelDef = {
                     renderNodes();
 
                     const node = nodes[nodeId];
-                    if (node && node.latitude !== undefined && node.longitude !== undefined) {
+                    if (node && node.lat !== undefined && node.lat !== null && node.lng !== undefined && node.lng !== null) {
                         EventBus.emit('mesh:center-on-node', {
                             id: nodeId,
-                            lat: node.latitude,
-                            lng: node.longitude,
+                            lat: node.lat,
+                            lng: node.lng,
                         });
                     }
                 });
@@ -262,25 +370,55 @@ export const MeshPanelDef = {
                 return;
             }
 
-            const pos = n.position;
-            const gpsStr = pos
-                ? `${pos.lat !== undefined ? pos.lat.toFixed(6) : '--'}, ${pos.lng !== undefined ? pos.lng.toFixed(6) : '--'}`
-                : '--';
-            const altStr = pos && pos.alt !== undefined ? `${pos.alt.toFixed(1)}m` : '--';
+            const lat = n.lat !== undefined && n.lat !== null ? n.lat.toFixed(6) : '--';
+            const lng = n.lng !== undefined && n.lng !== null ? n.lng.toFixed(6) : '--';
+            const altStr = n.alt !== undefined && n.alt !== null ? `${Number(n.alt).toFixed(1)}m` : '--';
+            const age = _formatAge(n.last_heard);
+
+            // Extended telemetry rows
+            let telemetryRows = '';
+            if (n.voltage !== undefined && n.voltage !== null) {
+                telemetryRows += `<div class="panel-stat-row"><span class="panel-stat-label">VOLTAGE</span><span class="panel-stat-value">${Number(n.voltage).toFixed(2)}V</span></div>`;
+            }
+            if (n.channel_utilization !== undefined && n.channel_utilization !== null) {
+                telemetryRows += `<div class="panel-stat-row"><span class="panel-stat-label">CH UTIL</span><span class="panel-stat-value">${Number(n.channel_utilization).toFixed(1)}%</span></div>`;
+            }
+            if (n.air_util_tx !== undefined && n.air_util_tx !== null) {
+                telemetryRows += `<div class="panel-stat-row"><span class="panel-stat-label">AIR UTIL TX</span><span class="panel-stat-value">${Number(n.air_util_tx).toFixed(1)}%</span></div>`;
+            }
+
+            // Environment rows
+            let envRows = '';
+            if (n.temperature !== undefined && n.temperature !== null) {
+                envRows += `<div class="panel-stat-row"><span class="panel-stat-label">TEMP</span><span class="panel-stat-value">${Number(n.temperature).toFixed(1)}C</span></div>`;
+            }
+            if (n.humidity !== undefined && n.humidity !== null) {
+                envRows += `<div class="panel-stat-row"><span class="panel-stat-label">HUMIDITY</span><span class="panel-stat-value">${Number(n.humidity).toFixed(0)}%</span></div>`;
+            }
+            if (n.pressure !== undefined && n.pressure !== null) {
+                envRows += `<div class="panel-stat-row"><span class="panel-stat-label">PRESSURE</span><span class="panel-stat-value">${Number(n.pressure).toFixed(1)} hPa</span></div>`;
+            }
 
             nodeDetailEl.style.display = '';
             nodeDetailEl.innerHTML = `
                 <div class="panel-section-label">NODE DETAIL</div>
                 <div class="panel-stat-row"><span class="panel-stat-label">LONG NAME</span><span class="panel-stat-value">${_esc(n.long_name || '--')}</span></div>
                 <div class="panel-stat-row"><span class="panel-stat-label">SHORT NAME</span><span class="panel-stat-value">${_esc(n.short_name || '--')}</span></div>
-                <div class="panel-stat-row"><span class="panel-stat-label">HARDWARE</span><span class="panel-stat-value">${_esc(n.hardware || '--')}</span></div>
+                <div class="panel-stat-row"><span class="panel-stat-label">NODE ID</span><span class="panel-stat-value mono">${_esc(n.node_id || '--')}</span></div>
+                <div class="panel-stat-row"><span class="panel-stat-label">HARDWARE</span><span class="panel-stat-value">${_esc(n.hw_model || n.hardware || '--')}</span></div>
+                <div class="panel-stat-row"><span class="panel-stat-label">FIRMWARE</span><span class="panel-stat-value">${_esc(n.firmware_version || '--')}</span></div>
+                <div class="panel-stat-row"><span class="panel-stat-label">ROLE</span><span class="panel-stat-value">${_esc(n.role || '--')}</span></div>
                 <div class="panel-stat-row"><span class="panel-stat-label">BATTERY</span><span class="panel-stat-value">${n.battery !== undefined && n.battery !== null ? Math.round(n.battery) + '%' : '--'}</span></div>
-                <div class="panel-stat-row"><span class="panel-stat-label">VOLTAGE</span><span class="panel-stat-value">${n.voltage !== undefined && n.voltage !== null ? n.voltage.toFixed(2) + 'V' : '--'}</span></div>
+                ${telemetryRows}
                 <div class="panel-stat-row"><span class="panel-stat-label">SNR</span><span class="panel-stat-value">${n.snr !== undefined && n.snr !== null ? Number(n.snr).toFixed(1) + 'dB' : '--'}</span></div>
                 <div class="panel-stat-row"><span class="panel-stat-label">RSSI</span><span class="panel-stat-value">${n.rssi !== undefined && n.rssi !== null ? n.rssi + 'dBm' : '--'}</span></div>
-                <div class="panel-stat-row"><span class="panel-stat-label">HOPS</span><span class="panel-stat-value">${n.hops !== undefined ? n.hops : '--'}</span></div>
-                <div class="panel-stat-row"><span class="panel-stat-label">GPS</span><span class="panel-stat-value">${gpsStr}</span></div>
+                <div class="panel-stat-row"><span class="panel-stat-label">HOPS</span><span class="panel-stat-value">${n.hops_away !== undefined && n.hops_away !== null ? n.hops_away : '--'}</span></div>
+                <div class="panel-stat-row"><span class="panel-stat-label">LAST HEARD</span><span class="panel-stat-value">${age}</span></div>
+                <div class="panel-stat-row"><span class="panel-stat-label">GPS</span><span class="panel-stat-value">${lat}, ${lng}</span></div>
                 <div class="panel-stat-row"><span class="panel-stat-label">ALTITUDE</span><span class="panel-stat-value">${altStr}</span></div>
+                ${envRows}
+                ${n.via_mqtt ? '<div class="panel-stat-row"><span class="panel-stat-label">VIA</span><span class="panel-stat-value" style="color:var(--text-dim)">MQTT</span></div>' : ''}
+                ${n.is_favorite ? '<div class="panel-stat-row"><span class="panel-stat-label">FAVORITE</span><span class="panel-stat-value" style="color:var(--yellow)">YES</span></div>' : ''}
             `;
         }
 
@@ -295,7 +433,7 @@ export const MeshPanelDef = {
             }
 
             messagesEl.innerHTML = messages.slice(-50).map(m => {
-                const sender = _esc(m.from_short || m.from || 'Unknown');
+                const sender = _esc(m.from_short || m.from_id || m.from || 'Unknown');
                 const text = _esc(m.text || '');
                 const time = m.timestamp
                     ? new Date(m.timestamp).toLocaleTimeString().substr(0, 5)
@@ -341,6 +479,19 @@ export const MeshPanelDef = {
             charCountEl.style.color = remaining < 20 ? 'var(--magenta)' : 'var(--text-dim)';
         }
 
+        // --- Search filter ---
+        if (searchInput) {
+            searchInput.addEventListener('input', () => {
+                searchFilter = (searchInput.value || '').trim();
+                renderNodes();
+            });
+        }
+
+        // --- Sort change ---
+        if (sortSelect) {
+            sortSelect.addEventListener('change', () => renderNodes());
+        }
+
         // --- Clear DM target ---
         if (clearDmBtn) {
             clearDmBtn.addEventListener('click', () => {
@@ -382,7 +533,7 @@ export const MeshPanelDef = {
                     if (res.ok) {
                         TritiumStore.set('mesh.connected', true);
                         if (radioHostEl) radioHostEl.textContent = `${host}:${port}`;
-                        updateStatus();
+                        updateStatus({ connected: true, bridge_online: false });
                         fetchChannels();
                     }
                 } catch (_) {}
@@ -398,7 +549,7 @@ export const MeshPanelDef = {
                     TritiumStore.set('mesh.connected', false);
                     if (radioHostEl) radioHostEl.textContent = '--';
                     if (radioChannelsEl) radioChannelsEl.innerHTML = '<span class="panel-empty">Not connected</span>';
-                    updateStatus();
+                    updateStatus({ connected: false, bridge_online: false });
                 } catch (_) {}
             });
         }
@@ -490,7 +641,7 @@ export const MeshPanelDef = {
                                     if (r.ok) {
                                         TritiumStore.set('mesh.connected', true);
                                         if (radioHostEl) radioHostEl.textContent = `${h}:${p}`;
-                                        updateStatus();
+                                        updateStatus({ connected: true, bridge_online: false });
                                         fetchChannels();
                                         switchTab('radio');
                                     }
@@ -533,19 +684,19 @@ export const MeshPanelDef = {
 
             EventBus.on('mesh:connected', () => {
                 TritiumStore.set('mesh.connected', true);
-                updateStatus();
+                updateStatus({ connected: true, bridge_online: false });
                 fetchChannels();
             }),
 
             EventBus.on('mesh:disconnected', () => {
                 TritiumStore.set('mesh.connected', false);
-                updateStatus();
+                updateStatus({ connected: false, bridge_online: false });
             }),
         );
 
         // Auto-refresh node list every 10s
         const refreshInterval = setInterval(() => {
-            fetch('/api/mesh/nodes').then(r => r.ok ? r.json() : null).then(data => {
+            fetch('/api/meshtastic/nodes').then(r => r.ok ? r.json() : null).then(data => {
                 if (!data) return;
                 const nodeArr = Array.isArray(data) ? data : (data.nodes || []);
                 nodes = {};
@@ -559,7 +710,7 @@ export const MeshPanelDef = {
         panel._unsubs.push(() => clearInterval(refreshInterval));
 
         // Initial data fetch
-        fetch('/api/mesh/nodes').then(r => r.ok ? r.json() : null).then(data => {
+        fetch('/api/meshtastic/nodes').then(r => r.ok ? r.json() : null).then(data => {
             if (!data) return;
             const nodeArr = Array.isArray(data) ? data : (data.nodes || []);
             for (const n of nodeArr) {
@@ -569,24 +720,25 @@ export const MeshPanelDef = {
             renderNodes();
         }).catch(() => {});
 
-        fetch('/api/mesh/messages').then(r => r.ok ? r.json() : null).then(data => {
+        fetch('/api/meshtastic/messages').then(r => r.ok ? r.json() : null).then(data => {
             if (!data) return;
             messages = Array.isArray(data) ? data : (data.messages || []);
             msgCount = messages.length;
             renderMessages();
         }).catch(() => {});
 
-        fetch('/api/mesh/status').then(r => r.ok ? r.json() : null).then(data => {
+        fetch('/api/meshtastic/status').then(r => r.ok ? r.json() : null).then(data => {
             if (!data) return;
-            if (data.connected) {
+            updateStatus(data);
+            if (data.connected || data.bridge_online) {
                 TritiumStore.set('mesh.connected', true);
-                if (radioHostEl) radioHostEl.textContent = data.host || '--';
+                if (radioHostEl && data.host) radioHostEl.textContent = data.host;
                 fetchChannels();
             }
         }).catch(() => {});
 
         // Apply current status
-        updateStatus();
+        updateStatus(null);
     },
 
     unmount(bodyEl) {
