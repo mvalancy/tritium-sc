@@ -14,6 +14,48 @@ Changes tracked with verification status. All changes on `dev` branch.
 
 ---
 
+## 2026-03-13 — Wave 6: Tracking, Geofencing, Persistence & Search
+
+### Target Correlation Engine
+| Change | Verification |
+|--------|-------------|
+| Multi-sensor target correlation (BLE + camera + mesh fusion) | Integration Tested |
+| Correlation scoring with configurable thresholds | Integration Tested |
+
+### BLE Threat Classification
+| Change | Verification |
+|--------|-------------|
+| Threat level classification: known/unknown/new/suspicious | Integration Tested |
+| Configurable threat rules based on device history and behavior | Integration Tested |
+
+### YOLO Detector Plugin
+| Change | Verification |
+|--------|-------------|
+| Modular YOLO inference pipeline with pluggable backends | Integration Tested |
+| Detection → TrackedTarget integration via TargetTracker | Integration Tested |
+
+### Target Position History & Movement Trails
+| Change | Verification |
+|--------|-------------|
+| Position history persistence per tracked target | Integration Tested |
+| Movement trail rendering on tactical map | Integration Tested |
+
+### Target Search & Filter API
+| Change | Verification |
+|--------|-------------|
+| REST API for target search with multi-field filtering | Integration Tested |
+| Command panel UI for search and filter interaction | Integration Tested |
+
+### Geofencing Engine
+| Change | Verification |
+|--------|-------------|
+| Zone-based geofencing with enter/exit event detection | Integration Tested |
+| Zone management API (CRUD) | Integration Tested |
+| Geofence alerts dispatched via EventBus | Integration Tested |
+| Map panel for zone visualization and editing | Integration Tested |
+
+---
+
 ## 2026-03-13 — Wave 4: Full Pipeline & Fleet Dashboard
 
 ### Synthetic Data Generators
@@ -153,7 +195,7 @@ Changes tracked with verification status. All changes on `dev` branch.
 | Suite | Count | Status | Date |
 |-------|-------|--------|------|
 | ./test.sh fast | 81 tiers | All passing | 2026-03-13 |
-| Unit tests (tier 2) | ~7600 | All passing | 2026-03-13 |
+| Unit tests (tier 2) | ~7845 | All passing | 2026-03-13 |
 | JS tests (tier 3) | 281+ | All passing | 2026-03-13 |
 | ROS2 tests (tier 8b) | 125 | All passing | 2026-03-13 |
 
