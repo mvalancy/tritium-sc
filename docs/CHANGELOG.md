@@ -14,6 +14,22 @@ Changes tracked with verification status. All changes on `dev` branch.
 
 ---
 
+## 2026-03-14 — Wave 76: Behavioral Intelligence + Pattern Learning
+
+| Change | Verification |
+|--------|-------------|
+| Behavioral Intelligence plugin (`plugins/behavioral_intelligence/`) | Unit Tested (15 tests) |
+| PatternDetector: daily routines, dwell patterns, arrival schedules from movement history | Unit Tested |
+| Co-presence inference: TRAVELS_WITH edges when devices consistently appear together | Unit Tested |
+| Pattern alert system: fires when established patterns break (missing target, wrong location, lost companion) | Unit Tested |
+| REST API `/api/patterns/` — patterns, relationships, anomalies, alerts CRUD, target heatmap | Unit Tested |
+| Frontend behavioral-intelligence panel: 4-tab UI (patterns, relations, anomalies, alerts) | Code Review |
+| Activity heatmap: 7x24 day/hour grid with cyan intensity gradient | Code Review |
+| EventBus integration: subscribes to ble_update, wifi_update, heartbeat, mesh events | Unit Tested |
+| Background analysis loop: runs every 30s, detects patterns, checks violations, fires alerts | Unit Tested |
+
+---
+
 ## 2026-03-14 — Wave 75: Security Hardening
 
 | Change | Verification |
