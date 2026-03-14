@@ -1,0 +1,63 @@
+# Tritium-SC Docker ignore
+# Copyright 2026 Valpatel Software LLC — AGPL-3.0
+
+# Version control
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.venv
+venv
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Tests (not needed in production image)
+tests/
+test_report/
+
+# Documentation
+docs/
+*.md
+LICENSE
+
+# Development files
+.env
+.env.*
+!.env.example
+conf/
+scripts/
+examples/
+demo/
+plugins/
+
+# Data (mounted as volumes)
+data/
+*.db
+
+# Media
+*.mp4
+*.mkv
+*.avi
+*.mov
+*.webm
+*.wav
+
+# Node/JS tooling
+node_modules/
+package-lock.json
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore

@@ -16,6 +16,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc libffi-dev && \
     rm -rf /var/lib/apt/lists/*
 
+# Install tritium-lib from submodule (shared models, events, auth)
+COPY tritium-lib/ /tmp/tritium-lib/
+RUN pip install --no-cache-dir /tmp/tritium-lib/ && \
+    rm -rf /tmp/tritium-lib/
+
 # Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
@@ -25,12 +30,12 @@ COPY src/ src/
 COPY assets/ assets/
 
 # Create data directories
-RUN mkdir -p data/amy data/recordings data/test_reports
+RUN mkdir -p data/amy data/recordings data/test_reports data/dossiers
 
 EXPOSE 8000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/auth/status')" || exit 1
+# Health check against the comprehensive health endpoint
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')" || exit 1
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

@@ -1,4 +1,4 @@
-# Tritium-SC Production Stack
+# Tritium-SC Development Stack
 # Copyright 2026 Valpatel Software LLC — AGPL-3.0
 #
 # Usage:
@@ -9,7 +9,9 @@
 
 services:
   tritium:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: tritium-sc
     restart: unless-stopped
     ports:
@@ -41,8 +43,10 @@ services:
       - RATE_LIMIT_ENABLED=${RATE_LIMIT_ENABLED:-false}
       - RATE_LIMIT_REQUESTS=${RATE_LIMIT_REQUESTS:-100}
     depends_on:
-      - mosquitto
-      - influxdb
+      mosquitto:
+        condition: service_started
+      influxdb:
+        condition: service_started
     # GPU support for YOLO detection
     # deploy:
     #   resources:
@@ -93,11 +97,27 @@ services:
     environment:
       - INFLUX_TOKEN=${INFLUX_TOKEN:-tritium-dev-token}
 
+  grafana:
+    image: grafana/grafana:11.0.0
+    container_name: tritium-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-tritium}
+      - GF_INSTALL_PLUGINS=
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - influxdb
+
 volumes:
   tritium_data:
   mosquitto_data:
   mosquitto_log:
   influxdb_data:
+  grafana_data:
 
 networks:
   default:

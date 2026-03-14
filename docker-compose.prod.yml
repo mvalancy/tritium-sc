@@ -1,0 +1,146 @@
+# Tritium-SC Production Stack
+# Copyright 2026 Valpatel Software LLC — AGPL-3.0
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# This overlay applies production hardening on top of docker-compose.yml:
+#   - TLS termination
+#   - Resource limits and reservations
+#   - Restart policies
+#   - Health checks on all services
+#   - No source mounts (uses baked image)
+#   - Log rotation
+#
+# Required environment variables (set in .env or export):
+#   AUTH_SECRET_KEY      — JWT signing key (openssl rand -hex 32)
+#   AUTH_ADMIN_PASSWORD  — Admin password
+#   INFLUX_PASSWORD      — InfluxDB admin password
+#   TLS_CERT_FILE        — Path to TLS certificate (optional)
+#   TLS_KEY_FILE         — Path to TLS private key (optional)
+
+services:
+  tritium:
+    restart: always
+    volumes:
+      # Production: no source mounts, only persistent data
+      - tritium_data:/app/data
+      - ./assets:/app/assets:ro
+      # TLS certificates (optional)
+      - ${TLS_CERT_DIR:-./certs}:/app/certs:ro
+    environment:
+      - AUTH_ENABLED=true
+      - AUTH_SECRET_KEY=${AUTH_SECRET_KEY:?Set AUTH_SECRET_KEY for production}
+      - AUTH_ADMIN_PASSWORD=${AUTH_ADMIN_PASSWORD:?Set AUTH_ADMIN_PASSWORD for production}
+      - TLS_ENABLED=${TLS_ENABLED:-false}
+      - TLS_CERT_FILE=${TLS_CERT_FILE:-}
+      - TLS_KEY_FILE=${TLS_KEY_FILE:-}
+      - RATE_LIMIT_ENABLED=true
+      - RATE_LIMIT_REQUESTS=200
+    deploy:
+      resources:
+        limits:
+          cpus: "4.0"
+          memory: 4G
+        reservations:
+          cpus: "1.0"
+          memory: 512M
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  mosquitto:
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 256M
+        reservations:
+          cpus: "0.25"
+          memory: 64M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD-SHELL", "mosquitto_sub -t '$$SYS/broker/uptime' -C 1 -W 3 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+  influxdb:
+    restart: always
+    environment:
+      - DOCKER_INFLUXDB_INIT_PASSWORD=${INFLUX_PASSWORD:?Set INFLUX_PASSWORD for production}
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+        reservations:
+          cpus: "0.5"
+          memory: 256M
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+  telegraf:
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+        reservations:
+          cpus: "0.1"
+          memory: 64M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  grafana:
+    restart: always
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:?Set GRAFANA_PASSWORD for production}
+      - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL:-http://localhost:3000}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 128M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
