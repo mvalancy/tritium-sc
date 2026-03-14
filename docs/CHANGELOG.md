@@ -14,6 +14,32 @@ Changes tracked with verification status. All changes on `dev` branch.
 
 ---
 
+## 2026-03-14 — Wave 47: Security Audit, Input Validation, System Metrics
+
+### Security Hardening — API Input Validation (Unit Tested)
+- **missions.py**: Added HTML sanitization, text length limits (title 200, description 5000), priority bounds (1-10), tag/asset/objective count limits, mission count cap (1000)
+- **bookmarks.py**: Added lat/lng bounds (-90/90, -180/180), zoom (0-24), pitch (-90/90), bearing (-360/360), name/description sanitization, bookmark count cap (1000)
+- **layouts.py**: Added name/user/description sanitization, panel count limit (200), string length limits
+- **geofence.py**: Added zone name sanitization, polygon vertex limit (1000), zone count cap (500)
+- **playback.py**: Added max_count bounds (1-10000), speed bounds (0.1-100.0) on start endpoint
+- **watchlist.py**: Added limit clamping on alert history endpoint
+
+### System Metrics Endpoint (Unit Tested)
+- New `GET /api/system/metrics` — runtime monitoring endpoint
+- Returns: uptime, RSS memory usage, WebSocket connection count, target count, route count, PID, timestamp
+- 14 new tests covering metrics structure and security validation
+
+### Frontend Panel Registration Fix (Syntax Verified)
+- Registered 3 unregistered panels: annotations, notification_prefs, watchlist
+- Added PanelDef wrappers to annotations.js and watchlist.js (were using older init/destroy pattern)
+- Panel count: 58 files on disk, 58 registered in main.js (was 55)
+
+### Skepticism Audit Results
+- Route count: 418 (up from 417 with new metrics endpoint)
+- Memory baseline: 65.51 MB current, 65.52 MB peak on fresh import
+- No secrets found in git history across all 3 repos (tritium-sc, tritium-edge, tritium-lib)
+- No .env, .key, .pem, credentials, or secret files ever committed
+
 ## 2026-03-14 — Wave 45: Activity Feed, MQTT Inspector, Map Screenshot, Responsive Layout
 
 ### Target Activity Feed Panel (Syntax Verified)

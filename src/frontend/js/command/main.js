@@ -68,6 +68,9 @@ import { DossierGroupsPanelDef } from './panels/dossier-groups.js';
 import { SetupWizardPanelDef, ConfigStore } from './panels/setup-wizard.js';
 import { ActivityFeedPanelDef } from './panels/activity-feed.js';
 import { MqttInspectorPanelDef } from './panels/mqtt-inspector.js';
+import { AnnotationsPanelDef } from './panels/annotations.js';
+import { NotificationPrefsPanelDef } from './panels/notification_prefs.js';
+import { WatchlistPanelDef } from './panels/watchlist.js';
 import { initScreenshotHotkey } from './panels/map-screenshot.js';
 import { MissionModal, initMissionModal } from './mission-modal.js';
 import { initTargetCounter } from './target-counter.js';
@@ -564,6 +567,9 @@ function initPanelSystem(container) {
     panelManager.register(SetupWizardPanelDef);
     panelManager.register(ActivityFeedPanelDef);
     panelManager.register(MqttInspectorPanelDef);
+    panelManager.register(AnnotationsPanelDef);
+    panelManager.register(NotificationPrefsPanelDef);
+    panelManager.register(WatchlistPanelDef);
 
     // Enhanced map screenshot hotkey (Ctrl+Shift+P)
     initScreenshotHotkey();

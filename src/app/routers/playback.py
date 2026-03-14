@@ -47,7 +47,7 @@ async def get_playback_snapshots(
     start: Optional[float] = Query(None, description="Start timestamp (unix)"),
     end: Optional[float] = Query(None, description="End timestamp (unix)"),
     speed: Optional[float] = Query(None, description="Playback speed multiplier"),
-    max_count: int = Query(100, description="Max snapshots to return"),
+    max_count: int = Query(100, description="Max snapshots to return", ge=1, le=10000),
 ):
     """Query snapshots within a time range for map replay.
 
@@ -108,7 +108,7 @@ async def get_state_at(
 async def start_playback(
     request: Request,
     start_time: Optional[float] = Query(None, description="Start timestamp"),
-    speed: float = Query(1.0, description="Playback speed (1.0 = realtime)"),
+    speed: float = Query(1.0, description="Playback speed (1.0 = realtime)", ge=0.1, le=100.0),
 ):
     """Start temporal playback from a given time."""
     playback = _get_playback(request)
@@ -180,7 +180,7 @@ async def replay_targets(
     start: float = Query(..., description="Start timestamp (unix)"),
     end: float = Query(..., description="End timestamp (unix)"),
     speed: float = Query(1.0, description="Playback speed multiplier (1.0 = realtime)"),
-    max_count: int = Query(500, description="Max snapshots to replay"),
+    max_count: int = Query(500, description="Max snapshots to replay", ge=1, le=10000),
 ):
     """Replay historical target positions as a Server-Sent Events stream.
 

@@ -307,3 +307,13 @@ export function getAnnotations() {
 }
 
 export { setDrawMode, getDrawMode, handleMapClick, finishFreehand };
+
+// PanelDef for PanelManager registration
+export const AnnotationsPanelDef = {
+    id: 'annotations',
+    label: 'ANNOTATIONS',
+    icon: '\u270F',
+    group: 'map',
+    init(container) { return initAnnotationsPanel(container); },
+    destroy() { destroyAnnotationsPanel(); },
+};

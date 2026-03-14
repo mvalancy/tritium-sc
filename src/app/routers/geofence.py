@@ -12,12 +12,26 @@ Endpoints:
 
 from __future__ import annotations
 
+import html
+import re
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from engine.tactical.geofence import GeoZone, GeofenceEngine
+
+_MAX_NAME_LEN = 200
+_MAX_VERTICES = 1000
+_MAX_ZONES = 500
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _sanitize(value: str, max_len: int) -> str:
+    """Strip HTML tags, escape, and enforce length limit."""
+    value = _HTML_TAG_RE.sub("", value)
+    value = html.escape(value)
+    return value[:max_len]
 
 router = APIRouter(prefix="/api/geofence", tags=["geofence"])
 
@@ -44,11 +58,23 @@ def set_engine(engine: GeofenceEngine) -> None:
 # ------------------------------------------------------------------
 
 class CreateGeoZoneRequest(BaseModel):
-    name: str
-    polygon: list[list[float]]  # [[x1,y1], [x2,y2], ...]
+    name: str = Field(..., min_length=1, max_length=_MAX_NAME_LEN)
+    polygon: list[list[float]] = Field(...)  # [[x1,y1], [x2,y2], ...]
     zone_type: str = "monitored"  # "restricted", "monitored", "safe"
     alert_on_enter: bool = True
     alert_on_exit: bool = True
+
+    @field_validator("name")
+    @classmethod
+    def sanitize_name(cls, v: str) -> str:
+        return _sanitize(v, _MAX_NAME_LEN)
+
+    @field_validator("polygon")
+    @classmethod
+    def validate_polygon(cls, v):
+        if len(v) > _MAX_VERTICES:
+            raise ValueError(f"Too many vertices (max {_MAX_VERTICES})")
+        return v
 
 
 class GeoZoneResponse(BaseModel):
@@ -90,6 +116,10 @@ async def create_zone(request: CreateGeoZoneRequest):
     if len(request.polygon) < 3:
         raise HTTPException(status_code=400, detail="Polygon must have at least 3 vertices")
 
+    engine = get_engine()
+    if len(engine.list_zones()) >= _MAX_ZONES:
+        raise HTTPException(status_code=429, detail=f"Zone limit reached ({_MAX_ZONES})")
+
     valid_types = ("restricted", "monitored", "safe")
     if request.zone_type not in valid_types:
         raise HTTPException(
@@ -107,7 +137,6 @@ async def create_zone(request: CreateGeoZoneRequest):
         alert_on_exit=request.alert_on_exit,
     )
 
-    engine = get_engine()
     engine.add_zone(zone)
     return _zone_response(zone)
 

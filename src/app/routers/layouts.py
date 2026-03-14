@@ -13,41 +13,73 @@ Endpoints:
 
 from __future__ import annotations
 
+import html
 import logging
+import re
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/layouts", tags=["layouts"])
 
+_MAX_NAME_LEN = 100
+_MAX_DESC_LEN = 500
+_MAX_USER_LEN = 100
+_MAX_PANELS = 200
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _sanitize(value: str, max_len: int) -> str:
+    """Strip HTML tags, escape, and enforce length limit."""
+    value = _HTML_TAG_RE.sub("", value)
+    value = html.escape(value)
+    return value[:max_len]
+
 
 class PanelConfigBody(BaseModel):
     """Panel configuration in a layout save request."""
-    panel_id: str
+    panel_id: str = Field(..., max_length=_MAX_NAME_LEN)
     visible: bool = True
     position: dict = {"x": 0, "y": 0}
     size: dict = {"width": 400, "height": 300}
-    order: int = 0
+    order: int = Field(default=0, ge=-1000, le=1000)
     collapsed: bool = False
     settings: dict = {}
 
 
 class SaveLayoutRequest(BaseModel):
     """Request body for saving a dashboard layout."""
-    name: str
-    user: str = "default"
-    description: str = ""
-    panels: list[PanelConfigBody] = []
+    name: str = Field(..., min_length=1, max_length=_MAX_NAME_LEN)
+    user: str = Field(default="default", max_length=_MAX_USER_LEN)
+    description: str = Field(default="", max_length=_MAX_DESC_LEN)
+    panels: list[PanelConfigBody] = Field(default_factory=list)
     map_settings: dict = {}
+
+    @field_validator("name", "user", "description")
+    @classmethod
+    def sanitize_strings(cls, v: str) -> str:
+        return _sanitize(v, _MAX_DESC_LEN)
+
+    @field_validator("panels")
+    @classmethod
+    def validate_panels(cls, v):
+        if len(v) > _MAX_PANELS:
+            raise ValueError(f"Too many panels (max {_MAX_PANELS})")
+        return v
 
 
 class DuplicateRequest(BaseModel):
     """Request body for duplicating a layout."""
-    new_name: str
-    user: str = "default"
+    new_name: str = Field(..., min_length=1, max_length=_MAX_NAME_LEN)
+    user: str = Field(default="default", max_length=_MAX_USER_LEN)
+
+    @field_validator("new_name", "user")
+    @classmethod
+    def sanitize_strings(cls, v: str) -> str:
+        return _sanitize(v, _MAX_NAME_LEN)
 
 
 def _get_layout_manager(request: Request):

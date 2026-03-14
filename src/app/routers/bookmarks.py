@@ -10,13 +10,32 @@ quick-jump to monitored areas.
 
 from __future__ import annotations
 
+import html
+import re
 import time
 from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 router = APIRouter(prefix="/api/bookmarks", tags=["bookmarks"])
+
+# ---------------------------------------------------------------------------
+# Limits
+# ---------------------------------------------------------------------------
+_MAX_NAME_LEN = 100
+_MAX_DESC_LEN = 1000
+_MAX_FILTER_ITEMS = 50
+_MAX_FILTER_LEN = 100
+_MAX_BOOKMARKS = 1000
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _sanitize(value: str, max_len: int) -> str:
+    """Strip HTML tags, escape, and enforce length limit."""
+    value = _HTML_TAG_RE.sub("", value)
+    value = html.escape(value)
+    return value[:max_len]
 
 
 # ---------------------------------------------------------------------------
@@ -25,39 +44,69 @@ router = APIRouter(prefix="/api/bookmarks", tags=["bookmarks"])
 
 class BookmarkCreate(BaseModel):
     """Request to create a map bookmark."""
-    name: str = Field(..., min_length=1, max_length=100)
-    lat: float
-    lng: float
-    zoom: float = 16.0
-    pitch: float = 0.0
-    bearing: float = 0.0
+    name: str = Field(..., min_length=1, max_length=_MAX_NAME_LEN)
+    lat: float = Field(..., ge=-90, le=90)
+    lng: float = Field(..., ge=-180, le=180)
+    zoom: float = Field(default=16.0, ge=0, le=24)
+    pitch: float = Field(default=0.0, ge=-90, le=90)
+    bearing: float = Field(default=0.0, ge=-360, le=360)
     alliance_filter: Optional[list[str]] = None
     asset_type_filter: Optional[list[str]] = None
-    description: str = ""
+    description: str = Field(default="", max_length=_MAX_DESC_LEN)
+
+    @field_validator("name", "description")
+    @classmethod
+    def sanitize_strings(cls, v: str) -> str:
+        return _sanitize(v, _MAX_DESC_LEN)
+
+    @field_validator("alliance_filter", "asset_type_filter")
+    @classmethod
+    def validate_filters(cls, v):
+        if v is not None:
+            if len(v) > _MAX_FILTER_ITEMS:
+                raise ValueError(f"Too many filter items (max {_MAX_FILTER_ITEMS})")
+            return [_sanitize(s, _MAX_FILTER_LEN) for s in v]
+        return v
 
 
 class BookmarkUpdate(BaseModel):
     """Partial update for a bookmark."""
-    name: Optional[str] = None
-    lat: Optional[float] = None
-    lng: Optional[float] = None
-    zoom: Optional[float] = None
-    pitch: Optional[float] = None
-    bearing: Optional[float] = None
+    name: Optional[str] = Field(default=None, max_length=_MAX_NAME_LEN)
+    lat: Optional[float] = Field(default=None, ge=-90, le=90)
+    lng: Optional[float] = Field(default=None, ge=-180, le=180)
+    zoom: Optional[float] = Field(default=None, ge=0, le=24)
+    pitch: Optional[float] = Field(default=None, ge=-90, le=90)
+    bearing: Optional[float] = Field(default=None, ge=-360, le=360)
     alliance_filter: Optional[list[str]] = None
     asset_type_filter: Optional[list[str]] = None
-    description: Optional[str] = None
+    description: Optional[str] = Field(default=None, max_length=_MAX_DESC_LEN)
+
+    @field_validator("name", "description")
+    @classmethod
+    def sanitize_strings(cls, v):
+        if v is not None:
+            return _sanitize(v, _MAX_DESC_LEN)
+        return v
+
+    @field_validator("alliance_filter", "asset_type_filter")
+    @classmethod
+    def validate_filters(cls, v):
+        if v is not None:
+            if len(v) > _MAX_FILTER_ITEMS:
+                raise ValueError(f"Too many filter items (max {_MAX_FILTER_ITEMS})")
+            return [_sanitize(s, _MAX_FILTER_LEN) for s in v]
+        return v
 
 
 class Bookmark(BaseModel):
     """A saved map position."""
     id: str
     name: str
-    lat: float
-    lng: float
-    zoom: float = 16.0
-    pitch: float = 0.0
-    bearing: float = 0.0
+    lat: float = Field(ge=-90, le=90)
+    lng: float = Field(ge=-180, le=180)
+    zoom: float = Field(default=16.0, ge=0, le=24)
+    pitch: float = Field(default=0.0, ge=-90, le=90)
+    bearing: float = Field(default=0.0, ge=-360, le=360)
     alliance_filter: Optional[list[str]] = None
     asset_type_filter: Optional[list[str]] = None
     description: str = ""
@@ -99,6 +148,8 @@ async def list_bookmarks():
 @router.post("")
 async def create_bookmark(body: BookmarkCreate):
     """Save a new map bookmark."""
+    if len(_bookmarks) >= _MAX_BOOKMARKS:
+        raise HTTPException(status_code=429, detail=f"Bookmark limit reached ({_MAX_BOOKMARKS})")
     now = time.time()
     bid = _generate_id()
     bookmark = {

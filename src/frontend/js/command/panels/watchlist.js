@@ -211,6 +211,16 @@ export function initWatchlistPanel(container) {
     return _panel;
 }
 
+// PanelDef for PanelManager registration
+export const WatchlistPanelDef = {
+    id: 'watchlist',
+    label: 'WATCH LIST',
+    icon: '\uD83D\uDC41',
+    group: 'intel',
+    init(container) { return initWatchlistPanel(container); },
+    destroy() { destroyWatchlistPanel(); },
+};
+
 export function destroyWatchlistPanel() {
     if (_refreshTimer) {
         clearInterval(_refreshTimer);

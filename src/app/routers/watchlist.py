@@ -274,6 +274,7 @@ async def remove_watch_entry(entry_id: str):
 @router.get("/alerts/history")
 async def get_alert_history(limit: int = 50):
     """Get recent watch list alerts."""
+    limit = max(1, min(limit, _MAX_ALERT_HISTORY))
     return {
         "alerts": _alert_history[-limit:],
         "total": len(_alert_history),

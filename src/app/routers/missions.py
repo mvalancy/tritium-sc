@@ -18,11 +18,13 @@ Endpoints:
 
 from __future__ import annotations
 
+import html
+import re
 import uuid
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from tritium_lib.models.mission import (
     GeofenceZone,
@@ -34,6 +36,24 @@ from tritium_lib.models.mission import (
 
 router = APIRouter(prefix="/api/missions", tags=["missions"])
 
+_MAX_MISSIONS = 1000
+_MAX_TEXT_LEN = 5000
+_MAX_TITLE_LEN = 200
+_MAX_TAG_LEN = 100
+_MAX_TAGS = 50
+_MAX_ASSETS = 200
+_MAX_OBJECTIVES = 100
+_MAX_VERTICES = 1000
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _sanitize(value: str, max_len: int) -> str:
+    """Strip HTML tags, escape, and enforce length limit."""
+    value = _HTML_TAG_RE.sub("", value)
+    value = html.escape(value)
+    return value[:max_len]
+
+
 # In-memory store — keyed by mission_id
 _missions: dict[str, Mission] = {}
 
@@ -43,42 +63,122 @@ _missions: dict[str, Mission] = {}
 # ------------------------------------------------------------------
 
 class ObjectiveRequest(BaseModel):
-    description: str = ""
-    priority: int = 1
+    description: str = Field(default="", max_length=_MAX_TEXT_LEN)
+    priority: int = Field(default=1, ge=1, le=10)
+
+    @field_validator("description")
+    @classmethod
+    def sanitize_desc(cls, v: str) -> str:
+        return _sanitize(v, _MAX_TEXT_LEN)
 
 
 class GeofenceZoneRequest(BaseModel):
-    name: str = ""
-    vertices: list[list[float]] = []  # [[lat, lng], ...]
-    center_lat: Optional[float] = None
-    center_lng: Optional[float] = None
-    radius_m: Optional[float] = None
+    name: str = Field(default="", max_length=_MAX_TITLE_LEN)
+    vertices: list[list[float]] = Field(default_factory=list)
+    center_lat: Optional[float] = Field(default=None, ge=-90, le=90)
+    center_lng: Optional[float] = Field(default=None, ge=-180, le=180)
+    radius_m: Optional[float] = Field(default=None, ge=0, le=1_000_000)
+
+    @field_validator("name")
+    @classmethod
+    def sanitize_name(cls, v: str) -> str:
+        return _sanitize(v, _MAX_TITLE_LEN)
+
+    @field_validator("vertices")
+    @classmethod
+    def validate_vertices(cls, v):
+        if len(v) > _MAX_VERTICES:
+            raise ValueError(f"Too many vertices (max {_MAX_VERTICES})")
+        return v
 
 
 class CreateMissionRequest(BaseModel):
-    title: str
+    title: str = Field(..., min_length=1, max_length=_MAX_TITLE_LEN)
     type: str = "custom"
-    description: str = ""
-    assigned_assets: list[str] = []
-    objectives: list[ObjectiveRequest] = []
+    description: str = Field(default="", max_length=_MAX_TEXT_LEN)
+    assigned_assets: list[str] = Field(default_factory=list)
+    objectives: list[ObjectiveRequest] = Field(default_factory=list)
     geofence_zone: Optional[GeofenceZoneRequest] = None
-    priority: int = 3
-    tags: list[str] = []
-    created_by: str = ""
+    priority: int = Field(default=3, ge=1, le=10)
+    tags: list[str] = Field(default_factory=list)
+    created_by: str = Field(default="", max_length=_MAX_TITLE_LEN)
+
+    @field_validator("title", "description", "created_by")
+    @classmethod
+    def sanitize_strings(cls, v: str) -> str:
+        return _sanitize(v, _MAX_TEXT_LEN)
+
+    @field_validator("tags")
+    @classmethod
+    def validate_tags(cls, v: list[str]) -> list[str]:
+        if len(v) > _MAX_TAGS:
+            raise ValueError(f"Too many tags (max {_MAX_TAGS})")
+        return [_sanitize(t, _MAX_TAG_LEN) for t in v]
+
+    @field_validator("assigned_assets")
+    @classmethod
+    def validate_assets(cls, v: list[str]) -> list[str]:
+        if len(v) > _MAX_ASSETS:
+            raise ValueError(f"Too many assets (max {_MAX_ASSETS})")
+        return [_sanitize(a, _MAX_TITLE_LEN) for a in v]
+
+    @field_validator("objectives")
+    @classmethod
+    def validate_objectives(cls, v):
+        if len(v) > _MAX_OBJECTIVES:
+            raise ValueError(f"Too many objectives (max {_MAX_OBJECTIVES})")
+        return v
 
 
 class UpdateMissionRequest(BaseModel):
-    title: Optional[str] = None
-    description: Optional[str] = None
+    title: Optional[str] = Field(default=None, max_length=_MAX_TITLE_LEN)
+    description: Optional[str] = Field(default=None, max_length=_MAX_TEXT_LEN)
     assigned_assets: Optional[list[str]] = None
     objectives: Optional[list[ObjectiveRequest]] = None
     geofence_zone: Optional[GeofenceZoneRequest] = None
-    priority: Optional[int] = None
+    priority: Optional[int] = Field(default=None, ge=1, le=10)
     tags: Optional[list[str]] = None
+
+    @field_validator("title", "description")
+    @classmethod
+    def sanitize_strings(cls, v):
+        if v is not None:
+            return _sanitize(v, _MAX_TEXT_LEN)
+        return v
+
+    @field_validator("tags")
+    @classmethod
+    def validate_tags(cls, v):
+        if v is not None:
+            if len(v) > _MAX_TAGS:
+                raise ValueError(f"Too many tags (max {_MAX_TAGS})")
+            return [_sanitize(t, _MAX_TAG_LEN) for t in v]
+        return v
+
+    @field_validator("assigned_assets")
+    @classmethod
+    def validate_assets(cls, v):
+        if v is not None:
+            if len(v) > _MAX_ASSETS:
+                raise ValueError(f"Too many assets (max {_MAX_ASSETS})")
+            return [_sanitize(a, _MAX_TITLE_LEN) for a in v]
+        return v
+
+    @field_validator("objectives")
+    @classmethod
+    def validate_objectives(cls, v):
+        if v is not None and len(v) > _MAX_OBJECTIVES:
+            raise ValueError(f"Too many objectives (max {_MAX_OBJECTIVES})")
+        return v
 
 
 class AbortRequest(BaseModel):
-    reason: str = ""
+    reason: str = Field(default="", max_length=_MAX_TEXT_LEN)
+
+    @field_validator("reason")
+    @classmethod
+    def sanitize_reason(cls, v: str) -> str:
+        return _sanitize(v, _MAX_TEXT_LEN)
 
 
 # ------------------------------------------------------------------
@@ -144,6 +244,8 @@ async def list_missions(
 @router.post("", status_code=201)
 async def create_mission(request: CreateMissionRequest):
     """Create a new mission."""
+    if len(_missions) >= _MAX_MISSIONS:
+        raise HTTPException(status_code=429, detail=f"Mission limit reached ({_MAX_MISSIONS})")
     mt = _validate_type(request.type)
 
     objectives = [
