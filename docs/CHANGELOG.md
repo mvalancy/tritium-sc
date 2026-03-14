@@ -14,6 +14,26 @@ Changes tracked with verification status. All changes on `dev` branch.
 
 ---
 
+## 2026-03-14 — Wave 15: Federation, TLS, Dossier Notifications
+
+### New Features
+| Change | Verification |
+|--------|-------------|
+| Federation plugin (plugins/federation/) — multi-site MQTT bridge, site discovery, target sharing, REST API at /api/federation/* | Unit Tested (17 tests) |
+| HTTPS/TLS support in start.sh — --tls flag with TLS_CERT_FILE/TLS_KEY_FILE env vars | Syntax Verified |
+| WebSocket notification for new dossier creation — dossier_created event via EventBus -> WS bridge | Unit Tested (4 tests) |
+| Federation events (site_added, target_shared, target_received) forwarded to WS bridge | Unit Tested |
+
+### Quality
+| Check | Status |
+|-------|--------|
+| Tier 1 (syntax): 388 files (294 Python, 94 JS) | PASS |
+| Tier 3 (JS): 92 files, all pass | PASS |
+| New tests: 21 federation + 4 dossier WS notification | PASS |
+| Pre-existing test ordering issue: test_fleet_dashboard (passes in isolation) | KNOWN |
+
+---
+
 ## 2026-03-13 — Wave 13: Codebase Audit & Cleanup
 
 ### Test Suite Cleanup
