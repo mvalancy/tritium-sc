@@ -1,23 +1,29 @@
 # Created by Matthew Valancy
 # Copyright 2026 Valpatel Software LLC
 # Licensed under AGPL-3.0 — see LICENSE for details.
-"""AcousticPlugin — sound classification for the Tritium sensing pipeline.
+"""AcousticPlugin — ML sound classification + source localization.
 
 Subscribes to audio events from edge devices (ESP32 I2S microphones,
 IP camera audio channels, dedicated acoustic sensors). Classifies sounds
-into categories like gunshot, voice, vehicle, animal, glass_break, siren.
+using MFCC-based KNN (when features available) or rule-based fallback.
 
-Classified events are published to EventBus and wired into TargetTracker
-as temporary acoustic detection targets on the tactical map.
+Sound source localization: when 2+ edge nodes detect the same acoustic
+event, triangulates position from time-of-arrival differences.
+
+Classified events appear on the tactical map as expanding ring targets
+and feed into the event timeline.
 
 MQTT topics:
-    IN:  tritium/{site}/audio/{device}/raw   — raw audio features
-    OUT: tritium/{site}/audio/{device}/event  — classified events
+    IN:  tritium/{site}/audio/{device}/raw       — raw audio features
+    IN:  tritium/{site}/audio/{device}/features   — MFCC feature vectors
+    OUT: tritium/{site}/audio/{device}/event      — classified events
+    OUT: tritium/{site}/acoustic/localization      — triangulated positions
 """
 
 from __future__ import annotations
 
 import logging
+import math
 import queue as queue_mod
 import threading
 import time
@@ -42,6 +48,9 @@ ACOUSTIC_TARGET_TTL = 30.0
 # Maximum event history for the plugin
 MAX_EVENT_HISTORY = 500
 
+# Maximum time window (seconds) to correlate events for localization
+LOCALIZATION_WINDOW_S = 2.0
+
 # Severity classification for alert routing
 HIGH_SEVERITY_EVENTS = {
     AcousticEventType.GUNSHOT,
@@ -54,9 +63,16 @@ MEDIUM_SEVERITY_EVENTS = {
     AcousticEventType.VEHICLE,
 }
 
+# Severity colors for map rendering (CSS color values)
+SEVERITY_COLORS = {
+    "high": "#ff2a6d",
+    "medium": "#fcee0a",
+    "low": "#00f0ff",
+}
+
 
 class AcousticPlugin(PluginInterface):
-    """Acoustic classification plugin for passive sound monitoring."""
+    """Acoustic classification plugin with ML + source localization."""
 
     def __init__(self) -> None:
         self._event_bus: Any = None
@@ -64,7 +80,7 @@ class AcousticPlugin(PluginInterface):
         self._app: Any = None
         self._logger: Optional[logging.Logger] = None
 
-        self._classifier = AcousticClassifier()
+        self._classifier = AcousticClassifier(enable_ml=True)
 
         self._running = False
         self._poll_interval = DEFAULT_POLL_INTERVAL
@@ -72,12 +88,22 @@ class AcousticPlugin(PluginInterface):
         self._event_queue: Optional[queue_mod.Queue] = None
         self._event_thread: Optional[threading.Thread] = None
 
-        # Plugin-level event history
+        # Plugin-level event history (timeline data)
         self._event_history: list[dict] = []
         self._lock = threading.Lock()
 
         # Active acoustic targets (target_id -> expiry time)
         self._active_targets: dict[str, float] = {}
+
+        # Sensor positions for localization (sensor_id -> (lat, lon))
+        self._sensor_positions: dict[str, tuple[float, float]] = {}
+
+        # Recent detections for cross-node correlation
+        # Key: event_type, Value: list of (timestamp, sensor_id, lat, lon, confidence)
+        self._recent_detections: dict[str, list[tuple[float, str, float, float, float]]] = {}
+
+        # Localization results
+        self._localization_history: list[dict] = []
 
         # Statistics
         self._stats = {
@@ -85,6 +111,9 @@ class AcousticPlugin(PluginInterface):
             "events_classified": 0,
             "high_severity_count": 0,
             "targets_created": 0,
+            "localizations": 0,
+            "ml_classifications": 0,
+            "rule_classifications": 0,
         }
 
     # -- PluginInterface identity ------------------------------------------
@@ -95,15 +124,15 @@ class AcousticPlugin(PluginInterface):
 
     @property
     def name(self) -> str:
-        return "Acoustic Classifier"
+        return "Acoustic Intelligence"
 
     @property
     def version(self) -> str:
-        return "1.0.0"
+        return "2.0.0"
 
     @property
     def capabilities(self) -> set[str]:
-        return {"data_source", "routes", "background"}
+        return {"data_source", "routes", "background", "localization"}
 
     # -- PluginInterface lifecycle -----------------------------------------
 
@@ -121,6 +150,10 @@ class AcousticPlugin(PluginInterface):
             global ACOUSTIC_TARGET_TTL
             ACOUSTIC_TARGET_TTL = float(settings["target_ttl"])
 
+        # Sensor positions for localization
+        if "sensor_positions" in settings:
+            self._sensor_positions = settings["sensor_positions"]
+
         # Configure classifier thresholds
         if "gunshot_energy_threshold" in settings:
             self._classifier.GUNSHOT_ENERGY_THRESHOLD = float(
@@ -134,7 +167,8 @@ class AcousticPlugin(PluginInterface):
         # Register routes
         self._register_routes()
 
-        self._logger.info("Acoustic plugin configured")
+        ml_status = "ML+rules" if self._classifier.ml_available else "rules-only"
+        self._logger.info("Acoustic plugin configured (%s)", ml_status)
 
     def start(self) -> None:
         if self._running:
@@ -193,14 +227,8 @@ class AcousticPlugin(PluginInterface):
     ) -> dict:
         """Classify audio features and return the event.
 
-        Args:
-            features: Dict with rms_energy, peak_amplitude, zero_crossing_rate,
-                      spectral_centroid, spectral_bandwidth, duration_ms.
-            device_id: Source device identifier.
-            location: Optional (lat, lng) of the microphone.
-
-        Returns:
-            Classified event as a dict.
+        Supports both basic features (spectral centroid, energy) and
+        MFCC features for ML classification.
         """
         audio_features = AudioFeatures(
             rms_energy=features.get("rms_energy", 0.0),
@@ -209,19 +237,66 @@ class AcousticPlugin(PluginInterface):
             spectral_centroid=features.get("spectral_centroid", 0.0),
             spectral_bandwidth=features.get("spectral_bandwidth", 0.0),
             duration_ms=features.get("duration_ms", 0),
+            mfcc=features.get("mfcc"),
+            spectral_rolloff=features.get("spectral_rolloff", 0.0),
+            spectral_flatness=features.get("spectral_flatness", 0.0),
         )
 
         event = self._classifier.classify(audio_features)
         event.device_id = device_id
         event.location = location
 
+        # Track ML vs rule-based
+        with self._lock:
+            if hasattr(event, "model_version") and "knn" in event.model_version:
+                self._stats["ml_classifications"] += 1
+            else:
+                self._stats["rule_classifications"] += 1
+
         self._on_classified(event)
+
+        # Try localization if we have sensor position
+        if location and event.event_type != AcousticEventType.UNKNOWN:
+            self._try_localize(event, device_id, location)
+
         return self._event_to_dict(event)
+
+    def register_sensor(self, sensor_id: str, lat: float, lon: float) -> None:
+        """Register a sensor's position for acoustic localization."""
+        self._sensor_positions[sensor_id] = (lat, lon)
 
     def get_recent_events(self, count: int = 50) -> list[dict]:
         """Get the most recent classified events."""
         with self._lock:
             return list(self._event_history[-count:])
+
+    def get_timeline(self, count: int = 100) -> list[dict]:
+        """Get acoustic event timeline with severity and location data.
+
+        Returns events sorted by time, suitable for timeline rendering.
+        """
+        with self._lock:
+            events = list(self._event_history[-count:])
+        # Add severity to each event
+        for e in events:
+            et = e.get("event_type", "unknown")
+            try:
+                etype = AcousticEventType(et)
+            except ValueError:
+                etype = AcousticEventType.UNKNOWN
+            if etype in HIGH_SEVERITY_EVENTS:
+                e["severity"] = "high"
+            elif etype in MEDIUM_SEVERITY_EVENTS:
+                e["severity"] = "medium"
+            else:
+                e["severity"] = "low"
+            e["color"] = SEVERITY_COLORS.get(e["severity"], "#00f0ff")
+        return events
+
+    def get_localizations(self, count: int = 50) -> list[dict]:
+        """Get recent source localization results."""
+        with self._lock:
+            return list(self._localization_history[-count:])
 
     def get_stats(self) -> dict:
         """Get plugin statistics."""
@@ -233,11 +308,167 @@ class AcousticPlugin(PluginInterface):
                 "classifier_history": len(
                     self._classifier.get_recent_events()
                 ),
+                "ml_available": self._classifier.ml_available,
+                "sensors_registered": len(self._sensor_positions),
             }
 
     def get_event_counts(self) -> dict[str, int]:
         """Get count of each event type."""
         return self._classifier.get_event_counts()
+
+    # -- Sound source localization -----------------------------------------
+
+    def _try_localize(
+        self,
+        event: AcousticEvent,
+        sensor_id: str,
+        location: tuple[float, float],
+    ) -> None:
+        """Try to localize the sound source using multi-node TDoA.
+
+        When multiple sensors detect the same event type within a time
+        window, we estimate the source position.
+        """
+        now = time.time()
+        evt_key = event.event_type.value
+
+        with self._lock:
+            # Add detection
+            if evt_key not in self._recent_detections:
+                self._recent_detections[evt_key] = []
+            self._recent_detections[evt_key].append(
+                (now, sensor_id, location[0], location[1], event.confidence)
+            )
+
+            # Prune old detections
+            cutoff = now - LOCALIZATION_WINDOW_S
+            self._recent_detections[evt_key] = [
+                d for d in self._recent_detections[evt_key]
+                if d[0] > cutoff
+            ]
+
+            # Need 2+ unique sensors
+            detections = self._recent_detections[evt_key]
+            unique_sensors = set(d[1] for d in detections)
+            if len(unique_sensors) < 2:
+                return
+
+            # Build observers for localization
+            observers = []
+            seen_sensors = set()
+            for ts, sid, lat, lon, conf in detections:
+                if sid in seen_sensors:
+                    continue
+                seen_sensors.add(sid)
+                observers.append({
+                    "sensor_id": sid,
+                    "lat": lat,
+                    "lon": lon,
+                    "arrival_time": ts,
+                    "confidence": conf,
+                })
+
+        # Localize using TDoA weighted centroid
+        try:
+            from tritium_lib.models.acoustic_intelligence import acoustic_trilaterate
+            result = acoustic_trilaterate(observers)
+        except ImportError:
+            result = self._simple_localize(observers)
+
+        if result:
+            loc_event = {
+                "event_type": evt_key,
+                "estimated_lat": result.get("estimated_lat", 0),
+                "estimated_lon": result.get("estimated_lon", 0),
+                "confidence": result.get("confidence", 0),
+                "observers": len(observers),
+                "timestamp": now,
+            }
+
+            with self._lock:
+                self._localization_history.append(loc_event)
+                if len(self._localization_history) > MAX_EVENT_HISTORY:
+                    self._localization_history = self._localization_history[-MAX_EVENT_HISTORY:]
+                self._stats["localizations"] += 1
+
+            # Publish localization event
+            if self._event_bus:
+                self._event_bus.publish(
+                    "acoustic:localized",
+                    data=loc_event,
+                )
+
+            # Create/update target at localized position
+            self._create_localized_target(loc_event)
+
+    def _simple_localize(self, observers: list[dict]) -> Optional[dict]:
+        """Simple weighted centroid fallback when tritium_lib unavailable."""
+        if len(observers) < 2:
+            return None
+
+        observers_sorted = sorted(observers, key=lambda o: o["arrival_time"])
+        t0 = observers_sorted[0]["arrival_time"]
+
+        total_w = 0.0
+        wlat = 0.0
+        wlon = 0.0
+        for obs in observers_sorted:
+            dt = obs["arrival_time"] - t0
+            w = obs.get("confidence", 1.0) / max(dt + 0.001, 0.001)
+            wlat += obs["lat"] * w
+            wlon += obs["lon"] * w
+            total_w += w
+
+        if total_w <= 0:
+            return None
+
+        return {
+            "estimated_lat": round(wlat / total_w, 8),
+            "estimated_lon": round(wlon / total_w, 8),
+            "confidence": min(1.0, 0.3 + (len(observers) - 2) * 0.2),
+        }
+
+    def _create_localized_target(self, loc_event: dict) -> None:
+        """Create a map target at the localized sound source position."""
+        if self._tracker is None:
+            return
+
+        target_id = f"acoustic_loc_{loc_event['event_type']}_{int(loc_event['timestamp'])}"
+        position = (loc_event["estimated_lat"], loc_event["estimated_lon"])
+
+        with self._lock:
+            self._active_targets[target_id] = (
+                time.monotonic() + ACOUSTIC_TARGET_TTL
+            )
+
+        try:
+            from engine.tactical.target_tracker import TrackedTarget
+
+            severity = "low"
+            try:
+                etype = AcousticEventType(loc_event["event_type"])
+                if etype in HIGH_SEVERITY_EVENTS:
+                    severity = "high"
+                elif etype in MEDIUM_SEVERITY_EVENTS:
+                    severity = "medium"
+            except ValueError:
+                pass
+
+            with self._tracker._lock:
+                self._tracker._targets[target_id] = TrackedTarget(
+                    target_id=target_id,
+                    name=f"Sound: {loc_event['event_type']} (localized)",
+                    alliance="unknown",
+                    asset_type="acoustic_localized",
+                    position=position,
+                    last_seen=time.monotonic(),
+                    source="acoustic",
+                    position_source="tdoa_trilateration",
+                    position_confidence=loc_event.get("confidence", 0.5),
+                    status=f"{loc_event['event_type']}:{severity}:localized",
+                )
+        except Exception as exc:
+            log.error("Failed to create localized acoustic target: %s", exc)
 
     # -- Internal event handling -------------------------------------------
 
@@ -380,8 +611,8 @@ class AcousticPlugin(PluginInterface):
         with self._lock:
             self._stats["events_processed"] += 1
 
-        if event_type == "audio:features":
-            # Direct audio feature data from edge
+        if event_type in ("audio:features", "audio:mfcc"):
+            # MFCC + spectral features from edge
             self.classify_audio(
                 features=data.get("features", data),
                 device_id=data.get("device_id", ""),
@@ -396,6 +627,13 @@ class AcousticPlugin(PluginInterface):
                     device_id=data.get("device_id", ""),
                     location=data.get("location"),
                 )
+        elif event_type == "acoustic:sensor_register":
+            # Register sensor position for localization
+            sid = data.get("sensor_id", "")
+            lat = data.get("lat", 0.0)
+            lon = data.get("lon", 0.0)
+            if sid:
+                self.register_sensor(sid, lat, lon)
 
     # -- Routes ------------------------------------------------------------
 
@@ -422,4 +660,5 @@ class AcousticPlugin(PluginInterface):
             "peak_amplitude_db": event.peak_amplitude_db,
             "device_id": event.device_id,
             "location": event.location,
+            "model_version": getattr(event, "model_version", "rule_based_v1"),
         }

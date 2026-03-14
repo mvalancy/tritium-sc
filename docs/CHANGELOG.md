@@ -14,6 +14,22 @@ Changes tracked with verification status. All changes on `dev` branch.
 
 ---
 
+## 2026-03-14 — Wave 79: Acoustic Intelligence Pipeline
+
+| Change | Verification |
+|--------|-------------|
+| ML-based sound classification: KNN on MFCCs (31 built-in training samples, 11 classes) | Tested — gunshot, voice, vehicle, siren, glass_break all correctly classified |
+| Dual-mode AcousticClassifier: ML when MFCCs present, rule-based fallback | 11 existing tests pass (backward compatible) |
+| Built-in training dataset in `engine/audio/acoustic_classifier.py` | Code reviewed |
+| Acoustic event timeline: GET /api/acoustic/timeline with severity + color | Code reviewed |
+| Sound source localization: multi-node TDoA via /api/acoustic/localize | Code reviewed |
+| Localization results: GET /api/acoustic/localizations | Code reviewed |
+| Sensor registration: POST /api/acoustic/sensors/register | Code reviewed |
+| Plugin v2.0.0: ML stats, localization tracking, MFCC feature support | Code reviewed |
+| Frontend panel: acoustic-intelligence.js (timeline, localization, counts tabs) | Code reviewed |
+
+---
+
 ## 2026-03-14 — Wave 78: Maintenance — Plugin Discovery, Docs, Baselines
 
 | Change | Verification |
