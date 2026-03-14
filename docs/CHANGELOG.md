@@ -14,6 +14,30 @@ Changes tracked with verification status. All changes on `dev` branch.
 
 ---
 
+## 2026-03-14 — Wave 31: Filtering, Command Palette, Comparison, Versioning
+
+### New Features
+- Target filter overlay on tactical map (Build Verified)
+  - Dropdown overlay filters map targets by source/alliance/asset type
+  - Client-side filtering integrated into _updateUnits() render loop
+  - CSS: `.target-filter-overlay`, `.tfl-*` classes in panels.css
+- Command palette with Ctrl+K or / (Build Verified)
+  - VS Code-style fuzzy search over all available actions
+  - Panel toggles, map layers, map modes, game controls, system actions
+  - Arrow keys + Enter navigation, backdrop click or Escape to close
+  - CSS: `.cmd-palette-*` classes in panels.css
+- Target comparison panel (Build Verified)
+  - Side-by-side comparison of 2+ targets
+  - Shows all properties, highlights differences
+  - Distance calculation, similarity score for merge candidates
+  - Panel registered as 'target-compare' in panel manager
+- API versioning (Unit Tested)
+  - GET /api/version — API version metadata
+  - GET /api/v1/version — v1 namespace version info
+  - `src/app/routers/version.py`, 3 tests passing
+
+---
+
 ## 2026-03-14 — Wave 27: Security Hardening & Performance
 
 ### Security
