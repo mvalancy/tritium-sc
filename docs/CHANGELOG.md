@@ -14,6 +14,53 @@ Changes tracked with verification status. All changes on `dev` branch.
 
 ---
 
+## 2026-03-13 — Wave 8: Smart Correlation, Dossiers, TAK Bridge & Fusion Demo
+
+### Smart Correlator — Multi-Factor Identity Resolution
+| Change | Verification |
+|--------|-------------|
+| `CorrelationStrategy` ABC with pluggable strategy pattern | Integration Tested |
+| `SpatialStrategy` — distance-based proximity scoring | Integration Tested |
+| `TemporalStrategy` — co-movement detection from position history | Integration Tested |
+| `SignalPatternStrategy` — appearance/disappearance timing correlation | Integration Tested |
+| `DossierStrategy` — known prior associations from DossierStore | Integration Tested |
+| `TargetCorrelator` — weighted multi-strategy fusion engine | Integration Tested |
+
+### DossierManager — Persistent Entity Intelligence
+| Change | Verification |
+|--------|-------------|
+| `DossierManager` bridges TargetTracker (real-time) and DossierStore (persistent) | Integration Tested |
+| EventBus subscriptions: correlation, BLE new device, detections, enrichment | Integration Tested |
+| Periodic flush (30s) persists dirty dossiers to SQLite store | Integration Tested |
+| Thread-safe public API for cross-thread access | Integration Tested |
+
+### Dossier Panel — Frontend Entity Browser
+| Change | Verification |
+|--------|-------------|
+| Split-view panel: dossier list (left) + detail view (right) | Integration Tested |
+| Filtering, sorting, tags, notes, merge support | Integration Tested |
+| Position trail mini-map in detail view | Integration Tested |
+| Fetches from `/api/dossiers`, `/api/dossiers/search`, `/api/dossiers/{id}` | Integration Tested |
+
+### TAK Bridge — Team Awareness Kit Integration
+| Change | Verification |
+|--------|-------------|
+| `TAKBridge` — EventBus subscriber bridging TAK server protocol | Integration Tested |
+| CoT XML translation (targets, geochat, spot reports, emergencies, video feeds) | Integration Tested |
+| pytak async event loop in daemon thread with graceful degradation | Integration Tested |
+| Publish loop reads TargetTracker and queues CoT XML to TAK server | Integration Tested |
+
+### Fusion Demo — Multi-Sensor Correlation Showcase
+| Change | Verification |
+|--------|-------------|
+| `FusionScenario` — scripted multi-sensor actors for demo mode | Integration Tested |
+| Person A (phone + watch + camera) patrol path fusion | Integration Tested |
+| Vehicle B (driver phone BLE + camera detection) road path fusion | Integration Tested |
+| Person C geofence intrusion alert trigger | Integration Tested |
+| Injects BLE sightings and YOLO detections into TargetTracker for correlator merge | Integration Tested |
+
+---
+
 ## 2026-03-13 — Wave 7: Data Providers, Dossiers, Enrichment & GIS Layers
 
 ### DataProvider Plugin Architecture
