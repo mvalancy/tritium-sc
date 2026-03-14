@@ -296,3 +296,207 @@ def _template_description(anomaly_type: str, context: dict[str, Any]) -> str:
         return template.format(**merged)
     except (KeyError, IndexError):
         return f"Anomaly detected: {anomaly_type}. Context: {context}"
+
+
+# ---------------------------------------------------------------------------
+# Feature aggregation & classification feedback endpoints
+# ---------------------------------------------------------------------------
+
+
+class FeatureIngestRequest(BaseModel):
+    """Request to ingest feature vectors from an edge node."""
+    node_id: str = Field(..., description="Edge node identifier")
+    features: list[dict[str, Any]] = Field(
+        ..., description="List of {mac, features} dicts"
+    )
+
+
+class FeatureIngestResponse(BaseModel):
+    """Response from feature ingest."""
+    ingested: int = 0
+    device_count: int = 0
+
+
+class FeaturesResponse(BaseModel):
+    """Accumulated features for a device."""
+    mac: str = ""
+    vector_count: int = 0
+    node_count: int = 0
+    node_ids: list[str] = Field(default_factory=list)
+    first_seen: Optional[float] = None
+    last_seen: Optional[float] = None
+    mean_features: dict[str, float] = Field(default_factory=dict)
+
+
+class FeedbackRequest(BaseModel):
+    """Request to classify a device and send feedback to edge."""
+    mac: str = Field(..., description="Device MAC address")
+    node_id: str = Field(..., description="Edge node to send feedback to")
+
+
+class FeedbackResponse(BaseModel):
+    """Classification feedback result."""
+    mac: str = ""
+    predicted_type: str = "unknown"
+    confidence: float = 0.0
+    feedback_sent: bool = False
+    inconsistent: bool = False
+
+
+class EdgeMetricsResponse(BaseModel):
+    """Per-edge-node intelligence metrics."""
+    nodes: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    aggregator_stats: dict[str, Any] = Field(default_factory=dict)
+    feedback_stats: dict[str, Any] = Field(default_factory=dict)
+
+
+@router.post("/features/ingest", response_model=FeatureIngestResponse)
+async def ingest_features(req: FeatureIngestRequest) -> FeatureIngestResponse:
+    """Ingest feature vectors from an edge node.
+
+    Edge nodes publish feature vectors as part of BLE sightings.
+    This endpoint collects them for ML classification.
+    """
+    try:
+        from engine.intelligence.feature_aggregator import get_feature_aggregator
+        aggregator = get_feature_aggregator()
+        count = aggregator.ingest_batch(req.features, req.node_id)
+        return FeatureIngestResponse(
+            ingested=count,
+            device_count=aggregator.device_count,
+        )
+    except Exception as exc:
+        logger.error("Feature ingest failed: %s", exc)
+        return FeatureIngestResponse()
+
+
+@router.get("/features/{mac}", response_model=FeaturesResponse)
+async def get_device_features(mac: str) -> FeaturesResponse:
+    """Get accumulated feature vectors for a specific device.
+
+    Returns mean features, contributing node IDs, and observation window.
+    """
+    try:
+        from engine.intelligence.feature_aggregator import get_feature_aggregator
+        aggregator = get_feature_aggregator()
+        result = aggregator.get_features(mac)
+        if result is None:
+            raise HTTPException(status_code=404, detail=f"No features for {mac}")
+        return FeaturesResponse(**result)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Get features failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get("/features", response_model=list[FeaturesResponse])
+async def list_all_features(limit: int = 100) -> list[FeaturesResponse]:
+    """List accumulated features for all tracked devices.
+
+    Returns features ordered by most recently seen, limited to `limit` entries.
+    """
+    try:
+        from engine.intelligence.feature_aggregator import get_feature_aggregator
+        aggregator = get_feature_aggregator()
+        results = aggregator.get_all_features(limit=limit)
+        return [FeaturesResponse(**r) for r in results]
+    except Exception as exc:
+        logger.error("List features failed: %s", exc)
+        return []
+
+
+@router.post("/feedback/classify", response_model=FeedbackResponse)
+async def classify_and_feedback(req: FeedbackRequest) -> FeedbackResponse:
+    """Classify a device and send feedback to the originating edge node.
+
+    Triggers ML classification on accumulated features and publishes
+    the result via MQTT so the edge node can cache it.
+    """
+    try:
+        from engine.intelligence.feature_aggregator import get_feature_aggregator
+        from engine.intelligence.classification_feedback import (
+            get_classification_feedback_service,
+        )
+
+        aggregator = get_feature_aggregator()
+        device_data = aggregator.get_features(req.mac)
+        if device_data is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No features for {req.mac}",
+            )
+
+        feedback_svc = get_classification_feedback_service()
+        result = feedback_svc.classify_and_feedback(
+            mac=req.mac,
+            node_id=req.node_id,
+            features=device_data.get("mean_features", {}),
+        )
+
+        if result is None:
+            return FeedbackResponse(mac=req.mac)
+
+        return FeedbackResponse(
+            mac=result.get("mac", req.mac),
+            predicted_type=result.get("predicted_type", "unknown"),
+            confidence=result.get("confidence", 0.0),
+            feedback_sent=True,
+            inconsistent=result.get("inconsistent", False),
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Classification feedback failed: %s", exc)
+        return FeedbackResponse(mac=req.mac)
+
+
+@router.get("/feedback/{mac}")
+async def get_feedback_record(mac: str) -> dict[str, Any]:
+    """Get classification feedback history for a device.
+
+    Shows classification consistency and feedback counts.
+    """
+    try:
+        from engine.intelligence.classification_feedback import (
+            get_classification_feedback_service,
+        )
+        svc = get_classification_feedback_service()
+        record = svc.get_record(mac)
+        if record is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No classification record for {mac}",
+            )
+        return record
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Get feedback record failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get("/edge-metrics", response_model=EdgeMetricsResponse)
+async def edge_intelligence_metrics() -> EdgeMetricsResponse:
+    """Get per-edge-node intelligence pipeline metrics.
+
+    Shows how many devices each edge node has reported, classification
+    rates, feedback health, and pipeline status.
+    """
+    try:
+        from engine.intelligence.feature_aggregator import get_feature_aggregator
+        from engine.intelligence.classification_feedback import (
+            get_classification_feedback_service,
+        )
+
+        aggregator = get_feature_aggregator()
+        feedback_svc = get_classification_feedback_service()
+
+        return EdgeMetricsResponse(
+            nodes=feedback_svc.get_node_metrics(),
+            aggregator_stats=aggregator.get_stats(),
+            feedback_stats=feedback_svc.get_stats(),
+        )
+    except Exception as exc:
+        logger.error("Edge metrics failed: %s", exc)
+        return EdgeMetricsResponse()

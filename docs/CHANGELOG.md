@@ -14,6 +14,18 @@ Changes tracked with verification status. All changes on `dev` branch.
 
 ---
 
+## 2026-03-14 — Wave 71: Edge-to-Cloud Intelligence Pipeline
+
+| Change | Verification |
+|--------|-------------|
+| Feature aggregation service — collects BLE feature vectors from edge nodes, per-device aggregation, rolling window, capacity eviction | Unit Tested (15 tests) |
+| Classification feedback loop — sends ML classifications back to edge via MQTT, tracks consistency over time, detects drift | Unit Tested (10 tests) |
+| Intelligence API: POST /api/intelligence/features/ingest, GET /api/intelligence/features/{mac}, GET /api/intelligence/features | Unit Tested (router loads, 9 routes) |
+| Intelligence API: POST /api/intelligence/feedback/classify, GET /api/intelligence/feedback/{mac}, GET /api/intelligence/edge-metrics | Unit Tested |
+| Edge Intelligence frontend panel — per-node ML metrics, pipeline health, feedback stats, 10s polling, 3 tabs (nodes/pipeline/feedback) | Syntax Checked |
+
+---
+
 ## 2026-03-14 — Wave 70: MILESTONE — Movement Analytics, Amy Briefing, Perf Benchmarks
 
 | Change | Verification |

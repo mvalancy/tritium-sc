@@ -54,6 +54,7 @@ import { TestingPanelDef } from './panels/testing.js';
 import { DeviceManagerPanelDef } from './panels/device-manager.js';
 import { AutomationPanelDef } from './panels/automation.js';
 import { RfMotionPanelDef } from './panels/rf-motion.js';
+import { EdgeIntelligencePanelDef } from './panels/edge-intelligence.js';
 import { SystemHealthPanelDef } from './panels/system-health.js';
 import { QuickStartPanelDef } from './panels/quick-start.js';
 import { BookmarksPanelDef } from './panels/bookmarks.js';
@@ -560,6 +561,7 @@ function initPanelSystem(container) {
     panelManager.register(DeviceManagerPanelDef);
     panelManager.register(AutomationPanelDef);
     panelManager.register(RfMotionPanelDef);
+    panelManager.register(EdgeIntelligencePanelDef);
     panelManager.register(SystemHealthPanelDef);
     panelManager.register(QuickStartPanelDef);
     panelManager.register(BookmarksPanelDef);
