@@ -25,6 +25,8 @@ try:
 except ImportError:  # pragma: no cover
     BleStore = None  # type: ignore[assignment,misc]
 
+from engine.tactical.ble_classifier import BLEClassifier
+
 log = logging.getLogger("edge-tracker")
 
 
@@ -42,6 +44,7 @@ class EdgeTrackerPlugin(PluginInterface):
         self._app: Any = None
         self._logger: Optional[logging.Logger] = None
         self._store: Any = None
+        self._ble_classifier: Optional[BLEClassifier] = None
 
         self._running = False
         self._event_queue: Optional[queue_mod.Queue] = None
@@ -86,6 +89,11 @@ class EdgeTrackerPlugin(PluginInterface):
                 "tritium_lib.store.ble not available — "
                 "BLE persistence disabled"
             )
+
+        # Initialize BLE classifier for threat classification
+        if self._event_bus is not None:
+            self._ble_classifier = BLEClassifier(event_bus=self._event_bus)
+            self._logger.info("BLE classifier initialized")
 
         # Register FastAPI routes
         self._register_routes()
@@ -180,6 +188,15 @@ class EdgeTrackerPlugin(PluginInterface):
         if sightings:
             self._store.record_sightings_batch(sightings)
 
+        # Classify each device through the BLE classifier
+        if self._ble_classifier is not None:
+            for dev in devices:
+                self._ble_classifier.classify(
+                    mac=dev.get("mac", ""),
+                    name=dev.get("name", ""),
+                    rssi=dev.get("rssi", -100),
+                )
+
         self._emit_ble_update()
 
     def _on_wifi_presence(self, data: dict) -> None:
@@ -230,6 +247,14 @@ class EdgeTrackerPlugin(PluginInterface):
                 })
             if sightings:
                 self._store.record_sightings_batch(sightings)
+                # Classify each device through the BLE classifier
+                if self._ble_classifier is not None:
+                    for dev in ble_data:
+                        self._ble_classifier.classify(
+                            mac=dev.get("mac", ""),
+                            name=dev.get("name", ""),
+                            rssi=dev.get("rssi", -100),
+                        )
                 self._emit_ble_update()
 
         # -- WiFi data --
@@ -308,6 +333,6 @@ class EdgeTrackerPlugin(PluginInterface):
 
         from .routes import create_router
 
-        router, wifi_router = create_router(self._store)
+        router, wifi_router = create_router(self._store, ble_classifier=self._ble_classifier)
         self._app.include_router(router)
         self._app.include_router(wifi_router)

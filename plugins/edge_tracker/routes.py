@@ -23,6 +23,10 @@ except ImportError:  # pragma: no cover
 
 # -- Request / response models --------------------------------------------
 
+class AddKnownBLERequest(BaseModel):
+    mac: str
+
+
 class AddTargetRequest(BaseModel):
     mac: str
     label: str
@@ -46,7 +50,7 @@ class SetNodePositionRequest(BaseModel):
 
 # -- Router factory --------------------------------------------------------
 
-def create_router(store: Any) -> APIRouter:
+def create_router(store: Any, ble_classifier: Any = None) -> APIRouter:
     """Build and return the edge-tracker APIRouter.
 
     Parameters
@@ -54,6 +58,8 @@ def create_router(store: Any) -> APIRouter:
     store:
         A ``BleStore`` instance (or ``None`` if tritium-lib is not
         installed — all endpoints will return 503 in that case).
+    ble_classifier:
+        Optional ``BLEClassifier`` instance for threat classification.
     """
     router = APIRouter(prefix="/api/edge/ble", tags=["edge-tracker"])
 
@@ -190,6 +196,41 @@ def create_router(store: Any) -> APIRouter:
         """Database statistics."""
         s = _require_store()
         return s.get_stats()
+
+    # -- BLE threat classification -----------------------------------------
+
+    @router.post("/known")
+    async def add_known_ble(body: AddKnownBLERequest):
+        """Add a MAC address to the known BLE devices list."""
+        if ble_classifier is None:
+            raise HTTPException(
+                status_code=503,
+                detail="BLE classifier not available",
+            )
+        ble_classifier.add_known(body.mac)
+        return {"added": True, "mac": body.mac.upper()}
+
+    @router.get("/classifications")
+    async def get_ble_classifications():
+        """Return current BLE device classification state."""
+        if ble_classifier is None:
+            raise HTTPException(
+                status_code=503,
+                detail="BLE classifier not available",
+            )
+        classifications = ble_classifier.get_classifications()
+        items = []
+        for mac, c in classifications.items():
+            items.append({
+                "mac": c.mac,
+                "name": c.name,
+                "rssi": c.rssi,
+                "level": c.level,
+                "first_seen": c.first_seen,
+                "last_seen": c.last_seen,
+                "seen_count": c.seen_count,
+            })
+        return {"classifications": items, "count": len(items)}
 
     # ==================================================================
     # WiFi endpoints — mounted under /api/edge/wifi
