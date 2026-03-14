@@ -22,7 +22,7 @@ class TestMeshtasticPlugin:
         plugin = MeshtasticPlugin()
         assert plugin.plugin_id == "tritium.meshtastic"
         assert plugin.name == "Meshtastic Bridge"
-        assert plugin.version == "0.1.0"
+        assert plugin.version == "0.2.0"
 
     def test_capabilities(self):
         from plugins.meshtastic.plugin import MeshtasticPlugin
@@ -79,7 +79,7 @@ class TestMeshtasticPlugin:
         assert node["name"] == "Base Station"
         assert node["lat"] == 37.7749
         assert node["lng"] == -122.4194
-        assert node["battery"] == 0.85
+        assert node["battery"] == 85
         assert node["snr"] == 9.5
         assert node["hw_model"] == "HELTEC_V3"
 
@@ -233,7 +233,7 @@ class TestMeshtasticRoutes:
         assert f"{pfx}/status" in routes
         assert "GET" in routes[f"{pfx}/status"]
 
-    def test_router_has_five_routes(self):
+    def test_router_has_eight_routes(self):
         from plugins.meshtastic.plugin import MeshtasticPlugin
         from plugins.meshtastic.routes import create_router
 
@@ -241,7 +241,7 @@ class TestMeshtasticRoutes:
         router = create_router(plugin)
         # Filter to actual API routes (exclude internal)
         api_routes = [r for r in router.routes if hasattr(r, "methods")]
-        assert len(api_routes) == 5
+        assert len(api_routes) == 8
 
     def test_router_tagged_meshtastic(self):
         from plugins.meshtastic.plugin import MeshtasticPlugin

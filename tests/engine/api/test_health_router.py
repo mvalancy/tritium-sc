@@ -141,10 +141,13 @@ class TestSubsystemStatus:
         assert subs["simulation"] == "disabled"
         assert subs["plugins"] == "disabled"
 
+    @patch("urllib.request.urlopen")
     @patch("app.routers.health.socket.create_connection")
-    def test_healthy_status_when_all_up(self, mock_sock, full_client):
+    def test_healthy_status_when_all_up(self, mock_sock, mock_urlopen, full_client):
         mock_conn = MagicMock()
         mock_sock.return_value = mock_conn
+        mock_urlopen.return_value.__enter__ = MagicMock()
+        mock_urlopen.return_value.__exit__ = MagicMock(return_value=False)
         data = full_client.get("/api/health").json()
         assert data["status"] == "healthy"
 
