@@ -14,6 +14,37 @@ Changes tracked with verification status. All changes on `dev` branch.
 
 ---
 
+## 2026-03-14 — Wave 53: RL Correlation Learner, Intelligence API, Anomaly Description
+
+### CorrelationLearner (Unit Tested, 12 tests)
+- New `engine/intelligence/correlation_learner.py` — trains logistic regression from TrainingStore
+- Loads confirmed correlation decisions, extracts canonical features, trains sklearn model
+- Cross-validation accuracy estimation when sufficient data (20+ examples)
+- `LearnedStrategy` adapter integrates with TargetCorrelator's multi-strategy framework
+- Feature extraction from target pairs: distance, RSSI delta, co-movement, device type match, time gap, signal pattern
+- Fallback to static weighted scoring when sklearn unavailable or no training data
+- Model persistence: save/load to `data/models/correlation_model.pkl`
+- Singleton `get_correlation_learner()` factory
+
+### Intelligence API (Code Verified, 3 endpoints)
+- New `app/routers/intelligence.py` — model management and anomaly description
+- `POST /api/intelligence/retrain` — trigger model retraining from accumulated training data
+- `GET /api/intelligence/model/status` — model accuracy, training count, last trained, sklearn status, training data stats
+- `POST /api/intelligence/anomaly/describe` — Ollama-powered natural language anomaly description
+- Template-based fallback when Ollama unavailable (6 anomaly type templates)
+- Severity classification and suggested action for each anomaly type
+- Wired into main.py router registration
+
+### Training Dashboard Panel (Code Verified)
+- New `frontend/js/command/panels/training-dashboard.js` — ML training dashboard
+- Model status cards: trained/not, accuracy %, training count, last trained, sklearn availability
+- Training data stats: correlation decisions, confirmed outcomes, classifications, feedback count/accuracy
+- RETRAIN button triggers `/api/intelligence/retrain` and shows result
+- Retrain log with timestamped entries (success/error/info)
+- Cyberpunk theme: cyan/magenta/green, monospace, dark surfaces
+
+---
+
 ## 2026-03-14 — Wave 52: Security Audit, RL Training Store, Feedback, LLM SITREP
 
 ### Security Audit: Classification Override (Unit Tested, 16 tests)

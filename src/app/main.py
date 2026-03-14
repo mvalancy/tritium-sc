@@ -79,6 +79,7 @@ from app.routers.briefing import router as briefing_router
 from app.routers.map_share import router as map_share_router
 from app.routers.classification_override import router as classification_override_router
 from app.routers.feedback import router as feedback_router
+from app.routers.intelligence import router as intelligence_router
 
 
 # ---------------------------------------------------------------------------
@@ -933,6 +934,7 @@ app.include_router(briefing_router)
 app.include_router(map_share_router)
 app.include_router(classification_override_router)
 app.include_router(feedback_router)
+app.include_router(intelligence_router)
 
 # Static files
 frontend_path = Path(__file__).parent.parent / "frontend"
