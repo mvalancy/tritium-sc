@@ -267,6 +267,50 @@ class TargetTracker:
         if pos_source != "unknown":
             self.history.record(tid, position)
 
+    # RF motion targets have shorter stale timeout — transient detections
+    RF_MOTION_STALE_TIMEOUT = 30.0
+
+    def update_from_rf_motion(self, motion: dict) -> None:
+        """Update or create a tracked target from an RF motion event.
+
+        Args:
+            motion: Dict with keys: target_id, pair_id, position (x, y tuple),
+                    confidence, direction_hint, variance.
+        """
+        tid = motion.get("target_id", "")
+        if not tid:
+            return
+
+        position = motion.get("position", (0.0, 0.0))
+        if isinstance(position, dict):
+            position = (float(position.get("x", 0)), float(position.get("y", 0)))
+
+        confidence = float(motion.get("confidence", 0.5))
+        direction = motion.get("direction_hint", "unknown")
+        pair_id = motion.get("pair_id", "")
+
+        with self._lock:
+            if tid in self._targets:
+                t = self._targets[tid]
+                t.position = position
+                t.position_confidence = confidence
+                t.last_seen = time.monotonic()
+                t.status = f"motion:{direction}"
+            else:
+                self._targets[tid] = TrackedTarget(
+                    target_id=tid,
+                    name=f"RF Motion ({pair_id})",
+                    alliance="unknown",
+                    asset_type="motion_detected",
+                    position=position,
+                    last_seen=time.monotonic(),
+                    source="rf_motion",
+                    position_source="rf_pair_midpoint",
+                    position_confidence=confidence,
+                    status=f"motion:{direction}",
+                )
+        self.history.record(tid, position)
+
     def get_all(self) -> list[TrackedTarget]:
         """Return all tracked targets (pruning stale YOLO detections)."""
         self._prune_stale()
@@ -348,6 +392,7 @@ class TargetTracker:
                 if (t.source == "yolo" and (now - t.last_seen) > self.STALE_TIMEOUT)
                 or (t.source == "simulation" and (now - t.last_seen) > self.SIM_STALE_TIMEOUT)
                 or (t.source == "ble" and (now - t.last_seen) > self.BLE_STALE_TIMEOUT)
+                or (t.source == "rf_motion" and (now - t.last_seen) > self.RF_MOTION_STALE_TIMEOUT)
             ]
             for tid in stale:
                 del self._targets[tid]

@@ -52,6 +52,8 @@ from app.routers.ontology import router as ontology_router
 from app.routers.patrols import router as patrols_router
 from app.routers.timeline import router as timeline_router
 from app.routers.notifications import router as notifications_router
+from app.routers.testing import router as testing_router
+from app.routers.heatmap import router as heatmap_router
 
 
 # ---------------------------------------------------------------------------
@@ -838,6 +840,8 @@ app.include_router(ontology_router)
 app.include_router(patrols_router)
 app.include_router(timeline_router)
 app.include_router(notifications_router)
+app.include_router(heatmap_router)
+app.include_router(testing_router)
 
 # Static files
 frontend_path = Path(__file__).parent.parent / "frontend"
