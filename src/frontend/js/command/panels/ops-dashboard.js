@@ -1,0 +1,345 @@
+// Created by Matthew Valancy
+// Copyright 2026 Valpatel Software LLC
+// Licensed under AGPL-3.0 — see LICENSE for details.
+// Operational Dashboard Panel — "War Room at a Glance"
+// Single-screen view combining: target counter, active alerts, fleet status,
+// Amy status, demo mode toggle, and active missions.
+// Auto-refreshes every 5 seconds with live WebSocket data.
+
+import { EventBus } from '../events.js';
+import { TritiumStore } from '../store.js';
+
+function _esc(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = String(text);
+    return div.innerHTML;
+}
+
+function _timeAgo(ts) {
+    if (!ts) return '--';
+    const secs = Math.floor(Date.now() / 1000 - ts);
+    if (secs < 5) return 'just now';
+    if (secs < 60) return `${secs}s ago`;
+    if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
+    return `${Math.floor(secs / 3600)}h ago`;
+}
+
+// ============================================================
+// Data fetchers
+// ============================================================
+
+async function _fetchFleetSummary() {
+    try {
+        const r = await fetch('/api/fleet/devices');
+        if (!r.ok) return null;
+        const devices = await r.json();
+        const online = devices.filter(d => d.status === 'online').length;
+        const stale = devices.filter(d => d.status === 'stale').length;
+        const offline = devices.filter(d => d.status === 'offline').length;
+        return { total: devices.length, online, stale, offline };
+    } catch { return null; }
+}
+
+async function _fetchMissions() {
+    try {
+        const r = await fetch('/api/missions');
+        if (!r.ok) return [];
+        return await r.json();
+    } catch { return []; }
+}
+
+async function _fetchDemoStatus() {
+    try {
+        const r = await fetch('/api/demo/status');
+        if (!r.ok) return { active: false };
+        return await r.json();
+    } catch { return { active: false }; }
+}
+
+// ============================================================
+// Panel Definition
+// ============================================================
+
+let _refreshTimer = null;
+let _bodyEl = null;
+
+function _buildHTML() {
+    return `
+<div class="ops-dash" style="display:flex;flex-direction:column;gap:8px;padding:8px;height:100%;overflow-y:auto;font-family:var(--font-mono,'JetBrains Mono',monospace);font-size:0.75rem;">
+
+    <!-- Target Summary -->
+    <div class="ops-section" style="border:1px solid rgba(0,240,255,0.2);border-radius:4px;padding:8px;">
+        <div class="ops-section-title" style="color:var(--cyan,#00f0ff);font-size:0.65rem;margin-bottom:6px;text-transform:uppercase;letter-spacing:1px;">Target Summary</div>
+        <div style="display:flex;gap:12px;justify-content:space-around;" data-bind="targets">
+            <div style="text-align:center;">
+                <div class="ops-big-num" data-bind="target-total" style="font-size:1.6rem;color:var(--cyan,#00f0ff);font-weight:700;">0</div>
+                <div style="color:var(--text-dim,#888);font-size:0.6rem;">TOTAL</div>
+            </div>
+            <div style="text-align:center;">
+                <div class="ops-big-num" data-bind="target-friendly" style="font-size:1.2rem;color:var(--green,#05ffa1);">0</div>
+                <div style="color:var(--text-dim,#888);font-size:0.6rem;">FRIENDLY</div>
+            </div>
+            <div style="text-align:center;">
+                <div class="ops-big-num" data-bind="target-hostile" style="font-size:1.2rem;color:var(--magenta,#ff2a6d);">0</div>
+                <div style="color:var(--text-dim,#888);font-size:0.6rem;">HOSTILE</div>
+            </div>
+            <div style="text-align:center;">
+                <div class="ops-big-num" data-bind="target-unknown" style="font-size:1.2rem;color:var(--yellow,#fcee0a);">0</div>
+                <div style="color:var(--text-dim,#888);font-size:0.6rem;">UNKNOWN</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Amy Status + Demo Mode -->
+    <div style="display:flex;gap:8px;">
+        <div class="ops-section" style="border:1px solid rgba(0,240,255,0.2);border-radius:4px;padding:8px;flex:1;">
+            <div class="ops-section-title" style="color:var(--cyan,#00f0ff);font-size:0.65rem;margin-bottom:6px;text-transform:uppercase;letter-spacing:1px;">Amy Status</div>
+            <div style="display:flex;align-items:center;gap:8px;">
+                <div data-bind="amy-state-dot" style="width:10px;height:10px;border-radius:50%;background:var(--green,#05ffa1);flex-shrink:0;"></div>
+                <div>
+                    <div data-bind="amy-state" style="color:var(--text,#e0e0e0);text-transform:uppercase;">IDLE</div>
+                    <div data-bind="amy-mood" style="color:var(--text-dim,#888);font-size:0.6rem;">CALM</div>
+                </div>
+            </div>
+            <div data-bind="amy-thought" style="color:var(--text-dim,#888);font-size:0.65rem;margin-top:4px;font-style:italic;max-height:32px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">--</div>
+        </div>
+        <div class="ops-section" style="border:1px solid rgba(0,240,255,0.2);border-radius:4px;padding:8px;flex:1;">
+            <div class="ops-section-title" style="color:var(--cyan,#00f0ff);font-size:0.65rem;margin-bottom:6px;text-transform:uppercase;letter-spacing:1px;">Demo Mode</div>
+            <div style="display:flex;align-items:center;gap:8px;">
+                <div data-bind="demo-dot" style="width:10px;height:10px;border-radius:50%;background:var(--text-dim,#888);flex-shrink:0;"></div>
+                <span data-bind="demo-label" style="color:var(--text,#e0e0e0);">INACTIVE</span>
+            </div>
+            <div style="margin-top:6px;display:flex;gap:4px;">
+                <button class="ops-btn" data-action="demo-start" style="padding:2px 8px;font-size:0.6rem;background:rgba(0,240,255,0.1);border:1px solid rgba(0,240,255,0.3);color:var(--cyan,#00f0ff);border-radius:3px;cursor:pointer;">START</button>
+                <button class="ops-btn" data-action="demo-stop" style="padding:2px 8px;font-size:0.6rem;background:rgba(255,42,109,0.1);border:1px solid rgba(255,42,109,0.3);color:var(--magenta,#ff2a6d);border-radius:3px;cursor:pointer;">STOP</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Active Alerts -->
+    <div class="ops-section" style="border:1px solid rgba(0,240,255,0.2);border-radius:4px;padding:8px;">
+        <div class="ops-section-title" style="color:var(--cyan,#00f0ff);font-size:0.65rem;margin-bottom:6px;text-transform:uppercase;letter-spacing:1px;">Active Alerts <span data-bind="alert-count" style="color:var(--magenta,#ff2a6d);">0</span></div>
+        <div data-bind="alert-list" style="max-height:80px;overflow-y:auto;">
+            <div style="color:var(--text-dim,#888);font-size:0.65rem;">No active alerts</div>
+        </div>
+    </div>
+
+    <!-- Fleet Status -->
+    <div class="ops-section" style="border:1px solid rgba(0,240,255,0.2);border-radius:4px;padding:8px;">
+        <div class="ops-section-title" style="color:var(--cyan,#00f0ff);font-size:0.65rem;margin-bottom:6px;text-transform:uppercase;letter-spacing:1px;">Fleet Status</div>
+        <div style="display:flex;gap:12px;justify-content:space-around;" data-bind="fleet">
+            <div style="text-align:center;">
+                <div data-bind="fleet-total" style="font-size:1.2rem;color:var(--cyan,#00f0ff);font-weight:700;">--</div>
+                <div style="color:var(--text-dim,#888);font-size:0.6rem;">TOTAL</div>
+            </div>
+            <div style="text-align:center;">
+                <div data-bind="fleet-online" style="font-size:1.2rem;color:var(--green,#05ffa1);">--</div>
+                <div style="color:var(--text-dim,#888);font-size:0.6rem;">ONLINE</div>
+            </div>
+            <div style="text-align:center;">
+                <div data-bind="fleet-stale" style="font-size:1.2rem;color:var(--yellow,#fcee0a);">--</div>
+                <div style="color:var(--text-dim,#888);font-size:0.6rem;">STALE</div>
+            </div>
+            <div style="text-align:center;">
+                <div data-bind="fleet-offline" style="font-size:1.2rem;color:var(--magenta,#ff2a6d);">--</div>
+                <div style="color:var(--text-dim,#888);font-size:0.6rem;">OFFLINE</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Active Missions -->
+    <div class="ops-section" style="border:1px solid rgba(0,240,255,0.2);border-radius:4px;padding:8px;">
+        <div class="ops-section-title" style="color:var(--cyan,#00f0ff);font-size:0.65rem;margin-bottom:6px;text-transform:uppercase;letter-spacing:1px;">Active Missions</div>
+        <div data-bind="mission-list" style="max-height:80px;overflow-y:auto;">
+            <div style="color:var(--text-dim,#888);font-size:0.65rem;">No active missions</div>
+        </div>
+    </div>
+
+    <!-- Connection + Game State -->
+    <div style="display:flex;gap:8px;">
+        <div class="ops-section" style="border:1px solid rgba(0,240,255,0.2);border-radius:4px;padding:8px;flex:1;">
+            <div class="ops-section-title" style="color:var(--cyan,#00f0ff);font-size:0.65rem;margin-bottom:4px;text-transform:uppercase;letter-spacing:1px;">Connection</div>
+            <div style="display:flex;align-items:center;gap:6px;">
+                <div data-bind="conn-dot" style="width:8px;height:8px;border-radius:50%;background:var(--magenta,#ff2a6d);flex-shrink:0;"></div>
+                <span data-bind="conn-label" style="color:var(--text,#e0e0e0);font-size:0.7rem;">OFFLINE</span>
+            </div>
+        </div>
+        <div class="ops-section" style="border:1px solid rgba(0,240,255,0.2);border-radius:4px;padding:8px;flex:1;">
+            <div class="ops-section-title" style="color:var(--cyan,#00f0ff);font-size:0.65rem;margin-bottom:4px;text-transform:uppercase;letter-spacing:1px;">Battle</div>
+            <div style="display:flex;align-items:center;gap:6px;">
+                <div data-bind="game-dot" style="width:8px;height:8px;border-radius:50%;background:var(--text-dim,#888);flex-shrink:0;"></div>
+                <span data-bind="game-label" style="color:var(--text,#e0e0e0);font-size:0.7rem;">IDLE</span>
+            </div>
+        </div>
+    </div>
+</div>`;
+}
+
+function _update(bodyEl) {
+    if (!bodyEl) return;
+
+    // Targets
+    const units = TritiumStore.units;
+    let total = 0, friendly = 0, hostile = 0, unknown = 0;
+    units.forEach(u => {
+        total++;
+        if (u.alliance === 'friendly') friendly++;
+        else if (u.alliance === 'hostile') hostile++;
+        else unknown++;
+    });
+    _setText(bodyEl, 'target-total', total);
+    _setText(bodyEl, 'target-friendly', friendly);
+    _setText(bodyEl, 'target-hostile', hostile);
+    _setText(bodyEl, 'target-unknown', unknown);
+
+    // Amy
+    const amyState = TritiumStore.amy?.state || 'idle';
+    const amyMood = TritiumStore.amy?.mood || 'calm';
+    const amyThought = TritiumStore.amy?.lastThought || '--';
+    _setText(bodyEl, 'amy-state', amyState.toUpperCase());
+    _setText(bodyEl, 'amy-mood', amyMood.toUpperCase());
+    _setText(bodyEl, 'amy-thought', amyThought);
+    const amyDot = bodyEl.querySelector('[data-bind="amy-state-dot"]');
+    if (amyDot) {
+        const color = amyState === 'thinking' ? 'var(--yellow,#fcee0a)'
+                    : amyState === 'speaking' ? 'var(--cyan,#00f0ff)'
+                    : 'var(--green,#05ffa1)';
+        amyDot.style.background = color;
+    }
+
+    // Alerts
+    const alerts = TritiumStore.alerts || [];
+    _setText(bodyEl, 'alert-count', alerts.length);
+    const alertList = bodyEl.querySelector('[data-bind="alert-list"]');
+    if (alertList) {
+        if (alerts.length === 0) {
+            alertList.innerHTML = '<div style="color:var(--text-dim,#888);font-size:0.65rem;">No active alerts</div>';
+        } else {
+            alertList.innerHTML = alerts.slice(0, 5).map(a =>
+                `<div style="color:var(--magenta,#ff2a6d);font-size:0.65rem;padding:1px 0;border-bottom:1px solid rgba(255,42,109,0.1);">${_esc(a.message || a.type || 'Alert')}</div>`
+            ).join('');
+        }
+    }
+
+    // Connection
+    const connStatus = TritiumStore.connection?.status || 'disconnected';
+    _setText(bodyEl, 'conn-label', connStatus === 'connected' ? 'ONLINE' : 'OFFLINE');
+    const connDot = bodyEl.querySelector('[data-bind="conn-dot"]');
+    if (connDot) {
+        connDot.style.background = connStatus === 'connected' ? 'var(--green,#05ffa1)' : 'var(--magenta,#ff2a6d)';
+    }
+
+    // Game
+    const phase = TritiumStore.game?.phase || 'idle';
+    _setText(bodyEl, 'game-label', phase.toUpperCase());
+    const gameDot = bodyEl.querySelector('[data-bind="game-dot"]');
+    if (gameDot) {
+        const color = phase === 'active' ? 'var(--magenta,#ff2a6d)'
+                    : phase === 'countdown' ? 'var(--yellow,#fcee0a)'
+                    : phase === 'victory' ? 'var(--green,#05ffa1)'
+                    : 'var(--text-dim,#888)';
+        gameDot.style.background = color;
+    }
+}
+
+async function _updateAsync(bodyEl) {
+    if (!bodyEl) return;
+
+    // Fleet
+    const fleet = await _fetchFleetSummary();
+    if (fleet && bodyEl.isConnected) {
+        _setText(bodyEl, 'fleet-total', fleet.total);
+        _setText(bodyEl, 'fleet-online', fleet.online);
+        _setText(bodyEl, 'fleet-stale', fleet.stale);
+        _setText(bodyEl, 'fleet-offline', fleet.offline);
+    }
+
+    // Demo
+    const demo = await _fetchDemoStatus();
+    if (bodyEl.isConnected) {
+        const active = demo?.active || false;
+        _setText(bodyEl, 'demo-label', active ? 'ACTIVE' : 'INACTIVE');
+        const demoDot = bodyEl.querySelector('[data-bind="demo-dot"]');
+        if (demoDot) {
+            demoDot.style.background = active ? 'var(--green,#05ffa1)' : 'var(--text-dim,#888)';
+        }
+    }
+
+    // Missions
+    const missions = await _fetchMissions();
+    const activeMissions = missions.filter(m => m.status === 'active' || m.status === 'in_progress');
+    const missionList = bodyEl.querySelector('[data-bind="mission-list"]');
+    if (missionList && bodyEl.isConnected) {
+        if (activeMissions.length === 0) {
+            missionList.innerHTML = '<div style="color:var(--text-dim,#888);font-size:0.65rem;">No active missions</div>';
+        } else {
+            missionList.innerHTML = activeMissions.slice(0, 4).map(m =>
+                `<div style="color:var(--green,#05ffa1);font-size:0.65rem;padding:1px 0;border-bottom:1px solid rgba(5,255,161,0.1);">${_esc(m.name || m.id || 'Mission')}</div>`
+            ).join('');
+        }
+    }
+}
+
+function _setText(root, bind, value) {
+    const el = root.querySelector(`[data-bind="${bind}"]`);
+    if (el) el.textContent = String(value);
+}
+
+export const OpsDashboardPanelDef = {
+    id: 'ops-dashboard',
+    title: 'OPS DASHBOARD',
+    defaultPosition: { x: null, y: null },
+    defaultSize: { w: 400, h: 520 },
+
+    create(panel) {
+        const el = document.createElement('div');
+        el.innerHTML = _buildHTML();
+        return el;
+    },
+
+    mount(bodyEl, panel) {
+        _bodyEl = bodyEl;
+
+        // Wire demo buttons
+        bodyEl.addEventListener('click', (e) => {
+            const action = e.target.dataset?.action;
+            if (action === 'demo-start') {
+                fetch('/api/demo/start', { method: 'POST' }).catch(() => {});
+            } else if (action === 'demo-stop') {
+                fetch('/api/demo/stop', { method: 'POST' }).catch(() => {});
+            }
+        });
+
+        // Immediate sync update
+        _update(bodyEl);
+
+        // Async data
+        _updateAsync(bodyEl);
+
+        // Live reactive updates from store
+        const unsubs = [];
+        unsubs.push(TritiumStore.on('units', () => _update(bodyEl)));
+        unsubs.push(TritiumStore.on('amy.state', () => _update(bodyEl)));
+        unsubs.push(TritiumStore.on('amy.mood', () => _update(bodyEl)));
+        unsubs.push(TritiumStore.on('amy.lastThought', () => _update(bodyEl)));
+        unsubs.push(TritiumStore.on('alerts', () => _update(bodyEl)));
+        unsubs.push(TritiumStore.on('connection.status', () => _update(bodyEl)));
+        unsubs.push(TritiumStore.on('game.phase', () => _update(bodyEl)));
+        panel._opsDashUnsubs = unsubs;
+
+        // Periodic async refresh for fleet/demo/missions
+        _refreshTimer = setInterval(() => {
+            _update(bodyEl);
+            _updateAsync(bodyEl);
+        }, 5000);
+    },
+
+    unmount(bodyEl) {
+        _bodyEl = null;
+        if (_refreshTimer) {
+            clearInterval(_refreshTimer);
+            _refreshTimer = null;
+        }
+    },
+};

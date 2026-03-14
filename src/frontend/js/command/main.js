@@ -63,6 +63,8 @@ import { MultiCameraPanelDef } from './panels/multi-camera.js';
 import { TargetMergePanelDef } from './panels/target-merge.js';
 import { AmyConversationPanelDef } from './panels/amy-conversation.js';
 import { ExportSchedulerPanelDef } from './panels/export-scheduler.js';
+import { OpsDashboardPanelDef } from './panels/ops-dashboard.js';
+import { DossierGroupsPanelDef } from './panels/dossier-groups.js';
 import { MissionModal, initMissionModal } from './mission-modal.js';
 import { initTargetCounter } from './target-counter.js';
 import { initTargetFilter, matchesFilter, getTargetFilters } from './target-filter.js';
@@ -553,6 +555,8 @@ function initPanelSystem(container) {
     panelManager.register(TargetMergePanelDef);
     panelManager.register(AmyConversationPanelDef);
     panelManager.register(ExportSchedulerPanelDef);
+    panelManager.register(OpsDashboardPanelDef);
+    panelManager.register(DossierGroupsPanelDef);
 
     // panel:request-open — allows map click to open panels by id
     EventBus.on('panel:request-open', (data) => {
