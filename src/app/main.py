@@ -55,6 +55,7 @@ from app.routers.notifications import router as notifications_router
 from app.routers.testing import router as testing_router
 from app.routers.heatmap import router as heatmap_router
 from app.routers.device_management import router as device_management_router
+from app.routers.auth import router as auth_router
 
 
 # ---------------------------------------------------------------------------
@@ -489,6 +490,10 @@ async def lifespan(app: FastAPI):
     logger.info("  TRITIUM-SC v0.1.0 - INITIALIZING")
     logger.info("=" * 60)
 
+    # Authentication
+    from app.auth import init_default_admin
+    init_default_admin()
+
     # Database
     logger.info("Initializing database...")
     await init_db()
@@ -844,6 +849,7 @@ app.include_router(notifications_router)
 app.include_router(heatmap_router)
 app.include_router(testing_router)
 app.include_router(device_management_router)
+app.include_router(auth_router)
 
 # Static files
 frontend_path = Path(__file__).parent.parent / "frontend"

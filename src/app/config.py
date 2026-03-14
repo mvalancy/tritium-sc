@@ -134,6 +134,25 @@ class Settings(BaseSettings):
     detection_confidence: float = 0.5
     yolo_model: str = "yolov8n.pt"
 
+    # Authentication & Authorization
+    auth_enabled: bool = False             # Enable JWT auth middleware
+    auth_secret_key: str = ""              # JWT signing key (generate with: openssl rand -hex 32)
+    auth_algorithm: str = "HS256"          # JWT algorithm
+    auth_access_token_expire_minutes: int = 60  # Access token TTL
+    auth_refresh_token_expire_days: int = 7     # Refresh token TTL
+    auth_admin_username: str = "admin"     # Default admin username
+    auth_admin_password: str = ""          # Default admin password (must be set if auth_enabled)
+
+    # HTTPS / TLS
+    tls_enabled: bool = False              # Enable HTTPS
+    tls_cert_file: str = ""                # Path to TLS certificate
+    tls_key_file: str = ""                 # Path to TLS private key
+
+    # Rate limiting
+    rate_limit_enabled: bool = False       # Enable rate limiting
+    rate_limit_requests: int = 100         # Max requests per window
+    rate_limit_window_seconds: int = 60    # Rate limit window
+
     # NVR settings
     nvr_host: Optional[str] = None
     nvr_user: Optional[str] = None
