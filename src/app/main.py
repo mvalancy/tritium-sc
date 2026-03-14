@@ -66,6 +66,7 @@ from app.routers.terrain import router as terrain_router
 from app.routers.behavior import router as behavior_router
 from app.routers.bookmarks import router as bookmarks_router
 from app.routers.audit import router as audit_router
+from app.routers.version import router as version_router
 
 
 # ---------------------------------------------------------------------------
@@ -897,6 +898,7 @@ app.include_router(terrain_router)
 app.include_router(behavior_router)
 app.include_router(bookmarks_router)
 app.include_router(audit_router)
+app.include_router(version_router)
 
 # Static files
 frontend_path = Path(__file__).parent.parent / "frontend"
