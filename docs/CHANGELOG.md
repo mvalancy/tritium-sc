@@ -14,6 +14,43 @@ Changes tracked with verification status. All changes on `dev` branch.
 
 ---
 
+## 2026-03-13 — Wave 4: Full Pipeline & Fleet Dashboard
+
+### Synthetic Data Generators
+| Change | Verification |
+|--------|-------------|
+| BLE device data generator (randomized MACs, RSSI, device types) | Integration Tested |
+| Meshtastic node data generator (GPS, battery, SNR) | Integration Tested |
+| Camera pipeline data generator (synthetic detections, bounding boxes) | Integration Tested |
+
+### WebSocket Broadcast
+| Change | Verification |
+|--------|-------------|
+| BLE targets broadcast via WebSocket `/ws/live` | Integration Tested |
+| Mesh radio targets broadcast via WebSocket `/ws/live` | Integration Tested |
+
+### Frontend — Camera Feeds Panel
+| Change | Verification |
+|--------|-------------|
+| Live camera feeds panel with MJPEG grid layout | Integration Tested |
+| Camera status indicators (online/offline/error) | Integration Tested |
+| Detection info overlay on camera feeds | Integration Tested |
+
+### Fleet Dashboard Plugin
+| Change | Verification |
+|--------|-------------|
+| `plugins/fleet_dashboard/` — fleet-wide device registry | Integration Tested |
+| Device list with status, heartbeat, battery, uptime | Integration Tested |
+| REST API at `/api/fleet/*` | Integration Tested |
+
+### Demo Mode
+| Change | Verification |
+|--------|-------------|
+| Demo mode exercising full pipeline with synthetic data | Integration Tested |
+| Synthetic BLE, Meshtastic, and camera data flowing through WebSocket | Integration Tested |
+
+---
+
 ## 2026-03-13 — Wave 3: Integration & Hardening
 
 ### MQTT Integration
