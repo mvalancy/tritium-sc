@@ -24,7 +24,7 @@ const ALLIANCE_COLORS = {
 
 const UNIT_TYPES = [
     'rover', 'drone', 'turret', 'hostile_person', 'neutral_person',
-    'tank', 'sensor', 'camera',
+    'tank', 'sensor', 'camera', 'ble_device', 'mesh_radio',
 ];
 
 // Vision radius per type (world meters)
@@ -34,6 +34,8 @@ const VISION_RADII = {
     turret:  50,
     camera:  30,
     sensor:  30,
+    ble_device: 10,
+    mesh_radio: 35,
     neutral_person: 15,
     hostile_person: 20,
     tank:    45,
@@ -107,6 +109,12 @@ function drawUnit(ctx, type, alliance, heading, screenX, screenY, scale, selecte
         case 'sensor':
         case 'camera':
             _drawSensor(ctx, scale, color);
+            break;
+        case 'ble_device':
+            _drawBleDevice(ctx, scale, color);
+            break;
+        case 'mesh_radio':
+            _drawMeshRadio(ctx, scale, color);
             break;
         default:
             // Fallback: simple square
@@ -405,6 +413,67 @@ function _drawSensor(ctx, scale, color) {
     ctx.beginPath();
     ctx.arc(0, -r * 0.3, 2 * scale, 0, Math.PI * 2);
     ctx.fill();
+}
+
+/** BLE device: cyan ring with bluetooth rune */
+function _drawBleDevice(ctx, scale, color) {
+    const r = 5 * scale;
+
+    // Outer ring
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5 * scale;
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Inner dot
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.35, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Bluetooth rune (stylized B shape)
+    const s = r * 0.75;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.2 * scale;
+    ctx.beginPath();
+    // Vertical line
+    ctx.moveTo(0, -s);
+    ctx.lineTo(0, s);
+    // Upper chevron: center-top to right-mid, right-mid to center-bottom
+    ctx.moveTo(-s * 0.4, s * 0.55);
+    ctx.lineTo(s * 0.4, 0);
+    ctx.lineTo(-s * 0.4, -s * 0.55);
+    ctx.stroke();
+}
+
+/** Mesh radio: green dot with radio wave arcs */
+function _drawMeshRadio(ctx, scale, color) {
+    const r = 5 * scale;
+
+    // Center dot
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Radio wave arcs (two concentric arcs on the right side)
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.2 * scale;
+    for (let i = 1; i <= 2; i++) {
+        const arcR = r * (0.6 + i * 0.45);
+        ctx.beginPath();
+        ctx.arc(0, 0, arcR, -Math.PI / 4, Math.PI / 4);
+        ctx.stroke();
+    }
+
+    // Left-side arcs (bidirectional radio)
+    for (let i = 1; i <= 2; i++) {
+        const arcR = r * (0.6 + i * 0.45);
+        ctx.beginPath();
+        ctx.arc(0, 0, arcR, Math.PI - Math.PI / 4, Math.PI + Math.PI / 4);
+        ctx.stroke();
+    }
 }
 
 /** Fallback: simple filled square */

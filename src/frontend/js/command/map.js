@@ -1657,6 +1657,19 @@ function _drawTooltip(ctx) {
         lines.push('HP: ' + Math.round(u.health) + '/' + u.maxHealth);
     }
     if (u.altitude > 0) lines.push('ALT: ' + Math.round(u.altitude) + 'm');
+    // BLE device extra info
+    const uType = (u.type || u.asset_type || '').toLowerCase();
+    if (uType === 'ble_device' || uType === 'ble') {
+        if (u.manufacturer) lines.push('MFR: ' + u.manufacturer);
+        if (u.rssi !== undefined) lines.push('RSSI: ' + u.rssi + ' dBm');
+        if (u.confidence !== undefined) lines.push('CONF: ' + Math.round(u.confidence * 100) + '%');
+        if (u.device_class) lines.push('CLASS: ' + u.device_class);
+    }
+    // Mesh radio extra info
+    if (uType === 'mesh_radio' || uType === 'meshtastic') {
+        if (u.snr !== undefined) lines.push('SNR: ' + u.snr + ' dB');
+        if (u.channel) lines.push('CH: ' + u.channel);
+    }
 
     ctx.save();
     ctx.font = `11px ${FONT_FAMILY}`;
@@ -1774,7 +1787,7 @@ function _drawUnit(ctx, id, unit) {
 
     const sp = worldToScreen(pos.x, pos.y);
     const alliance = (unit.alliance || 'unknown').toLowerCase();
-    const type = (unit.type || '').toLowerCase();
+    const type = (unit.asset_type || unit.type || '').toLowerCase();
     const status = (unit.status || 'active').toLowerCase();
     const isNeutralized = status === 'neutralized' || status === 'eliminated' || status === 'destroyed';
     const isSelected = TritiumStore.get('map.selectedUnitId') === id;
@@ -1808,7 +1821,19 @@ function _drawUnit(ctx, id, unit) {
     else if (type === 'person' && alliance === 'hostile') iconType = 'hostile_person';
     else if (type === 'person' && alliance === 'neutral') iconType = 'neutral_person';
     else if (type === 'hostile_kid') iconType = 'hostile_person';
-    else if (type === 'mesh_radio' || type === 'meshtastic') iconType = 'sensor';
+    else if (type === 'mesh_radio' || type === 'meshtastic') iconType = 'mesh_radio';
+    else if (type === 'ble_device' || type === 'ble') iconType = 'ble_device';
+
+    // BLE confidence-based transparency: low confidence devices render faded
+    const isBle = iconType === 'ble_device';
+    if (isBle) {
+        const confidence = unit.confidence !== undefined ? unit.confidence : 1.0;
+        if (confidence < 0.3) {
+            ctx.globalAlpha = 0.3;
+        } else if (confidence < 0.6) {
+            ctx.globalAlpha = 0.6;
+        }
+    }
 
     // Compute health ratio (0.0 = dead, 1.0 = full)
     let health = 1.0;
@@ -1820,6 +1845,11 @@ function _drawUnit(ctx, id, unit) {
 
     // Draw using procedural unit icons
     drawUnitIcon(ctx, iconType, alliance, smoothedHeading, sp.x, sp.y, scale, isSelected, health, isHovered);
+
+    // Reset alpha after BLE confidence fade
+    if (isBle) {
+        ctx.globalAlpha = 1.0;
+    }
 
     // Crowd role indicator (civil_unrest mode — instigator/rioter visual differentiation)
     if (unit.crowdRole && unit.crowdRole !== 'civilian') {

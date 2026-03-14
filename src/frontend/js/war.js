@@ -673,6 +673,55 @@ function drawTarget(ctx, tid, t) {
         ctx.setLineDash([]);
     }
 
+    // BLE device: cyan ring with bluetooth indicator
+    const tAssetType = (t.asset_type || t.type || '').toLowerCase();
+    if (tAssetType === 'ble_device' || tAssetType === 'ble') {
+        const conf = t.confidence !== undefined ? t.confidence : 1.0;
+        ctx.globalAlpha = conf < 0.3 ? 0.3 : (conf < 0.6 ? 0.6 : 1.0);
+        const bleColor = '#00f0ff';
+        // Ring
+        ctx.strokeStyle = bleColor;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y, radius * 0.8, 0, Math.PI * 2);
+        ctx.stroke();
+        // Center dot
+        ctx.fillStyle = bleColor;
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y, radius * 0.3, 0, Math.PI * 2);
+        ctx.fill();
+        // Bluetooth rune
+        const bs = radius * 0.5;
+        ctx.strokeStyle = bleColor;
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(sp.x, sp.y - bs);
+        ctx.lineTo(sp.x, sp.y + bs);
+        ctx.moveTo(sp.x - bs * 0.4, sp.y + bs * 0.55);
+        ctx.lineTo(sp.x + bs * 0.4, sp.y);
+        ctx.lineTo(sp.x - bs * 0.4, sp.y - bs * 0.55);
+        ctx.stroke();
+        ctx.globalAlpha = 1.0;
+    } else if (tAssetType === 'mesh_radio' || tAssetType === 'meshtastic') {
+        const meshColor = '#05ffa1';
+        // Center dot
+        ctx.fillStyle = meshColor;
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y, radius * 0.4, 0, Math.PI * 2);
+        ctx.fill();
+        // Radio wave arcs
+        ctx.strokeStyle = meshColor;
+        ctx.lineWidth = 1.2;
+        for (let i = 1; i <= 2; i++) {
+            const arcR = radius * (0.5 + i * 0.35);
+            ctx.beginPath();
+            ctx.arc(sp.x, sp.y, arcR, -Math.PI / 4, Math.PI / 4);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(sp.x, sp.y, arcR, Math.PI - Math.PI / 4, Math.PI + Math.PI / 4);
+            ctx.stroke();
+        }
+    } else
     // Use improved combat shapes if available
     if (typeof warCombatDrawTargetShape === 'function') {
         warCombatDrawTargetShape(ctx, sp, radius, t, alliance, warState.cam.zoom);
