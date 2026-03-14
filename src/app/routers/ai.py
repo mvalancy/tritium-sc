@@ -3,7 +3,6 @@
 # Licensed under AGPL-3.0 — see LICENSE for details.
 """AI content mapping and analysis endpoints."""
 
-import asyncio
 from pathlib import Path
 from typing import Optional
 

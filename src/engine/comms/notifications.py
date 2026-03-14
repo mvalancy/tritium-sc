@@ -14,7 +14,7 @@ import queue
 import threading
 import time
 import uuid
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, asdict
 from typing import Callable
 
 

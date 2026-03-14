@@ -22,7 +22,6 @@ Thread-safety: all public methods are safe to call from any thread.
 
 from __future__ import annotations
 
-import json
 import logging
 import queue as queue_mod
 import threading
