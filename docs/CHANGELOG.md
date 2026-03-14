@@ -14,6 +14,33 @@ Changes tracked with verification status. All changes on `dev` branch.
 
 ---
 
+## 2026-03-13 — Wave 7: Data Providers, Dossiers, Enrichment & GIS Layers
+
+### DataProvider Plugin Architecture
+| Change | Verification |
+|--------|-------------|
+| `DataProviderPlugin` interface for modular data sources | Integration Tested |
+| `LayerRegistry` for managing and composing data layers | Integration Tested |
+
+### Target Enrichment Pipeline
+| Change | Verification |
+|--------|-------------|
+| OUI manufacturer lookup enrichment provider | Integration Tested |
+| WiFi network association enrichment provider | Integration Tested |
+| BLE device type enrichment provider | Integration Tested |
+| Composable enrichment pipeline with provider chaining | Integration Tested |
+
+### GIS Layers Plugin
+| Change | Verification |
+|--------|-------------|
+| OSM tile provider for street-level map data | Integration Tested |
+| Satellite imagery provider | Integration Tested |
+| Building footprint provider | Integration Tested |
+| Terrain/elevation provider | Integration Tested |
+| Layer toggle and opacity controls | Integration Tested |
+
+---
+
 ## 2026-03-13 — Wave 6: Tracking, Geofencing, Persistence & Search
 
 ### Target Correlation Engine
