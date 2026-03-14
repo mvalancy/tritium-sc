@@ -14,6 +14,30 @@ Changes tracked with verification status. All changes on `dev` branch.
 
 ---
 
+## 2026-03-13 — Wave 10: Instinct Layer, Full Pipeline & Graph Validation
+
+### Amy Instinct Layer — Automatic Threat Response Rules
+| Change | Verification |
+|--------|-------------|
+| `InstinctLayer` with rule-based automatic threat response (L2 cognition) | Integration Tested |
+| Rule matching engine: condition predicates, cooldowns, priority ordering | Integration Tested |
+| Built-in rules: hostile escalation, geofence breach, asset recall | Integration Tested |
+
+### Full Sense-Decide-Act Pipeline Integration Test
+| Change | Verification |
+|--------|-------------|
+| End-to-end pipeline: BLE sighting -> classifier -> enrichment -> camera detection -> correlator fusion -> geofence -> threat escalation | Integration Tested |
+| In-process integration test exercising all subsystems without a server | Integration Tested |
+
+### Correlator Graph Store Validation
+| Change | Verification |
+|--------|-------------|
+| 16 tests covering node type mapping, edge creation (CORRELATED_WITH, CARRIES, DETECTED_WITH) | Integration Tested |
+| Graceful degradation tests for graph store errors | Integration Tested |
+| KuzuDB integration tests (skip when kuzu not installed) | Integration Tested |
+
+---
+
 ## 2026-03-13 — Wave 9: Graph Ontology, Investigations & Entity Explorer
 
 ### Graph Explorer — Force-Directed Entity Visualization
