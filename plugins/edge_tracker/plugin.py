@@ -58,6 +58,8 @@ class EdgeTrackerPlugin(PluginInterface):
         self._running = False
         self._event_queue: Optional[queue_mod.Queue] = None
         self._event_thread: Optional[threading.Thread] = None
+        # Cache edge-sourced device type/class per MAC (from Apple Continuity etc.)
+        self._edge_device_types: dict[str, str] = {}  # mac -> device_type
 
     # -- PluginInterface identity ------------------------------------------
 
@@ -215,6 +217,13 @@ class EdgeTrackerPlugin(PluginInterface):
         if self._trilateration is not None and self._store is not None:
             self._record_trilateration_sightings(devices, node_id)
 
+        # Cache edge-sourced device type/class (from Apple Continuity etc.)
+        for dev in devices:
+            mac = dev.get("mac", "")
+            edge_type = dev.get("device_type") or dev.get("class")
+            if mac and edge_type:
+                self._edge_device_types[mac] = edge_type
+
         # Classify each device through the BLE classifier
         if self._ble_classifier is not None:
             for dev in devices:
@@ -274,6 +283,12 @@ class EdgeTrackerPlugin(PluginInterface):
                 })
             if sightings:
                 self._store.record_sightings_batch(sightings)
+                # Cache edge-sourced device type/class
+                for dev in ble_data:
+                    mac = dev.get("mac", "")
+                    edge_type = dev.get("device_type") or dev.get("class")
+                    if mac and edge_type:
+                        self._edge_device_types[mac] = edge_type
                 # Record sightings in trilateration engine
                 if self._trilateration is not None:
                     self._record_trilateration_sightings(ble_data, node_id)
@@ -385,6 +400,10 @@ class EdgeTrackerPlugin(PluginInterface):
                         )
                         if classification.device_type != "unknown":
                             device_type = classification.device_type
+
+                    # Fallback: use edge-sourced Apple Continuity type
+                    if device_type is None and mac in self._edge_device_types:
+                        device_type = self._edge_device_types[mac]
 
                     self._tracker.update_from_ble({
                         "mac": mac,
