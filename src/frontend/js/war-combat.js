@@ -702,6 +702,42 @@ function warCombatDrawTargetShape(ctx, sp, radius, target, alliance, zoom) {
         // Base
         ctx.fillStyle = 'rgba(0, 240, 255, 0.4)';
         ctx.fillRect(sp.x - radius * 0.4, sp.y + radius * 0.4, radius * 0.8, radius * 0.3);
+    } else if (type.includes('ble_device') || type.includes('ble')
+               || (target.source || '') === 'ble') {
+        // BLE device: cyan dot with bluetooth rune indicator
+        const bleColor = '#00f0ff';
+        // Outer glow ring
+        ctx.strokeStyle = 'rgba(0, 240, 255, 0.25)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y, radius * 1.3, 0, Math.PI * 2);
+        ctx.stroke();
+        // Filled cyan dot (smaller, distinct from other friendlies)
+        ctx.fillStyle = 'rgba(0, 240, 255, 0.5)';
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y, radius * 0.7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = bleColor;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y, radius * 0.7, 0, Math.PI * 2);
+        ctx.stroke();
+        // Bluetooth "B" rune: angular B shape centered on dot
+        const bh = radius * 0.7; // half-height of the B symbol
+        ctx.strokeStyle = bleColor;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        // Vertical line
+        ctx.moveTo(sp.x, sp.y - bh);
+        ctx.lineTo(sp.x, sp.y + bh);
+        // Upper chevron
+        ctx.moveTo(sp.x, sp.y - bh);
+        ctx.lineTo(sp.x + bh * 0.6, sp.y - bh * 0.3);
+        ctx.lineTo(sp.x, sp.y);
+        // Lower chevron
+        ctx.lineTo(sp.x + bh * 0.6, sp.y + bh * 0.3);
+        ctx.lineTo(sp.x, sp.y + bh);
+        ctx.stroke();
     } else if (type.includes('truck') || type.includes('vehicle')) {
         // Truck: larger green rectangle
         _drawRect(ctx, sp.x, sp.y, radius * 1.6, radius * 1.0, heading, '#05ffa1');
