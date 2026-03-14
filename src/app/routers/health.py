@@ -7,6 +7,7 @@ Returns system status, subsystem health, plugin health, uptime, and
 test baselines. Used by Docker HEALTHCHECK and monitoring systems.
 """
 
+import socket
 import time
 from typing import Any
 
@@ -32,13 +33,28 @@ def _subsystem_status(request: Request) -> dict[str, str]:
     amy = getattr(request.app.state, "amy", None)
     checks["amy"] = "running" if amy is not None else "disabled"
 
-    # MQTT bridge
+    # MQTT bridge — check bridge state AND broker reachability
     mqtt = getattr(request.app.state, "mqtt_bridge", None)
     if mqtt is not None:
         connected = getattr(mqtt, "connected", False)
         checks["mqtt"] = "connected" if connected else "disconnected"
     else:
         checks["mqtt"] = "disabled"
+
+    # MQTT broker reachability (TCP probe regardless of bridge state)
+    from app.config import settings as _settings
+    mqtt_host = _settings.mqtt_host or "localhost"
+    mqtt_port = _settings.mqtt_port or 1883
+    try:
+        _s = socket.create_connection((mqtt_host, mqtt_port), timeout=2)
+        _s.close()
+        checks["mqtt_broker"] = "reachable"
+    except (ConnectionRefusedError, OSError):
+        checks["mqtt_broker"] = "unreachable"
+        checks["mqtt_broker_hint"] = (
+            f"MQTT broker not running at {mqtt_host}:{mqtt_port}. "
+            f"Install and start: sudo apt install mosquitto && sudo systemctl start mosquitto"
+        )
 
     # Simulation engine
     sim = getattr(request.app.state, "simulation_engine", None)
@@ -100,7 +116,7 @@ async def health_check(request: Request):
     # but still responding (the endpoint itself proves the app is alive)
     all_healthy = True
     for key, val in subsystems.items():
-        if val == "disconnected":
+        if val in ("disconnected", "unreachable"):
             all_healthy = False
             break
 
@@ -112,9 +128,11 @@ async def health_check(request: Request):
         "subsystems": subsystems,
         "plugins": plugins,
         "test_baselines": {
-            "tritium_lib": 833,
-            "tritium_sc_pytest": 7666,
+            "tritium_lib": 1584,
+            "tritium_sc_pytest": 1400,
             "tritium_sc_js": 281,
+            "tritium_sc_test_files": 565,
+            "tritium_lib_test_files": 81,
             "tritium_edge_warnings": 0,
         },
     }

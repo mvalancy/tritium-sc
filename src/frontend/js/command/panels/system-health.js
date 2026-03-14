@@ -216,6 +216,29 @@ export const SystemHealthPanelDef = {
                 </div>`;
             }
 
+            // --- MQTT Broker ---
+            const subsystems = healthData.subsystems || {};
+            const mqttBridge = subsystems.mqtt || 'disabled';
+            const mqttBroker = subsystems.mqtt_broker || 'unknown';
+            const mqttHint = subsystems.mqtt_broker_hint || '';
+            const brokerReachable = mqttBroker === 'reachable';
+            const brokerColor = brokerReachable ? 'var(--green)' : 'var(--magenta)';
+            const bridgeColor = mqttBridge === 'connected' ? 'var(--green)'
+                : mqttBridge === 'disabled' ? 'var(--text-ghost)' : 'var(--magenta)';
+
+            html += `<div class="panel-section-label">MQTT</div>`;
+            html += `<div class="panel-stat-row">
+                <span class="panel-stat-label">BROKER</span>
+                <span class="panel-stat-value" style="color:${brokerColor}">${_esc(mqttBroker.toUpperCase())}</span>
+            </div>`;
+            html += `<div class="panel-stat-row">
+                <span class="panel-stat-label">BRIDGE</span>
+                <span class="panel-stat-value" style="color:${bridgeColor}">${_esc(mqttBridge.toUpperCase())}</span>
+            </div>`;
+            if (!brokerReachable && mqttHint) {
+                html += `<div style="padding:2px 8px;font-size:0.35rem;color:var(--amber);font-family:monospace;word-break:break-word">${_esc(mqttHint)}</div>`;
+            }
+
             // --- Plugins ---
             const plugins = results.plugins || [];
             const pluginHealth = results.pluginHealth || {};

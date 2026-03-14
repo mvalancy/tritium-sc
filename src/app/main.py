@@ -437,6 +437,150 @@ def _load_escalation_zones() -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Boot self-test
+# ---------------------------------------------------------------------------
+
+def _run_boot_self_test(app: FastAPI) -> dict:
+    """Run quick health checks on all subsystems at startup and log results.
+
+    Uses the same logic as /api/system/self-test but runs synchronously at
+    boot time so the operator sees a clear pass/fail summary in the console.
+    Returns the result dict (also stored in app.state.boot_self_test).
+    """
+    import time as _bt
+    import socket as _socket
+
+    start = _bt.monotonic()
+    checks: list[dict] = []
+
+    def _check(name: str, fn) -> dict:
+        t0 = _bt.monotonic()
+        try:
+            detail = fn()
+            return {"name": name, "status": "pass", "elapsed_ms": round((_bt.monotonic() - t0) * 1000, 1), "details": detail}
+        except Exception as exc:
+            return {"name": name, "status": "fail", "elapsed_ms": round((_bt.monotonic() - t0) * 1000, 1), "error": str(exc)}
+
+    # 1. Amy
+    def _amy():
+        amy = getattr(app.state, "amy", None)
+        if amy is not None:
+            return {"running": getattr(amy, "_running", False), "mode": getattr(amy, "mode", "?")}
+        return {"status": "disabled"}
+    checks.append(_check("amy", _amy))
+
+    # 2. Simulation engine
+    def _sim():
+        amy = getattr(app.state, "amy", None)
+        sim = getattr(app.state, "simulation_engine", None)
+        if sim is None and amy is not None:
+            sim = getattr(amy, "simulation_engine", None)
+        if sim is not None:
+            return {"running": getattr(sim, "_running", False), "tick_rate": getattr(sim, "tick_rate", None)}
+        return {"status": "disabled"}
+    checks.append(_check("simulation", _sim))
+
+    # 3. MQTT broker connectivity (probe TCP port even if bridge not enabled)
+    def _mqtt():
+        mqtt = getattr(app.state, "mqtt_bridge", None)
+        if mqtt is not None:
+            return {"bridge": "started", "connected": getattr(mqtt, "connected", False)}
+        # Probe broker TCP port to report availability
+        host = settings.mqtt_host or "localhost"
+        port = settings.mqtt_port or 1883
+        try:
+            s = _socket.create_connection((host, port), timeout=2)
+            s.close()
+            return {"bridge": "disabled", "broker_reachable": True, "hint": "Set MQTT_ENABLED=true to activate"}
+        except (ConnectionRefusedError, OSError):
+            return {"bridge": "disabled", "broker_reachable": False, "hint": f"Start mosquitto on {host}:{port}"}
+    checks.append(_check("mqtt_broker", _mqtt))
+
+    # 4. Plugin manager
+    def _plugins():
+        pm = getattr(app.state, "plugin_manager", None)
+        if pm is not None:
+            plugins = pm.list_plugins()
+            running = sum(1 for p in plugins if p.get("running", False))
+            return {"total": len(plugins), "running": running}
+        return {"status": "not_initialized"}
+    checks.append(_check("plugins", _plugins))
+
+    # 5. Database
+    def _db():
+        from pathlib import Path as _P
+        db_path = _P("tritium.db")
+        if db_path.exists():
+            size_kb = db_path.stat().st_size // 1024
+            return {"exists": True, "size_kb": size_kb}
+        return {"exists": False}
+    checks.append(_check("database", _db))
+
+    # 6. Notification manager
+    def _notif():
+        nm = getattr(app.state, "notification_manager", None)
+        if nm is not None:
+            return {"running": True, "unread": nm.count_unread()}
+        return {"status": "disabled"}
+    checks.append(_check("notifications", _notif))
+
+    # 7. DossierManager
+    def _dossier():
+        dm = getattr(app.state, "dossier_manager", None)
+        if dm is not None:
+            return {"running": True}
+        return {"status": "disabled"}
+    checks.append(_check("dossier_manager", _dossier))
+
+    # 8. Enrichment pipeline
+    def _enrich():
+        ep = getattr(app.state, "enrichment_pipeline", None)
+        if ep is not None:
+            names = ep.get_provider_names()
+            return {"providers": len(names)}
+        return {"status": "disabled"}
+    checks.append(_check("enrichment", _enrich))
+
+    # Aggregate and log
+    total_ms = round((_bt.monotonic() - start) * 1000, 1)
+    passed = sum(1 for c in checks if c["status"] == "pass")
+    failed = sum(1 for c in checks if c["status"] == "fail")
+    total = len(checks)
+
+    logger.info("")
+    logger.info("=" * 60)
+    logger.info("  BOOT SELF-TEST")
+    logger.info("=" * 60)
+    for c in checks:
+        icon = "PASS" if c["status"] == "pass" else "FAIL"
+        detail_str = ""
+        if c["status"] == "pass" and c.get("details"):
+            d = c["details"]
+            if isinstance(d, dict):
+                parts = []
+                for k, v in d.items():
+                    parts.append(f"{k}={v}")
+                detail_str = f" ({', '.join(parts)})"
+            elif isinstance(d, str):
+                detail_str = f" ({d})"
+        elif c["status"] == "fail":
+            detail_str = f" ({c.get('error', '?')})"
+        logger.info(f"  [{icon}] {c['name']}{detail_str}  ({c['elapsed_ms']}ms)")
+    logger.info(f"  ---")
+    logger.info(f"  {passed}/{total} passed, {failed} failed  ({total_ms}ms total)")
+    logger.info("=" * 60)
+    logger.info("")
+
+    return {
+        "passed": passed,
+        "failed": failed,
+        "total": total,
+        "elapsed_ms": total_ms,
+        "checks": checks,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Shutdown helpers
 # ---------------------------------------------------------------------------
 
@@ -851,6 +995,12 @@ async def lifespan(app: FastAPI):
     # Record startup time for /api/health uptime calculation
     from app.routers.health import reset_start_time
     reset_start_time()
+
+    # -----------------------------------------------------------------------
+    # Boot self-test — run quick checks on all subsystems and log summary
+    # -----------------------------------------------------------------------
+    _boot_results = _run_boot_self_test(app)
+    app.state.boot_self_test = _boot_results
 
     logger.info("=" * 60)
     logger.info("  TRITIUM-SC ONLINE")

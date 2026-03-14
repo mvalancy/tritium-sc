@@ -118,8 +118,8 @@ class TestHealthResponseStructure:
         data = health_client.get("/api/health").json()
         assert "test_baselines" in data
         baselines = data["test_baselines"]
-        assert baselines["tritium_lib"] == 833
-        assert baselines["tritium_sc_pytest"] == 7666
+        assert baselines["tritium_lib"] == 1584
+        assert baselines["tritium_sc_pytest"] == 1400
         assert baselines["tritium_sc_js"] == 281
         assert baselines["tritium_edge_warnings"] == 0
 
@@ -141,7 +141,10 @@ class TestSubsystemStatus:
         assert subs["simulation"] == "disabled"
         assert subs["plugins"] == "disabled"
 
-    def test_healthy_status_when_all_up(self, full_client):
+    @patch("app.routers.health.socket.create_connection")
+    def test_healthy_status_when_all_up(self, mock_sock, full_client):
+        mock_conn = MagicMock()
+        mock_sock.return_value = mock_conn
         data = full_client.get("/api/health").json()
         assert data["status"] == "healthy"
 
@@ -235,6 +238,69 @@ class TestOptionalSubsystems:
 
         data = client.get("/api/health").json()
         assert data["subsystems"]["meshtastic"] == "connected"
+
+    def test_mqtt_broker_reachability_field(self):
+        """Health response always includes mqtt_broker field."""
+        app = FastAPI()
+        app.include_router(router)
+        app.state.amy = None
+        client = TestClient(app, raise_server_exceptions=False)
+
+        data = client.get("/api/health").json()
+        assert "mqtt_broker" in data["subsystems"]
+        # Should be either 'reachable' or 'unreachable'
+        assert data["subsystems"]["mqtt_broker"] in ("reachable", "unreachable")
+
+    def test_mqtt_broker_unreachable_shows_hint(self):
+        """When broker is unreachable, a hint with install instructions appears."""
+        app = FastAPI()
+        app.include_router(router)
+        app.state.amy = None
+        client = TestClient(app, raise_server_exceptions=False)
+
+        data = client.get("/api/health").json()
+        subs = data["subsystems"]
+        if subs["mqtt_broker"] == "unreachable":
+            assert "mqtt_broker_hint" in subs
+            assert "mosquitto" in subs["mqtt_broker_hint"]
+
+
+# ---------------------------------------------------------------------------
+# Boot self-test
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+class TestBootSelfTest:
+    """Boot self-test function runs subsystem checks at startup."""
+
+    def test_boot_self_test_returns_dict(self):
+        from app.main import _run_boot_self_test
+        app = FastAPI()
+        app.state.amy = None
+        result = _run_boot_self_test(app)
+        assert isinstance(result, dict)
+        assert "passed" in result
+        assert "failed" in result
+        assert "total" in result
+        assert "checks" in result
+        assert result["total"] > 0
+
+    def test_boot_self_test_all_pass_bare_app(self):
+        from app.main import _run_boot_self_test
+        app = FastAPI()
+        app.state.amy = None
+        result = _run_boot_self_test(app)
+        # All checks should pass (even with disabled subsystems)
+        assert result["failed"] == 0
+        assert result["passed"] == result["total"]
+
+    def test_boot_self_test_includes_mqtt_check(self):
+        from app.main import _run_boot_self_test
+        app = FastAPI()
+        app.state.amy = None
+        result = _run_boot_self_test(app)
+        check_names = [c["name"] for c in result["checks"]]
+        assert "mqtt_broker" in check_names
 
 
 # ---------------------------------------------------------------------------

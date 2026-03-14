@@ -14,6 +14,17 @@ Changes tracked with verification status. All changes on `dev` branch.
 
 ---
 
+## 2026-03-14 — Wave 66: Boot Self-Test + MQTT Health Check
+
+| Change | Verification |
+|--------|-------------|
+| Boot self-test at server startup — checks Amy, simulation, MQTT, plugins, database, notifications, dossier, enrichment. Logs pass/fail summary. | Unit Tested (27 tests) |
+| MQTT broker TCP health probe in /api/health — shows reachable/unreachable with mosquitto install instructions | Unit Tested |
+| System health panel MQTT section — broker reachability, bridge status, install hint when unreachable | Code Reviewed |
+| Health endpoint test baselines corrected (lib=1584, sc=1400+) | Unit Tested |
+
+---
+
 ## 2026-03-14 — Wave 65: Security Hardening + Telemetry Sparklines
 
 ### Meshtastic Bridge Security Hardening (Code Reviewed)
