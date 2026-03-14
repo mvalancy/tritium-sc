@@ -44,6 +44,7 @@ except ImportError:  # pragma: no cover
     classify_device_from_profile = None  # type: ignore[assignment]
 
 from engine.tactical.ble_classifier import BLEClassifier
+from engine.tactical.target_handoff import HandoffTracker, HandoffEvent
 from engine.tactical.trilateration import TrilaterationEngine
 
 log = logging.getLogger("edge-tracker")
@@ -66,6 +67,7 @@ class EdgeTrackerPlugin(PluginInterface):
         self._ble_classifier: Optional[BLEClassifier] = None
         self._device_classifier: Any = None
         self._trilateration: Optional[TrilaterationEngine] = None
+        self._handoff_tracker: Optional[HandoffTracker] = None
 
         self._running = False
         self._event_queue: Optional[queue_mod.Queue] = None
@@ -133,6 +135,14 @@ class EdgeTrackerPlugin(PluginInterface):
         # Initialize trilateration engine for multi-node position estimation
         self._trilateration = TrilaterationEngine()
         self._logger.info("Trilateration engine initialized")
+
+        # Initialize handoff tracker for edge-to-edge target continuity
+        self._handoff_tracker = HandoffTracker(
+            max_gap=120.0,
+            visibility_timeout=15.0,
+            on_handoff=self._on_target_handoff,
+        )
+        self._logger.info("Handoff tracker initialized")
 
         # Register FastAPI routes
         self._register_routes()
@@ -248,6 +258,12 @@ class EdgeTrackerPlugin(PluginInterface):
                     name=dev.get("name", ""),
                     rssi=dev.get("rssi", -100),
                 )
+
+        # Feed handoff tracker for edge-to-edge target continuity
+        for dev in devices:
+            mac = dev.get("mac", "")
+            if mac:
+                self._feed_handoff_tracker(mac, node_id)
 
         self._emit_ble_update()
 
@@ -510,6 +526,32 @@ class EdgeTrackerPlugin(PluginInterface):
             })
         except Exception as exc:
             log.error("Failed to emit WiFi update: %s", exc)
+
+    # -- Handoff tracking --------------------------------------------------
+
+    def _on_target_handoff(self, event: HandoffEvent) -> None:
+        """Callback when a target hands off between edge nodes."""
+        self._logger.info(
+            "Target handoff: %s from %s -> %s (gap=%.1fs, conf=%.2f)",
+            event.target_id, event.from_sensor, event.to_sensor,
+            event.gap_seconds, event.confidence,
+        )
+        if self._event_bus is not None:
+            self._event_bus.publish("edge:target_handoff", data=event.to_dict())
+
+    def _feed_handoff_tracker(self, mac: str, node_id: str, position: tuple[float, float] = (0.0, 0.0)) -> None:
+        """Update handoff tracker with a BLE sighting."""
+        if self._handoff_tracker is None:
+            return
+        tid = f"ble_{mac.replace(':', '').lower()}"
+        self._handoff_tracker.update_visibility(
+            sensor_id=node_id,
+            target_id=tid,
+            position=position,
+            target_type="ble_device",
+        )
+        # Periodically check for departures
+        self._handoff_tracker.check_departures()
 
     # -- HTTP routes -------------------------------------------------------
 

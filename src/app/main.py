@@ -86,6 +86,7 @@ from app.routers.system_inventory import router as system_inventory_router
 from app.routers.models import router as models_router
 from app.routers.screenshots import router as screenshots_router
 from app.routers.correlations import router as correlations_router
+from app.routers.voice import router as voice_router
 
 
 # ---------------------------------------------------------------------------
@@ -995,6 +996,7 @@ app.include_router(system_inventory_router)
 app.include_router(models_router)
 app.include_router(screenshots_router)
 app.include_router(correlations_router)
+app.include_router(voice_router)
 
 # Static files
 frontend_path = Path(__file__).parent.parent / "frontend"

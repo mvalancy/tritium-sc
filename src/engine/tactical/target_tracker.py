@@ -65,6 +65,7 @@ class TrackedTarget:
     status: str = "active"
     position_source: str = "unknown"  # "gps", "simulation", "mqtt", "fixed", "yolo", "unknown"
     position_confidence: float = 0.0  # 0.0 = no confidence, 1.0 = high
+    threat_score: float = 0.0  # 0.0 = no threat, 1.0 = maximum threat probability
 
     def to_dict(self, history: TargetHistory | None = None) -> dict:
         from .geo import local_to_latlng
@@ -86,6 +87,7 @@ class TrackedTarget:
             "status": self.status,
             "position_source": self.position_source,
             "position_confidence": self.position_confidence,
+            "threat_score": self.threat_score,
         }
         if history is not None:
             d["trail"] = history.get_trail_dicts(self.target_id, max_points=20)
