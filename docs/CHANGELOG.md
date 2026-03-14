@@ -14,6 +14,43 @@ Changes tracked with verification status. All changes on `dev` branch.
 
 ---
 
+## 2026-03-14 — Wave 45: Activity Feed, MQTT Inspector, Map Screenshot, Responsive Layout
+
+### Target Activity Feed Panel (Syntax Verified)
+- New `activity-feed` panel — live scrolling feed of ALL target events
+- Shows: new sightings, classification changes, geofence enter/exit, correlations, enrichments, departures, alliance changes, merges, dispatches
+- Filter by text (target ID, event type, message)
+- Auto-scroll toggle, click-to-focus-target on map
+- Event type color-coding with cyberpunk palette
+- Max 200 items cached, 50 displayed
+
+### MQTT Message Inspector Panel (Syntax Verified)
+- New `mqtt-inspector` panel — live MQTT message viewer for debugging
+- Topic category filter buttons: ALL, HEARTBEAT, SIGHTING, TELEMETRY, COMMAND, STATUS
+- Text search across topic and payload
+- Pause/resume message capture
+- Click message to expand JSON detail view
+- Color-coded topic categories
+- Subscribes to EventBus MQTT events, heartbeats, BLE updates, mesh messages
+
+### Enhanced Map Screenshot (Syntax Verified)
+- `Ctrl+Shift+P` captures tactical map with annotations, SVG overlays, markers
+- Composites MapLibre canvas + SVG annotations + HTML markers + geofence zones
+- Timestamp watermark in bottom-right: "TRITIUM-SC // 2026-03-14 12:34:56 UTC"
+- Classification banner at top: "UNCLASSIFIED // FOR TRAINING USE ONLY"
+- Falls back to basic canvas capture if composite fails
+- Exports as PNG with timestamped filename
+
+### Responsive Layout (Syntax Verified)
+- CSS breakpoints for tablet (1024px), large phone (768px), small phone (480px)
+- Tablet: compact header stats, smaller panels, scrollable menu/command bars
+- Phone: hidden non-essential header elements, full-width panels, compact status bar
+- Small phone: panels stack full-width, touch-friendly control sizing
+- Menu bar becomes horizontally scrollable on small screens
+- Game score area hidden on phone layouts
+
+---
+
 ## 2026-03-14 — Wave 43: SITREP, Multi-Select, Target History Export, Print CSS
 
 ### SITREP Generator (Unit Tested, 7 tests)

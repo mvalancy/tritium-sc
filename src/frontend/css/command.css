@@ -3560,3 +3560,267 @@ body.v2 {
 [data-theme="light"] #maplibre-map .maplibregl-canvas {
     filter: brightness(1.0) contrast(1.0) saturate(1.0) hue-rotate(0deg);
 }
+
+
+/* ========================================
+   Responsive Layout — Tablet (1024px)
+   ======================================== */
+@media (max-width: 1024px) {
+    /* Header: collapse center stats, shrink fonts */
+    .cc-header {
+        padding: 0 8px;
+        height: 32px;
+    }
+
+    .cc-header__center {
+        gap: 6px;
+    }
+
+    .header-stat .stat-label {
+        display: none;
+    }
+
+    .target-breakdown {
+        display: none;
+    }
+
+    .header-logo {
+        font-size: 0.65rem;
+    }
+
+    .header-clock {
+        font-size: 0.55rem;
+    }
+
+    .header-separator {
+        margin: 0 4px;
+    }
+
+    /* Unified layout: smaller command bar */
+    .unified-tactical {
+        inset: 24px 0 18px 0;
+    }
+
+    .unified-layout > .panel-container {
+        inset: 24px 0 18px 0;
+    }
+
+    /* Panels: reduce default sizes */
+    .panel-container > .panel {
+        max-width: calc(100vw - 16px);
+    }
+
+    .panel-header {
+        height: 24px;
+        min-height: 24px;
+        padding: 0 8px;
+    }
+
+    .panel-title {
+        font-size: 0.55rem;
+    }
+
+    /* Command bar: reduce height */
+    .command-bar {
+        height: 24px;
+    }
+
+    .command-bar .cb-btn {
+        font-size: 0.5rem;
+        padding: 0 6px;
+    }
+
+    /* Status bar: compact */
+    .status-bar {
+        height: 18px;
+        font-size: 0.45rem;
+    }
+
+    /* Menu bar: scrollable */
+    .menu-bar {
+        overflow-x: auto;
+        scrollbar-width: none;
+    }
+
+    .menu-bar::-webkit-scrollbar {
+        display: none;
+    }
+
+    /* Game score: compact */
+    .game-score .score-label {
+        display: none;
+    }
+}
+
+
+/* ========================================
+   Responsive Layout — Large Phone (768px)
+   ======================================== */
+@media (max-width: 768px) {
+    /* Header: minimal */
+    .cc-header {
+        height: 28px;
+        padding: 0 6px;
+    }
+
+    .cc-header__center {
+        gap: 4px;
+    }
+
+    /* Hide non-essential header elements */
+    .header-stat {
+        display: none;
+    }
+
+    .mode-badge .mode-label {
+        display: none;
+    }
+
+    .score-sep {
+        display: none;
+    }
+
+    .theme-toggle-btn {
+        display: none;
+    }
+
+    .header-clock {
+        font-size: 0.5rem;
+    }
+
+    /* Show only connection dot, hide label */
+    .connection-indicator .conn-label {
+        display: none;
+    }
+
+    /* Game score area: hide on small screens */
+    .game-score {
+        display: none !important;
+    }
+
+    /* Unified layout: tighter spacing */
+    .unified-layout {
+        height: calc(100vh - 28px);
+    }
+
+    .unified-tactical {
+        inset: 22px 0 16px 0;
+    }
+
+    .unified-layout > .panel-container {
+        inset: 22px 0 16px 0;
+    }
+
+    /* Panels: full-width on mobile, stack vertically */
+    .panel-container > .panel {
+        max-width: calc(100vw - 8px);
+        min-width: 200px;
+    }
+
+    .panel-header {
+        height: 22px;
+        min-height: 22px;
+        padding: 0 6px;
+    }
+
+    .panel-body {
+        font-size: 0.55rem;
+    }
+
+    /* Command bar */
+    .command-bar {
+        height: 22px;
+        overflow-x: auto;
+        scrollbar-width: none;
+    }
+
+    .command-bar::-webkit-scrollbar {
+        display: none;
+    }
+
+    .command-bar .cb-btn {
+        font-size: 0.45rem;
+        padding: 0 4px;
+        white-space: nowrap;
+    }
+
+    /* Status bar: minimal */
+    .status-bar {
+        height: 16px;
+        font-size: 0.4rem;
+        padding: 0 6px;
+    }
+
+    /* Menu bar: horizontal scroll, hamburger-ready */
+    .menu-bar {
+        overflow-x: auto;
+        scrollbar-width: none;
+        flex-wrap: nowrap;
+    }
+
+    .menu-bar::-webkit-scrollbar {
+        display: none;
+    }
+
+    .menu-bar .mb-menu {
+        white-space: nowrap;
+    }
+
+    /* Notification bell: smaller */
+    .notif-bell-btn {
+        font-size: 0.7rem;
+        padding: 0 4px;
+    }
+
+    .notif-bell-count {
+        font-size: 0.35rem;
+        min-width: 12px;
+        height: 12px;
+    }
+}
+
+
+/* ========================================
+   Responsive Layout — Small Phone (480px)
+   ======================================== */
+@media (max-width: 480px) {
+    .cc-header {
+        height: 24px;
+    }
+
+    .header-logo {
+        font-size: 0.5rem;
+        letter-spacing: 0.05em;
+    }
+
+    .cc-header__right {
+        gap: 4px;
+    }
+
+    /* Only show connection dot */
+    .connection-indicator {
+        padding: 0 2px;
+    }
+
+    .unified-layout {
+        height: calc(100vh - 24px);
+    }
+
+    /* Panels stack full width */
+    .panel-container > .panel {
+        width: calc(100vw - 4px) !important;
+        left: 2px !important;
+    }
+
+    /* Touch-friendly panel controls */
+    .panel-btn {
+        width: 24px;
+        height: 24px;
+        font-size: 14px;
+    }
+
+    .panel-resize-handle {
+        width: 16px;
+        height: 16px;
+    }
+}

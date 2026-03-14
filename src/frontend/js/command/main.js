@@ -66,6 +66,9 @@ import { ExportSchedulerPanelDef } from './panels/export-scheduler.js';
 import { OpsDashboardPanelDef } from './panels/ops-dashboard.js';
 import { DossierGroupsPanelDef } from './panels/dossier-groups.js';
 import { SetupWizardPanelDef, ConfigStore } from './panels/setup-wizard.js';
+import { ActivityFeedPanelDef } from './panels/activity-feed.js';
+import { MqttInspectorPanelDef } from './panels/mqtt-inspector.js';
+import { initScreenshotHotkey } from './panels/map-screenshot.js';
 import { MissionModal, initMissionModal } from './mission-modal.js';
 import { initTargetCounter } from './target-counter.js';
 import { initTargetFilter, matchesFilter, getTargetFilters } from './target-filter.js';
@@ -559,6 +562,11 @@ function initPanelSystem(container) {
     panelManager.register(OpsDashboardPanelDef);
     panelManager.register(DossierGroupsPanelDef);
     panelManager.register(SetupWizardPanelDef);
+    panelManager.register(ActivityFeedPanelDef);
+    panelManager.register(MqttInspectorPanelDef);
+
+    // Enhanced map screenshot hotkey (Ctrl+Shift+P)
+    initScreenshotHotkey();
 
     // panel:request-open — allows map click to open panels by id
     EventBus.on('panel:request-open', (data) => {
