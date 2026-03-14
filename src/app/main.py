@@ -42,6 +42,8 @@ from app.routers.devices import router as devices_router
 from app.routers.tak import router as tak_router
 from app.routers.fleet import router as fleet_router
 from app.routers.demo import router as demo_router
+from app.routers.geofence import router as geofence_router
+from app.routers.target_search import router as target_search_router
 
 
 # ---------------------------------------------------------------------------
@@ -728,6 +730,7 @@ app.include_router(amy_router)
 app.include_router(scenarios_router)
 app.include_router(tts_router)
 app.include_router(targets_unified_router)
+app.include_router(target_search_router)
 app.include_router(geo_router)
 app.include_router(game_router)
 app.include_router(audio_router)
@@ -741,6 +744,7 @@ app.include_router(devices_router)
 app.include_router(tak_router)
 app.include_router(fleet_router)
 app.include_router(demo_router)
+app.include_router(geofence_router)
 
 # Static files
 frontend_path = Path(__file__).parent.parent / "frontend"
