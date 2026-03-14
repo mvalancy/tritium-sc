@@ -14,6 +14,52 @@ Changes tracked with verification status. All changes on `dev` branch.
 
 ---
 
+## 2026-03-13 — Wave 12: WiFi Geolocation, ReID, Threat Feeds, Trilateration & Reporting
+
+### WiFi BSSID Geolocation Enrichment
+| Change | Verification |
+|--------|-------------|
+| WiFi BSSID geolocation enrichment provider with local SQLite cache | Integration Tested |
+| Enriches sightings with approximate lat/lng from known BSSID databases | Integration Tested |
+
+### ReID Embedding Store (tritium-lib)
+| Change | Verification |
+|--------|-------------|
+| Cross-camera re-identification embedding store in tritium-lib | Integration Tested |
+| Cosine similarity matching for person/vehicle re-identification across cameras | Integration Tested |
+
+### Threat Intelligence Feed Plugin
+| Change | Verification |
+|--------|-------------|
+| Threat intelligence feed plugin with known-bad indicator matching | Integration Tested |
+| Matches MAC addresses, SSIDs, and BLE UUIDs against threat feed databases | Integration Tested |
+
+### Multi-Node BLE Trilateration
+| Change | Verification |
+|--------|-------------|
+| Multi-node BLE trilateration engine wired to edge tracker | Integration Tested |
+| RSSI-based position estimation using 3+ edge nodes with known positions | Integration Tested |
+
+### RF Motion Detection
+| Change | Verification |
+|--------|-------------|
+| RF motion detection plugin: RSSI variance monitoring between stationary radios | Integration Tested |
+| Detects movement by measuring signal fluctuations in the RF environment | Integration Tested |
+
+### Motion Heatmap Layer
+| Change | Verification |
+|--------|-------------|
+| Motion heatmap layer with activity density visualization on tactical map | Integration Tested |
+| Temporal decay and configurable grid resolution for heat accumulation | Integration Tested |
+
+### Unified Test Reporting
+| Change | Verification |
+|--------|-------------|
+| Unified test reporting system with coverage gap analysis and trend tracking | Integration Tested |
+| Heatmap, RF motion, and test reporting wired into main app lifecycle | Integration Tested |
+
+---
+
 ## 2026-03-13 — Wave 10: Instinct Layer, Full Pipeline & Graph Validation
 
 ### Amy Instinct Layer — Automatic Threat Response Rules
