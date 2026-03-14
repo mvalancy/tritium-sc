@@ -41,7 +41,8 @@ function easeInOut(t) {
 // ============================================================
 
 var _trails = new Map();        // targetId -> [{x, y, time}, ...]
-var TRAIL_LIFETIME = 5;         // seconds
+var TRAIL_LIFETIME = 30;        // seconds — show last 30s of movement
+var TRAIL_MAX_POINTS = 20;      // max trail points per target
 var TRAIL_MIN_DIST = 0.5;       // min distance to add new point
 
 function warFxUpdateTrails(targets, dt) {
@@ -58,8 +59,10 @@ function warFxUpdateTrails(targets, dt) {
         if (!last || Math.hypot(pos.x - last.x, pos.y - last.y) > TRAIL_MIN_DIST) {
             trail.push({ x: pos.x, y: pos.y, time: now });
         }
-        // Prune old
+        // Prune old by time
         while (trail.length > 0 && now - trail[0].time > TRAIL_LIFETIME) trail.shift();
+        // Cap at max points
+        while (trail.length > TRAIL_MAX_POINTS) trail.shift();
     }
     // Clean up trails for targets that no longer exist
     _trails.forEach(function(trail, tid) {
@@ -72,13 +75,43 @@ function warFxDrawTrails(ctx, worldToScreen) {
     _trails.forEach(function(trail, tid) {
         if (trail.length < 2) return;
         var color = _getTrailColor(tid);
-        for (var i = 0; i < trail.length; i++) {
-            var age = now - trail[i].time;
-            var alpha = Math.max(0, 1 - age / TRAIL_LIFETIME) * 0.6;
-            var sp = worldToScreen(trail[i].x, trail[i].y);
-            ctx.fillStyle = color.replace(')', ', ' + alpha + ')').replace('rgb', 'rgba');
+
+        // Draw dotted trail line connecting positions (oldest to newest)
+        ctx.save();
+        ctx.setLineDash([4, 6]);
+        ctx.lineCap = 'round';
+
+        for (var i = 1; i < trail.length; i++) {
+            var age0 = now - trail[i - 1].time;
+            var age1 = now - trail[i].time;
+            var alpha = Math.max(0, 1 - ((age0 + age1) / 2) / TRAIL_LIFETIME) * 0.5;
+            if (alpha <= 0) continue;
+
+            var sp0 = worldToScreen(trail[i - 1].x, trail[i - 1].y);
+            var sp1 = worldToScreen(trail[i].x, trail[i].y);
+
+            ctx.strokeStyle = color.replace(')', ', ' + alpha + ')').replace('rgb', 'rgba');
+            ctx.lineWidth = 1.5;
             ctx.beginPath();
-            ctx.arc(sp.x, sp.y, 2, 0, Math.PI * 2);
+            ctx.moveTo(sp0.x, sp0.y);
+            ctx.lineTo(sp1.x, sp1.y);
+            ctx.stroke();
+        }
+
+        ctx.setLineDash([]);
+        ctx.restore();
+
+        // Draw position dots at each trail point (fading with age)
+        for (var j = 0; j < trail.length; j++) {
+            var dotAge = now - trail[j].time;
+            var dotAlpha = Math.max(0, 1 - dotAge / TRAIL_LIFETIME) * 0.6;
+            if (dotAlpha <= 0) continue;
+            var spd = worldToScreen(trail[j].x, trail[j].y);
+            // Newer points are slightly larger
+            var dotR = 1.5 + (1 - dotAge / TRAIL_LIFETIME) * 1.5;
+            ctx.fillStyle = color.replace(')', ', ' + dotAlpha + ')').replace('rgb', 'rgba');
+            ctx.beginPath();
+            ctx.arc(spd.x, spd.y, dotR, 0, Math.PI * 2);
             ctx.fill();
         }
     });
