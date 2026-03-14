@@ -361,6 +361,62 @@ export const MeshPanelDef = {
             });
         }
 
+        // --- Sparkline drawing utility ---
+        function drawSparkline(canvas, values, color, label) {
+            if (!canvas || !values || values.length < 2) return;
+            const ctx = canvas.getContext('2d');
+            const w = canvas.width;
+            const h = canvas.height;
+            ctx.clearRect(0, 0, w, h);
+
+            const filtered = values.filter(v => v !== null && v !== undefined);
+            if (filtered.length < 2) return;
+
+            const min = Math.min(...filtered);
+            const max = Math.max(...filtered);
+            const range = max - min || 1;
+
+            // Fill area under curve
+            ctx.beginPath();
+            ctx.moveTo(0, h);
+            for (let i = 0; i < values.length; i++) {
+                const v = values[i];
+                if (v === null || v === undefined) continue;
+                const x = (i / (values.length - 1)) * w;
+                const y = h - ((v - min) / range) * (h - 4) - 2;
+                if (i === 0 || values[i - 1] === null) ctx.moveTo(x, h);
+                ctx.lineTo(x, y);
+            }
+            ctx.lineTo(w, h);
+            ctx.closePath();
+            ctx.fillStyle = color + '15';
+            ctx.fill();
+
+            // Draw line
+            ctx.beginPath();
+            let started = false;
+            for (let i = 0; i < values.length; i++) {
+                const v = values[i];
+                if (v === null || v === undefined) { started = false; continue; }
+                const x = (i / (values.length - 1)) * w;
+                const y = h - ((v - min) / range) * (h - 4) - 2;
+                if (!started) { ctx.moveTo(x, y); started = true; }
+                else ctx.lineTo(x, y);
+            }
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+
+            // Label and current value
+            const lastVal = filtered[filtered.length - 1];
+            ctx.fillStyle = color;
+            ctx.font = '9px monospace';
+            ctx.fillText(label, 2, 9);
+            ctx.textAlign = 'right';
+            ctx.fillText(typeof lastVal === 'number' ? lastVal.toFixed(1) : String(lastVal), w - 2, 9);
+            ctx.textAlign = 'left';
+        }
+
         // --- Node detail display ---
         function showNodeDetail(nodeId) {
             if (!nodeDetailEl) return;
@@ -419,7 +475,39 @@ export const MeshPanelDef = {
                 ${envRows}
                 ${n.via_mqtt ? '<div class="panel-stat-row"><span class="panel-stat-label">VIA</span><span class="panel-stat-value" style="color:var(--text-dim)">MQTT</span></div>' : ''}
                 ${n.is_favorite ? '<div class="panel-stat-row"><span class="panel-stat-label">FAVORITE</span><span class="panel-stat-value" style="color:var(--yellow)">YES</span></div>' : ''}
+                <div class="panel-section-label" style="margin-top:8px">TELEMETRY CHARTS</div>
+                <div class="mesh-sparkline-section" data-bind="sparklines">
+                    <canvas class="mesh-sparkline" data-metric="battery" width="280" height="36"></canvas>
+                    <canvas class="mesh-sparkline" data-metric="voltage" width="280" height="36"></canvas>
+                    <canvas class="mesh-sparkline" data-metric="temperature" width="280" height="36"></canvas>
+                </div>
             `;
+
+            // Fetch and render telemetry sparklines
+            fetchTelemetryHistory(nodeId);
+        }
+
+        // --- Fetch telemetry history and draw sparklines ---
+        function fetchTelemetryHistory(nodeId) {
+            const cleanId = encodeURIComponent(nodeId);
+            fetch(`/api/meshtastic/nodes/${cleanId}/telemetry-history`)
+                .then(r => r.ok ? r.json() : null)
+                .then(data => {
+                    if (!data || !data.points || data.points.length < 2) return;
+                    const points = data.points;
+
+                    const sparkSection = nodeDetailEl?.querySelector('[data-bind="sparklines"]');
+                    if (!sparkSection) return;
+
+                    const batteryCanvas = sparkSection.querySelector('[data-metric="battery"]');
+                    const voltageCanvas = sparkSection.querySelector('[data-metric="voltage"]');
+                    const tempCanvas = sparkSection.querySelector('[data-metric="temperature"]');
+
+                    drawSparkline(batteryCanvas, points.map(p => p.battery), '#05ffa1', 'BATTERY %');
+                    drawSparkline(voltageCanvas, points.map(p => p.voltage), '#00f0ff', 'VOLTAGE V');
+                    drawSparkline(tempCanvas, points.map(p => p.temperature), '#fcee0a', 'TEMP C');
+                })
+                .catch(() => {});
         }
 
         // --- Chat rendering ---

@@ -67,6 +67,67 @@ logging.basicConfig(
 )
 log = logging.getLogger("meshtastic-bridge")
 
+# --- Input sanitization ---
+
+# Characters that are dangerous in MQTT topics: / (separator), + (single-level
+# wildcard), # (multi-level wildcard), and NUL.  Node IDs from the radio could
+# theoretically contain these if the radio firmware is malicious or buggy.
+_MQTT_TOPIC_UNSAFE = set("/+#\x00")
+
+# Maximum lengths to prevent memory abuse from a rogue mesh node
+_MAX_NODE_ID_LEN = 64
+_MAX_TEXT_LEN = 512      # LoRa max is 228, but be generous
+_MAX_NAME_LEN = 128
+_MAX_HW_MODEL_LEN = 64
+
+
+def _sanitize_topic_segment(raw: str) -> str:
+    """Remove MQTT-unsafe characters from a string used in a topic path.
+
+    Strips /, +, #, and NUL bytes.  Also enforces a length limit so a
+    rogue node cannot create arbitrarily long topics.
+    """
+    cleaned = "".join(ch for ch in str(raw) if ch not in _MQTT_TOPIC_UNSAFE)
+    return cleaned[:_MAX_NODE_ID_LEN]
+
+
+def _sanitize_text(raw: str, max_len: int = _MAX_TEXT_LEN) -> str:
+    """Truncate and strip NUL bytes from user-supplied text."""
+    if not isinstance(raw, str):
+        raw = str(raw)
+    return raw.replace("\x00", "")[:max_len]
+
+
+def _safe_str(value, max_len: int = _MAX_NAME_LEN) -> str:
+    """Safely convert a value to a bounded string."""
+    if value is None:
+        return ""
+    return str(value).replace("\x00", "")[:max_len]
+
+
+def _safe_float(value) -> float | None:
+    """Safely convert a value to float, returning None on failure."""
+    if value is None:
+        return None
+    try:
+        f = float(value)
+        # Reject NaN/Inf which could cause issues downstream
+        if f != f or f == float('inf') or f == float('-inf'):
+            return None
+        return f
+    except (ValueError, TypeError):
+        return None
+
+
+def _safe_int(value) -> int | None:
+    """Safely convert a value to int, returning None on failure."""
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return None
+
 
 class MeshtasticBridge:
     """Long-lived daemon bridging Meshtastic radio to Tritium MQTT."""
@@ -200,12 +261,19 @@ class MeshtasticBridge:
             self._process_node(str(node_id), node)
 
     def _on_receive(self, packet, interface=None) -> None:
-        """Called when any packet is received from the mesh."""
-        if not packet:
+        """Called when any packet is received from the mesh.
+
+        Security: packet data comes from the radio and could be crafted
+        by a malicious mesh node.  All handlers sanitize their inputs
+        before constructing MQTT topics or payloads.
+        """
+        if not packet or not isinstance(packet, dict):
             return
 
         decoded = packet.get("decoded", {})
-        portnum = decoded.get("portnum", "")
+        if not isinstance(decoded, dict):
+            return
+        portnum = str(decoded.get("portnum", ""))
 
         # Text messages
         if portnum == "TEXT_MESSAGE_APP" or "text" in decoded:
@@ -213,37 +281,48 @@ class MeshtasticBridge:
 
         # Position updates
         elif portnum == "POSITION_APP":
-            from_id = packet.get("fromId", packet.get("from", ""))
-            self._publish_position_from_packet(str(from_id), decoded)
+            from_id = _safe_str(packet.get("fromId", packet.get("from", "")))
+            self._publish_position_from_packet(from_id, decoded)
 
         # Telemetry updates
         elif portnum == "TELEMETRY_APP":
-            from_id = packet.get("fromId", packet.get("from", ""))
-            self._publish_telemetry_from_packet(str(from_id), decoded)
+            from_id = _safe_str(packet.get("fromId", packet.get("from", "")))
+            self._publish_telemetry_from_packet(from_id, decoded)
 
     # -- Message handling ----------------------------------------------------
 
     def _handle_text_message(self, packet: dict) -> None:
-        """Process and publish a text message from the mesh."""
+        """Process and publish a text message from the mesh.
+
+        Security: all fields are sanitized before use in MQTT topics or
+        payloads.  Node IDs are stripped of MQTT-unsafe characters (/, +, #)
+        to prevent topic injection.  Text is truncated to prevent memory abuse.
+        """
         decoded = packet.get("decoded", {})
-        text = decoded.get("text", decoded.get("payload", b"").decode("utf-8", errors="replace"))
-        from_id = str(packet.get("fromId", packet.get("from", "")))
-        to_id = str(packet.get("toId", packet.get("to", "")))
-        channel = packet.get("channel", 0)
+        raw_text = decoded.get("text", "")
+        if not raw_text and isinstance(decoded.get("payload"), bytes):
+            raw_text = decoded["payload"].decode("utf-8", errors="replace")
+        text = _sanitize_text(raw_text)
+        from_id = _safe_str(packet.get("fromId", packet.get("from", "")))
+        to_id = _safe_str(packet.get("toId", packet.get("to", "")))
+        channel = _safe_int(packet.get("channel", 0)) or 0
 
         msg = {
             "from_id": from_id,
             "to_id": to_id,
             "text": text,
             "channel": channel,
-            "hop_limit": packet.get("hopLimit"),
-            "hop_start": packet.get("hopStart"),
-            "rx_snr": packet.get("rxSnr"),
-            "rx_rssi": packet.get("rxRssi"),
+            "hop_limit": _safe_int(packet.get("hopLimit")),
+            "hop_start": _safe_int(packet.get("hopStart")),
+            "rx_snr": _safe_float(packet.get("rxSnr")),
+            "rx_rssi": _safe_int(packet.get("rxRssi")),
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
-        from_hex = from_id.replace("!", "")
+        from_hex = _sanitize_topic_segment(from_id.replace("!", ""))
+        if not from_hex:
+            log.warning("Dropping text message with empty/unsafe from_id")
+            return
         topic = f"{TOPIC_PREFIX}/{from_hex}/message"
         self._mqtt_publish(topic, msg)
 
@@ -255,29 +334,57 @@ class MeshtasticBridge:
         )
 
     def _publish_position_from_packet(self, from_id: str, decoded: dict) -> None:
-        """Publish position update from a decoded position packet."""
+        """Publish position update from a decoded position packet.
+
+        Security: coordinates are validated as floats, node ID is sanitized
+        for MQTT topic safety.
+        """
         position = decoded.get("position", decoded)
-        from_hex = from_id.replace("!", "")
+        from_hex = _sanitize_topic_segment(from_id.replace("!", ""))
+        if not from_hex:
+            return
         pos_data = {
-            "node_id": from_id,
-            "latitude": position.get("latitude"),
-            "longitude": position.get("longitude"),
-            "altitude": position.get("altitude"),
-            "sats_in_view": position.get("satsInView"),
-            "ground_speed": position.get("groundSpeed"),
-            "ground_track": position.get("groundTrack"),
+            "node_id": _safe_str(from_id),
+            "latitude": _safe_float(position.get("latitude")),
+            "longitude": _safe_float(position.get("longitude")),
+            "altitude": _safe_float(position.get("altitude")),
+            "sats_in_view": _safe_int(position.get("satsInView")),
+            "ground_speed": _safe_float(position.get("groundSpeed")),
+            "ground_track": _safe_float(position.get("groundTrack")),
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         self._mqtt_publish(f"{TOPIC_PREFIX}/{from_hex}/position", pos_data)
 
     def _publish_telemetry_from_packet(self, from_id: str, decoded: dict) -> None:
-        """Publish telemetry from a decoded telemetry packet."""
+        """Publish telemetry from a decoded telemetry packet.
+
+        Security: all numeric values are validated, node ID is sanitized
+        for MQTT topic safety.
+        """
         telemetry = decoded.get("telemetry", decoded)
-        from_hex = from_id.replace("!", "")
+        from_hex = _sanitize_topic_segment(from_id.replace("!", ""))
+        if not from_hex:
+            return
+        # Sanitize device metrics
+        raw_dm = telemetry.get("deviceMetrics", {})
+        safe_dm = {
+            "batteryLevel": _safe_int(raw_dm.get("batteryLevel")),
+            "voltage": _safe_float(raw_dm.get("voltage")),
+            "channelUtilization": _safe_float(raw_dm.get("channelUtilization")),
+            "airUtilTx": _safe_float(raw_dm.get("airUtilTx")),
+            "uptimeSeconds": _safe_int(raw_dm.get("uptimeSeconds")),
+        }
+        # Sanitize environment metrics
+        raw_env = telemetry.get("environmentMetrics", {})
+        safe_env = {
+            "temperature": _safe_float(raw_env.get("temperature")),
+            "relativeHumidity": _safe_float(raw_env.get("relativeHumidity")),
+            "barometricPressure": _safe_float(raw_env.get("barometricPressure")),
+        }
         telem_data = {
-            "node_id": from_id,
-            "device_metrics": telemetry.get("deviceMetrics", {}),
-            "environment_metrics": telemetry.get("environmentMetrics", {}),
+            "node_id": _safe_str(from_id),
+            "device_metrics": safe_dm,
+            "environment_metrics": safe_env,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         self._mqtt_publish(f"{TOPIC_PREFIX}/{from_hex}/telemetry", telem_data)
@@ -306,55 +413,63 @@ class MeshtasticBridge:
             log.error("Error polling nodes: %s", exc)
 
     def _process_node(self, node_id: str, info: dict) -> None:
-        """Process a single node and publish its data to MQTT."""
+        """Process a single node and publish its data to MQTT.
+
+        Security: all fields are sanitized.  Node IDs are stripped of
+        MQTT-unsafe characters to prevent topic injection.  String fields
+        are length-bounded.  Numeric fields are type-validated.
+        """
         user = info.get("user", {})
         position = info.get("position", {})
         device_metrics = info.get("deviceMetrics", {})
         env_metrics = info.get("environmentMetrics", {})
 
-        node_hex = node_id.replace("!", "")
+        node_hex = _sanitize_topic_segment(node_id.replace("!", ""))
+        if not node_hex:
+            log.warning("Dropping node with empty/unsafe ID: %r", node_id[:32])
+            return
 
         node_data = {
-            "node_id": node_id,
-            "node_num": user.get("num") or info.get("num"),
-            "long_name": user.get("longName", ""),
-            "short_name": user.get("shortName", ""),
-            "hw_model": user.get("hwModel", ""),
-            "firmware_version": info.get("firmwareVersion", ""),
-            "role": user.get("role"),
-            "mac_addr": user.get("macaddr"),
-            "is_licensed": user.get("isLicensed", False),
+            "node_id": _safe_str(node_id),
+            "node_num": _safe_int(user.get("num") or info.get("num")),
+            "long_name": _safe_str(user.get("longName", "")),
+            "short_name": _safe_str(user.get("shortName", "")),
+            "hw_model": _safe_str(user.get("hwModel", ""), _MAX_HW_MODEL_LEN),
+            "firmware_version": _safe_str(info.get("firmwareVersion", "")),
+            "role": _safe_str(user.get("role")),
+            "mac_addr": _safe_str(user.get("macaddr")),
+            "is_licensed": bool(user.get("isLicensed", False)),
             "position": {
-                "latitude": position.get("latitude"),
-                "longitude": position.get("longitude"),
-                "altitude": position.get("altitude"),
-                "precision_bits": position.get("precisionBits"),
-                "time": position.get("time"),
-                "sats_in_view": position.get("satsInView"),
+                "latitude": _safe_float(position.get("latitude")),
+                "longitude": _safe_float(position.get("longitude")),
+                "altitude": _safe_float(position.get("altitude")),
+                "precision_bits": _safe_int(position.get("precisionBits")),
+                "time": _safe_int(position.get("time")),
+                "sats_in_view": _safe_int(position.get("satsInView")),
             } if position else None,
             "device_metrics": {
-                "battery_level": device_metrics.get("batteryLevel"),
-                "voltage": device_metrics.get("voltage"),
-                "channel_utilization": device_metrics.get("channelUtilization"),
-                "air_util_tx": device_metrics.get("airUtilTx"),
-                "uptime_seconds": device_metrics.get("uptimeSeconds"),
+                "battery_level": _safe_int(device_metrics.get("batteryLevel")),
+                "voltage": _safe_float(device_metrics.get("voltage")),
+                "channel_utilization": _safe_float(device_metrics.get("channelUtilization")),
+                "air_util_tx": _safe_float(device_metrics.get("airUtilTx")),
+                "uptime_seconds": _safe_int(device_metrics.get("uptimeSeconds")),
             } if device_metrics else None,
             "environment": {
-                "temperature": env_metrics.get("temperature"),
-                "relative_humidity": env_metrics.get("relativeHumidity"),
-                "barometric_pressure": env_metrics.get("barometricPressure"),
+                "temperature": _safe_float(env_metrics.get("temperature")),
+                "relative_humidity": _safe_float(env_metrics.get("relativeHumidity")),
+                "barometric_pressure": _safe_float(env_metrics.get("barometricPressure")),
             } if env_metrics else None,
-            "snr": info.get("snr"),
-            "rssi": info.get("rssi"),
-            "last_heard": info.get("lastHeard"),
-            "hops_away": info.get("hopsAway"),
-            "is_favorite": info.get("isFavorite", False),
-            "via_mqtt": info.get("viaMqtt", False),
+            "snr": _safe_float(info.get("snr")),
+            "rssi": _safe_int(info.get("rssi")),
+            "last_heard": _safe_int(info.get("lastHeard")),
+            "hops_away": _safe_int(info.get("hopsAway")),
+            "is_favorite": bool(info.get("isFavorite", False)),
+            "via_mqtt": bool(info.get("viaMqtt", False)),
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
         with self._lock:
-            self._nodes[node_id] = node_data
+            self._nodes[_safe_str(node_id)] = node_data
 
         # Publish individual node update
         topic = f"{TOPIC_PREFIX}/{node_hex}/nodes"

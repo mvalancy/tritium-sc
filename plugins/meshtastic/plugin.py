@@ -86,6 +86,9 @@ class MeshtasticPlugin(PluginInterface):
         self._max_messages = 500
         self._bridge_online = False  # whether external bridge is connected
         self._mqtt_bridge: Any = None  # reference to SC's MQTTBridge
+        # Telemetry history: node_id -> list of {ts, battery, voltage, temperature, ...}
+        self._telemetry_history: dict[str, list[dict]] = {}
+        self._max_telemetry_points = 100  # per node
 
     # -- PluginInterface identity ------------------------------------------
 
@@ -257,6 +260,9 @@ class MeshtasticPlugin(PluginInterface):
             if env.get("barometricPressure") is not None:
                 node["pressure"] = env["barometricPressure"]
 
+            # Record telemetry history for sparkline charts
+            self._record_telemetry(node_id, node)
+
             # Publish environment data for Amy's sensorium
             if any(env.get(k) is not None for k in ("temperature", "relativeHumidity", "barometricPressure")):
                 env_data = {
@@ -320,6 +326,9 @@ class MeshtasticPlugin(PluginInterface):
         }
 
         self._nodes[node_id] = node_state
+
+        # Record telemetry history for sparkline charts
+        self._record_telemetry(node_id, node_state)
 
         # Push to tracker
         self._push_node_to_tracker(node_id, node_state)
@@ -538,6 +547,9 @@ class MeshtasticPlugin(PluginInterface):
             "position": {"lat": lat, "lng": lng},
         }
 
+        # Record telemetry history for sparkline charts
+        self._record_telemetry(node_id, self._nodes[node_id])
+
         # Push to tracker
         self._push_node_to_tracker(node_id, self._nodes[node_id])
 
@@ -621,6 +633,47 @@ class MeshtasticPlugin(PluginInterface):
         except Exception as exc:
             self._logger.error("Failed to send waypoint: %s", exc)
             return False
+
+    # -- Telemetry history -------------------------------------------------
+
+    def _record_telemetry(self, node_id: str, node_state: dict) -> None:
+        """Record a telemetry snapshot for sparkline charting.
+
+        Called whenever node state is updated with new battery/voltage/temp data.
+        Keeps up to _max_telemetry_points per node in a ring buffer.
+        """
+        # Only record if we have at least one interesting metric
+        battery = node_state.get("battery")
+        voltage = node_state.get("voltage")
+        temperature = node_state.get("temperature")
+        humidity = node_state.get("humidity")
+        channel_util = node_state.get("channel_utilization")
+        air_util = node_state.get("air_util_tx")
+
+        if all(v is None for v in (battery, voltage, temperature, humidity, channel_util, air_util)):
+            return
+
+        point = {
+            "ts": int(time.time()),
+            "battery": battery,
+            "voltage": voltage,
+            "temperature": temperature,
+            "humidity": humidity,
+            "channel_utilization": channel_util,
+            "air_util_tx": air_util,
+        }
+
+        if node_id not in self._telemetry_history:
+            self._telemetry_history[node_id] = []
+
+        history = self._telemetry_history[node_id]
+        history.append(point)
+        if len(history) > self._max_telemetry_points:
+            self._telemetry_history[node_id] = history[-self._max_telemetry_points:]
+
+    def get_telemetry_history(self, node_id: str) -> list[dict]:
+        """Return telemetry history for a node (for API route)."""
+        return list(self._telemetry_history.get(node_id, []))
 
     # -- HTTP routes -------------------------------------------------------
 

@@ -1308,6 +1308,23 @@
     margin-top: 6px;
 }
 
+/* Mesh telemetry sparkline charts */
+.mesh-sparkline-section {
+    padding-top: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.mesh-sparkline {
+    width: 100%;
+    height: 36px;
+    display: block;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    background: var(--surface-1);
+}
+
 /* Node stats inline */
 .mesh-node-name {
     flex: 1;

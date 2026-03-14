@@ -12,6 +12,8 @@ Usage:
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 pytestmark = [pytest.mark.ux, pytest.mark.ui]
@@ -98,15 +100,25 @@ class TestAmyPanelContent:
         page.keyboard.press('Escape')
         page.wait_for_timeout(300)
 
+    @pytest.mark.skipif(
+        not os.environ.get("TRITIUM_LIVE_SERVER"),
+        reason="Sensorium narrative update requires a live server with Amy "
+               "running (set TRITIUM_LIVE_SERVER=1 to enable)",
+    )
     def test_sensorium_narrative_updates(self, page, take_screenshot):
-        """Sensorium narrative should update from polling (not stay at init text)."""
+        """Sensorium narrative should update from polling (not stay at init text).
+
+        This test requires Amy's sensorium to be actively producing narratives,
+        which only happens when the server has been running long enough for the
+        first sensorium tick (5s+). Skipped by default in CI/headless runs.
+        """
         page.keyboard.press('1')
         page.wait_for_timeout(500)
 
         narrative = page.locator('[data-bind="narrative"]')
 
         # Wait for sensorium poll (5s interval + network)
-        page.wait_for_timeout(6000)
+        page.wait_for_timeout(8000)
 
         updated_text = narrative.text_content()
         # The narrative should have changed from the loading placeholder

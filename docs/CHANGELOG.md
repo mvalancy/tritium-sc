@@ -14,6 +14,24 @@ Changes tracked with verification status. All changes on `dev` branch.
 
 ---
 
+## 2026-03-14 — Wave 65: Security Hardening + Telemetry Sparklines
+
+### Meshtastic Bridge Security Hardening (Code Reviewed)
+- MQTT topic injection prevention: node IDs sanitized for `/`, `+`, `#`, NUL characters
+- All numeric fields type-validated (NaN/Inf rejected)
+- String length bounds enforced (node IDs max 64, names max 128, text max 512)
+- Packet type checking: decoded dict validated before access
+
+### Meshtastic Node Telemetry Charts (Code Reviewed)
+- Ring buffer telemetry history (100 points/node) for battery, voltage, temperature
+- New `/api/meshtastic/nodes/{id}/telemetry-history` endpoint for sparkline data
+- Canvas-based sparkline charts in mesh panel node detail view
+- Three metrics: battery (green), voltage (cyan), temperature (yellow)
+
+### Test Fixes (Tested)
+- `test_sensorium_narrative_updates` now skipped without TRITIUM_LIVE_SERVER env var
+- Prevents Playwright timeout in CI/headless environments
+
 ## 2026-03-14 — Wave 64: Meshtastic Environment + Amy Sensorium
 
 ### Meshtastic Environment Data (Integration Tested)

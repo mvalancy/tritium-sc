@@ -138,6 +138,25 @@ def create_router(plugin: MeshtasticPlugin) -> APIRouter:
         ok = plugin.send_waypoint(lat, lng, name, destination)
         return {"sent": ok, "lat": lat, "lng": lng, "name": name}
 
+    @router.get("/nodes/{node_id}/telemetry-history")
+    @compat_router.get("/nodes/{node_id}/telemetry-history")
+    async def get_node_telemetry_history(node_id: str):
+        """Get telemetry history for a specific node (for sparkline charts).
+
+        Returns time-series data points with battery, voltage, temperature,
+        humidity, and channel utilization values.
+        """
+        # Try exact match first, then with ! prefix
+        history = plugin.get_telemetry_history(node_id)
+        if not history and not node_id.startswith("!"):
+            history = plugin.get_telemetry_history(f"!{node_id}")
+
+        return {
+            "node_id": node_id,
+            "points": history,
+            "count": len(history),
+        }
+
     @router.get("/environment")
     @compat_router.get("/environment")
     async def environment():
