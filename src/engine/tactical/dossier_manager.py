@@ -190,6 +190,18 @@ class DossierManager:
         with self._lock:
             self._target_dossier_map[target_id] = dossier_id
         logger.info("Created dossier %s for target %s", dossier_id[:8], target_id)
+
+        # Broadcast new dossier creation via EventBus -> WebSocket
+        if self._event_bus is not None:
+            self._event_bus.publish("dossier_created", data={
+                "dossier_id": dossier_id,
+                "target_id": target_id,
+                "name": name,
+                "entity_type": entity_type,
+                "identifiers": identifiers,
+                "tags": tags,
+            })
+
         return dossier_id
 
     def add_signal_to_target(
