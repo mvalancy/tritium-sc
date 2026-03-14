@@ -14,6 +14,40 @@ Changes tracked with verification status. All changes on `dev` branch.
 
 ---
 
+## 2026-03-14 — Wave 41: Annotations, Watch List, Plugin Messaging, Compass Rose
+
+### Map Annotations System (Unit Tested, 7 tests)
+- `POST/GET/PUT/DELETE /api/annotations` — persist text labels, arrows, circles, freehand drawings
+- Annotation types: text, arrow, circle, freehand, rectangle, polygon
+- Style control: color, stroke width, font size, opacity, fill
+- Layer-based organization with `GET /api/annotations/layers/list`
+- Frontend panel: `panels/annotations.js` with toolbar, color picker, drawing modes
+- CSS styles in tritium.css for annotation panel components
+
+### Target Watch List (Unit Tested, 7 tests)
+- `POST/GET/PUT/DELETE /api/watchlist` — curate targets of interest
+- Real-time snapshot tracking with `update_target_snapshot()` function
+- Movement alerts: triggers when watched target moves > 5m
+- State change alerts: triggers when target status changes
+- Alert history with `GET /api/watchlist/alerts/history`
+- Frontend panel: `panels/watchlist.js` with priority badges, status display, alerts section
+
+### Inter-Plugin Messaging (Unit Tested, 13 tests)
+- `PluginMessage` protocol: sender_id, target_id, message_type, payload, reply_to, TTL
+- `PluginMessageBus`: rides on top of EventBus for typed message delivery
+- Target-specific delivery (by plugin_id) and broadcast (target='*')
+- Type-prefix subscriptions for filtering by message_type pattern
+- Reply helper for request/response patterns
+- TTL-based message expiration
+
+### Map Compass Rose & Scale Bar (Build Verified)
+- Custom compass rose overlay with SVG canvas: north arrow (magenta), cardinal labels, intercardinal ticks
+- Rotates in real-time with map bearing changes
+- MapLibre ScaleControl added (bottom-left, metric units)
+- Scale bar styled with cyberpunk theme to match tritium.css
+
+---
+
 ## 2026-03-14 — Wave 39: Panel Search, Test Baseline
 
 ### Panel Search (Build Verified)

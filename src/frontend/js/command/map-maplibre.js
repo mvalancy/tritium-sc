@@ -353,6 +353,18 @@ function _createMap(mapDiv) {
         'top-right'
     );
 
+    // Add scale bar control — shows map scale at current zoom
+    _state.map.addControl(
+        new maplibregl.ScaleControl({
+            maxWidth: 150,
+            unit: 'metric',
+        }),
+        'bottom-left'
+    );
+
+    // Add custom compass rose overlay (more visible than NavigationControl compass)
+    _addCompassRose();
+
     // Start standalone FPS loop — uses rAF so it runs every browser frame
     // regardless of MapLibre repaint state (idle map = no 'render' events).
     _startFpsLoop();
@@ -425,6 +437,120 @@ function _createMap(mapDiv) {
     _state.map.on('zoomend', _updateLayerHud);
     _state.map.on('zoomend', _reportViewport);
     _state.map.on('pitchend', _updateLayerHud);
+}
+
+// ============================================================
+// Compass Rose — always-visible compass showing north direction
+// ============================================================
+
+function _addCompassRose() {
+    const rose = document.createElement('div');
+    rose.id = 'tritium-compass-rose';
+    rose.style.cssText = `
+        position: absolute;
+        bottom: 50px;
+        left: 12px;
+        width: 72px;
+        height: 72px;
+        pointer-events: none;
+        z-index: 10;
+        opacity: 0.85;
+    `;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 144;
+    canvas.height = 144;
+    canvas.style.cssText = 'width:72px;height:72px;';
+    rose.appendChild(canvas);
+
+    const mapContainer = _state.map.getContainer();
+    mapContainer.appendChild(rose);
+    _state._compassCanvas = canvas;
+
+    function drawCompass() {
+        if (!_state.map) return;
+        const bearing = _state.map.getBearing();
+        const ctx = canvas.getContext('2d');
+        const cx = 72, cy = 72, r = 60;
+
+        ctx.clearRect(0, 0, 144, 144);
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(-bearing * Math.PI / 180);
+
+        // Outer ring
+        ctx.beginPath();
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(0, 240, 255, 0.3)';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        // Cardinal ticks and labels
+        const cardinals = [
+            { angle: 0, label: 'N', color: '#ff2a6d' },
+            { angle: 90, label: 'E', color: '#00f0ff' },
+            { angle: 180, label: 'S', color: '#00f0ff' },
+            { angle: 270, label: 'W', color: '#00f0ff' },
+        ];
+        for (const c of cardinals) {
+            const a = (c.angle - 90) * Math.PI / 180;
+            // Tick
+            ctx.beginPath();
+            ctx.moveTo(Math.cos(a) * (r - 10), Math.sin(a) * (r - 10));
+            ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+            ctx.strokeStyle = c.color;
+            ctx.lineWidth = c.label === 'N' ? 3 : 1.5;
+            ctx.stroke();
+            // Label
+            ctx.fillStyle = c.color;
+            ctx.font = c.label === 'N' ? 'bold 16px monospace' : '11px monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(c.label, Math.cos(a) * (r - 22), Math.sin(a) * (r - 22));
+        }
+
+        // Intercardinal ticks
+        for (let deg = 45; deg < 360; deg += 90) {
+            const a = (deg - 90) * Math.PI / 180;
+            ctx.beginPath();
+            ctx.moveTo(Math.cos(a) * (r - 5), Math.sin(a) * (r - 5));
+            ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+            ctx.strokeStyle = 'rgba(0, 240, 255, 0.2)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+        }
+
+        // North arrow (triangle pointing up)
+        ctx.beginPath();
+        ctx.moveTo(0, -36);
+        ctx.lineTo(-6, -20);
+        ctx.lineTo(6, -20);
+        ctx.closePath();
+        ctx.fillStyle = '#ff2a6d';
+        ctx.fill();
+
+        // South arrow (dimmer)
+        ctx.beginPath();
+        ctx.moveTo(0, 36);
+        ctx.lineTo(-5, 20);
+        ctx.lineTo(5, 20);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(0, 240, 255, 0.25)';
+        ctx.fill();
+
+        // Center dot
+        ctx.beginPath();
+        ctx.arc(0, 0, 3, 0, Math.PI * 2);
+        ctx.fillStyle = '#00f0ff';
+        ctx.fill();
+
+        ctx.restore();
+    }
+
+    // Redraw on bearing change
+    _state.map.on('rotate', drawCompass);
+    _state.map.on('load', drawCompass);
+    drawCompass();
 }
 
 // ============================================================

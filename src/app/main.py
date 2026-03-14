@@ -69,6 +69,8 @@ from app.routers.audit import router as audit_router
 from app.routers.version import router as version_router
 from app.routers.missions import router as missions_router
 from app.routers.api_docs import router as api_docs_router
+from app.routers.annotations import router as annotations_router
+from app.routers.watchlist import router as watchlist_router
 
 
 # ---------------------------------------------------------------------------
@@ -913,6 +915,8 @@ app.include_router(audit_router)
 app.include_router(version_router)
 app.include_router(missions_router)
 app.include_router(api_docs_router)
+app.include_router(annotations_router)
+app.include_router(watchlist_router)
 
 # Static files
 frontend_path = Path(__file__).parent.parent / "frontend"
