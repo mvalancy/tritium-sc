@@ -57,6 +57,7 @@ from app.routers.heatmap import router as heatmap_router
 from app.routers.device_management import router as device_management_router
 from app.routers.auth import router as auth_router
 from app.routers.backup import router as backup_router
+from app.routers.health import router as health_router
 
 
 # ---------------------------------------------------------------------------
@@ -500,12 +501,14 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("Database initialized")
 
-    # Database migrations
+    # Database migrations (versioned schema upgrades)
     try:
-        from app.migrations import run_migrations
-        applied = await run_migrations()
+        from app.migrations import MigrationManager
+        from app.database import engine as _db_engine
+        _migrator = MigrationManager(engine=_db_engine)
+        applied = await _migrator.migrate()
         if applied > 0:
-            logger.info(f"Applied {applied} database migrations")
+            logger.info(f"Applied {applied} database migration(s)")
     except Exception as e:
         logger.warning(f"Migration check failed (non-fatal): {e}")
 
@@ -772,6 +775,10 @@ async def lifespan(app: FastAPI):
         if sim_engine is not None:
             sim_engine.set_plugin_manager(plugin_manager)
 
+    # Record startup time for /api/health uptime calculation
+    from app.routers.health import reset_start_time
+    reset_start_time()
+
     logger.info("=" * 60)
     logger.info("  TRITIUM-SC ONLINE")
     logger.info("=" * 60)
@@ -869,6 +876,7 @@ app.include_router(testing_router)
 app.include_router(device_management_router)
 app.include_router(auth_router)
 app.include_router(backup_router)
+app.include_router(health_router)
 
 # Static files
 frontend_path = Path(__file__).parent.parent / "frontend"
