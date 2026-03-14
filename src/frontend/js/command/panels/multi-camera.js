@@ -6,13 +6,8 @@
 // Per-camera detection overlays. Click any feed to expand full-size.
 
 import { EventBus } from '../events.js';
+import { _esc } from '../panel-utils.js';
 
-function _esc(text) {
-    if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = String(text);
-    return div.innerHTML;
-}
 
 export const MultiCameraPanelDef = {
     id: 'multi-camera',

@@ -65,6 +65,7 @@ import { AmyConversationPanelDef } from './panels/amy-conversation.js';
 import { ExportSchedulerPanelDef } from './panels/export-scheduler.js';
 import { OpsDashboardPanelDef } from './panels/ops-dashboard.js';
 import { DossierGroupsPanelDef } from './panels/dossier-groups.js';
+import { SetupWizardPanelDef, ConfigStore } from './panels/setup-wizard.js';
 import { MissionModal, initMissionModal } from './mission-modal.js';
 import { initTargetCounter } from './target-counter.js';
 import { initTargetFilter, matchesFilter, getTargetFilters } from './target-filter.js';
@@ -557,6 +558,7 @@ function initPanelSystem(container) {
     panelManager.register(ExportSchedulerPanelDef);
     panelManager.register(OpsDashboardPanelDef);
     panelManager.register(DossierGroupsPanelDef);
+    panelManager.register(SetupWizardPanelDef);
 
     // panel:request-open — allows map click to open panels by id
     EventBus.on('panel:request-open', (data) => {
@@ -604,6 +606,16 @@ function initPanelSystem(container) {
         panelManager.open('units');
         panelManager.open('alerts');
         panelManager.open('minimap');
+    }
+
+    // Setup wizard — auto-open on first launch (no config stored)
+    if (SetupWizardPanelDef.shouldAutoOpen && SetupWizardPanelDef.shouldAutoOpen()) {
+        panelManager.open('setup-wizard');
+    }
+
+    // Auto-start demo mode if configured
+    if (ConfigStore.get('demo.autoStart', false)) {
+        fetch('/api/demo/start', { method: 'POST' }).catch(() => {});
     }
 
     // Layout manager

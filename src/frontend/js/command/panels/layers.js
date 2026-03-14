@@ -6,6 +6,7 @@
 // data source info, and descriptions. Makes the map understandable.
 
 import { EventBus } from '../events.js';
+import { _esc } from '../panel-utils.js';
 
 // Layer definitions — categorized with human-readable descriptions.
 // Each layer has: id (matches map-maplibre toggle), label, description, color, source.
@@ -113,12 +114,6 @@ const GIS_LAYER_INFO = {
     'fire-stations':    { description: 'Fire station locations', source: 'OpenStreetMap' },
 };
 
-function _esc(text) {
-    if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = String(text);
-    return div.innerHTML;
-}
 
 export const LayersPanelDef = {
     id: 'layers',

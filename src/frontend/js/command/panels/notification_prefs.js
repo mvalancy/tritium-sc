@@ -5,13 +5,8 @@
 // Configure which notification types are enabled and their severity thresholds.
 // Uses NotificationRule from tritium-lib via the /api/notifications/preferences API.
 
-function _esc(text) {
-    if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = String(text);
-    return div.innerHTML;
-}
 
+import { _esc } from '../panel-utils.js';
 const SEVERITY_OPTIONS = ['debug', 'info', 'warning', 'error', 'critical'];
 const SEVERITY_COLORS = {
     debug:    '#888',

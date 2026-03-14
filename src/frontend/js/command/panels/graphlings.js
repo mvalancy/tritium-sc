@@ -6,13 +6,8 @@
 // Connects to SSE /api/graphlings/thoughts for real-time updates.
 
 import { TritiumStore } from '../store.js';
+import { _esc } from '../panel-utils.js';
 
-function _esc(text) {
-    if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = String(text);
-    return div.innerHTML;
-}
 
 // Emotion to CSS class mapping
 const EMOTION_COLORS = {

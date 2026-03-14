@@ -171,6 +171,9 @@ const sandbox = {
     exports: {},
 };
 const ctx = vm.createContext(sandbox);
+// Load panel-utils.js (shared helpers)
+vm.runInContext(fs.readFileSync('src/frontend/js/command/panel-utils.js', 'utf8')
+    .replace(/^export\s+/gm, '').replace(/^import\s+.*$/gm, ''), ctx);
 vm.runInContext(cleaned + `
     module.exports = { UnitInspectorPanelDef };
 `, ctx);

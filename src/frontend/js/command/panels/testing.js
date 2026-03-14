@@ -6,13 +6,8 @@
 // untested modules, and coverage gaps. Polls /api/testing/report.
 
 import { EventBus } from '../events.js';
+import { _esc } from '../panel-utils.js';
 
-function _esc(text) {
-    if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = String(text);
-    return div.innerHTML;
-}
 
 function _arrow(delta) {
     if (delta === undefined || delta === null) return '';

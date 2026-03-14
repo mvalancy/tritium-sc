@@ -159,6 +159,10 @@ const storePlain = storeCode
     .replace(/^import\s+.*$/gm, '');
 vm.runInContext(storePlain, ctx);
 
+// Load panel-utils.js (shared helpers)
+vm.runInContext(fs.readFileSync(__dirname + '/../../src/frontend/js/command/panel-utils.js', 'utf8')
+    .replace(/^export\s+/gm, '').replace(/^import\s+.*$/gm, ''), ctx);
+
 // Load units.js panel
 const unitsCode = fs.readFileSync(__dirname + '/../../src/frontend/js/command/panels/units.js', 'utf8');
 const unitsPlain = unitsCode

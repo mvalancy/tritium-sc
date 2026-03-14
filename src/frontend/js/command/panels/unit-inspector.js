@@ -9,13 +9,8 @@
 import { TritiumStore } from '../store.js';
 import { EventBus } from '../events.js';
 import { DeviceControlRegistry, DeviceAPI } from '../device-modal.js';
+import { _esc } from '../panel-utils.js';
 
-function _esc(text) {
-    if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = String(text);
-    return div.innerHTML;
-}
 
 function _resolveModalType(unit) {
     const type = unit.asset_type || unit.type || 'generic';

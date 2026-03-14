@@ -56,6 +56,17 @@ function _fileMenuItems(layoutManager) {
     ];
 }
 
+// Panel categories — group 54 panels into logical sections
+const PANEL_CATEGORIES = {
+    'Tactical':      ['ops-dashboard', 'units', 'unit-inspector', 'alerts', 'escalation', 'missions', 'patrol', 'geofence', 'zones', 'minimap', 'layers', 'bookmarks'],
+    'Intelligence':  ['search', 'dossiers', 'dossier-groups', 'graph-explorer', 'timeline', 'target-search', 'target-compare', 'target-merge', 'heatmap', 'heatmap-timeline', 'automation'],
+    'Sensors':       ['edge-tracker', 'camera-feeds', 'cameras', 'multi-camera', 'rf-motion', 'mesh', 'sensors', 'tak'],
+    'Fleet':         ['fleet', 'fleet-dashboard', 'device-manager', 'assets'],
+    'AI & Comms':    ['amy', 'amy-conversation', 'graphlings', 'audio', 'notifications', 'notification-prefs'],
+    'Simulation':    ['game', 'battle-stats', 'replay', 'scenarios'],
+    'System':        ['system', 'system-health', 'testing', 'export-scheduler', 'events', 'videos', 'quick-start', 'setup-wizard'],
+};
+
 function _viewMenuItems(panelManager) {
     const keyMap = {
         amy: '1', units: '2', alerts: '3', game: '4', mesh: '5',
@@ -63,11 +74,42 @@ function _viewMenuItems(panelManager) {
         minimap: 'M', replay: 'R', sensors: 'E', 'battle-stats': 'P',
         'unit-inspector': 'J', layers: 'L',
     };
-    const items = panelManager.getRegisteredPanels().map(p => ({
-        label: p.title, shortcut: keyMap[p.id] || '', checkable: true,
-        checked: () => panelManager.isOpen(p.id),
-        action: () => panelManager.toggle(p.id),
-    }));
+    const allPanels = panelManager.getRegisteredPanels();
+    const panelMap = new Map(allPanels.map(p => [p.id, p]));
+    const categorized = new Set();
+    const items = [];
+
+    for (const [category, ids] of Object.entries(PANEL_CATEGORIES)) {
+        const catItems = [];
+        for (const id of ids) {
+            const p = panelMap.get(id);
+            if (!p) continue;
+            categorized.add(id);
+            catItems.push({
+                label: p.title, shortcut: keyMap[id] || '', checkable: true,
+                checked: () => panelManager.isOpen(id),
+                action: () => panelManager.toggle(id),
+            });
+        }
+        if (catItems.length > 0) {
+            items.push({ header: category });
+            items.push(...catItems);
+        }
+    }
+
+    // Any uncategorized panels go under "Other"
+    const uncategorized = allPanels.filter(p => !categorized.has(p.id));
+    if (uncategorized.length > 0) {
+        items.push({ header: 'Other' });
+        for (const p of uncategorized) {
+            items.push({
+                label: p.title, shortcut: keyMap[p.id] || '', checkable: true,
+                checked: () => panelManager.isOpen(p.id),
+                action: () => panelManager.toggle(p.id),
+            });
+        }
+    }
+
     items.push({ separator: true });
     items.push({ label: 'Show All', action: () => {
         for (const p of panelManager.getRegisteredPanels()) panelManager.open(p.id);
@@ -375,6 +417,13 @@ function _buildDropdown(dropdown, items, barEl, layoutManager, closeAll) {
             const sep = document.createElement('div');
             sep.className = 'menu-separator';
             dropdown.appendChild(sep);
+            continue;
+        }
+        if (item.header) {
+            const hdr = document.createElement('div');
+            hdr.className = 'menu-category-header';
+            hdr.textContent = item.header;
+            dropdown.appendChild(hdr);
             continue;
         }
 

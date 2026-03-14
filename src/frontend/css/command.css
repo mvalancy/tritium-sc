@@ -3243,7 +3243,7 @@ body.v2 {
     box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5), 0 0 1px rgba(0, 240, 255, 0.1);
     z-index: 300;
     padding: 4px 0;
-    max-height: 400px;
+    max-height: 70vh;
     overflow-y: auto;
 }
 
@@ -3302,6 +3302,23 @@ body.v2 {
     height: 1px;
     background: var(--border);
     margin: 4px 8px;
+}
+
+.menu-category-header {
+    padding: 6px 12px 3px 10px;
+    font-family: var(--font-mono);
+    font-size: 0.45rem;
+    letter-spacing: 0.1em;
+    color: var(--cyan, #00f0ff);
+    text-transform: uppercase;
+    user-select: none;
+    border-top: 1px solid rgba(0, 240, 255, 0.08);
+    margin-top: 2px;
+}
+
+.menu-category-header:first-child {
+    border-top: none;
+    margin-top: 0;
 }
 
 /* Panel toggle buttons on the right side of the menu bar */

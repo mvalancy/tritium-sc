@@ -624,8 +624,8 @@ console.log('\n--- Quick-access panel buttons ---');
     ctx.container = container; ctx.pm = pm; ctx.lm = lm; ctx.ma = ma;
     const bar = vm.runInContext('createMenuBar(container, pm, lm, ma)', ctx);
     const right = bar.children[1];
-    // 10 panel buttons + 1 save input = 11 children
-    assert(right.children.length === 11, 'right has 11 children (10 panel buttons + save input), got ' + right.children.length);
+    // 1 search input + 10 panel buttons + 1 save input = 12 children
+    assert(right.children.length === 12, 'right has 12 children (search + 10 panel buttons + save input), got ' + right.children.length);
 })();
 
 (function testPanelButtonLabels() {
@@ -638,9 +638,10 @@ console.log('\n--- Quick-access panel buttons ---');
     const bar = vm.runInContext('createMenuBar(container, pm, lm, ma)', ctx);
     const right = bar.children[1];
     // _shortLabel takes first word of title and uppercases it
+    // children[0] is the search input, panel buttons start at index 1
     const expected = ['AMY', 'UNITS', 'ALERTS', 'GAME', 'MESH', 'CAMERA', 'INTEL', 'TAK', 'RECORDINGS', 'ZONES'];
     for (let i = 0; i < expected.length; i++) {
-        const btn = right.children[i];
+        const btn = right.children[i + 1];
         assert(btn.textContent === expected[i],
             'panel button ' + i + ' text is "' + expected[i] + '", got "' + btn.textContent + '"');
     }
@@ -655,8 +656,9 @@ console.log('\n--- Quick-access panel buttons ---');
     ctx.container = container; ctx.pm = pm; ctx.lm = lm; ctx.ma = ma;
     const bar = vm.runInContext('createMenuBar(container, pm, lm, ma)', ctx);
     const right = bar.children[1];
+    // children[0] is search input, panel buttons start at index 1
     for (let i = 0; i < defaultPanels.length; i++) {
-        const btn = right.children[i];
+        const btn = right.children[i + 1];
         assert(btn.className === 'command-bar-btn', 'panel button ' + i + ' has className command-bar-btn');
     }
 })();
@@ -670,9 +672,10 @@ console.log('\n--- Quick-access panel buttons ---');
     ctx.container = container; ctx.pm = pm; ctx.lm = lm; ctx.ma = ma;
     const bar = vm.runInContext('createMenuBar(container, pm, lm, ma)', ctx);
     const right = bar.children[1];
+    // children[0] is search input, panel buttons start at index 1
     const expectedIds = ['amy', 'units', 'alerts', 'game', 'mesh', 'cameras', 'search', 'tak', 'videos', 'zones'];
     for (let i = 0; i < expectedIds.length; i++) {
-        const btn = right.children[i];
+        const btn = right.children[i + 1];
         assert(btn.dataset.panel === expectedIds[i],
             'panel button ' + i + ' data-panel is "' + expectedIds[i] + '", got "' + btn.dataset.panel + '"');
     }
@@ -688,14 +691,15 @@ console.log('\n--- Quick-access panel buttons ---');
     ctx.container = container; ctx.pm = pm; ctx.lm = lm; ctx.ma = ma;
     const bar = vm.runInContext('createMenuBar(container, pm, lm, ma)', ctx);
     const right = bar.children[1];
-    // amy (index 0) is open
-    assert(right.children[0]._classList.has('active'), 'AMY button has active class (panel is open)');
-    // units (index 1) is closed
-    assert(!right.children[1]._classList.has('active'), 'UNITS button does NOT have active class (panel is closed)');
-    // alerts (index 2) is open
-    assert(right.children[2]._classList.has('active'), 'ALERTS button has active class (panel is open)');
-    // game (index 3) is closed
-    assert(!right.children[3]._classList.has('active'), 'GAME button does NOT have active class (panel is closed)');
+    // children[0] is search input, panel buttons start at index 1
+    // amy (index 1) is open
+    assert(right.children[1]._classList.has('active'), 'AMY button has active class (panel is open)');
+    // units (index 2) is closed
+    assert(!right.children[2]._classList.has('active'), 'UNITS button does NOT have active class (panel is closed)');
+    // alerts (index 3) is open
+    assert(right.children[3]._classList.has('active'), 'ALERTS button has active class (panel is open)');
+    // game (index 4) is closed
+    assert(!right.children[4]._classList.has('active'), 'GAME button does NOT have active class (panel is closed)');
 })();
 
 (function testPanelButtonTitle() {
@@ -707,9 +711,9 @@ console.log('\n--- Quick-access panel buttons ---');
     ctx.container = container; ctx.pm = pm; ctx.lm = lm; ctx.ma = ma;
     const bar = vm.runInContext('createMenuBar(container, pm, lm, ma)', ctx);
     const right = bar.children[1];
-    // Amy should have key "1"
-    assert(right.children[0].title.includes('1'), 'AMY button title includes shortcut key "1"');
-    assert(right.children[0].title.includes('AMY COMMANDER'), 'AMY button title includes panel title');
+    // Amy should have key "1" (children[0] is search input, buttons start at 1)
+    assert(right.children[1].title.includes('1'), 'AMY button title includes shortcut key "1"');
+    assert(right.children[1].title.includes('AMY COMMANDER'), 'AMY button title includes panel title');
 })();
 
 (function testPanelButtonClickTogglesPanel() {
@@ -721,7 +725,7 @@ console.log('\n--- Quick-access panel buttons ---');
     ctx.container = container; ctx.pm = pm; ctx.lm = lm; ctx.ma = ma;
     const bar = vm.runInContext('createMenuBar(container, pm, lm, ma)', ctx);
     const right = bar.children[1];
-    const unitsBtn = right.children[1]; // units, initially closed
+    const unitsBtn = right.children[2]; // units, initially closed (index 0 is search)
     assert(!pm._openState['units'], 'units is initially closed');
     unitsBtn.click();
     assert(pm._openState['units'], 'clicking UNITS button toggles panel open');
@@ -742,7 +746,7 @@ console.log('\n--- Save input ---');
     ctx.container = container; ctx.pm = pm; ctx.lm = lm; ctx.ma = ma;
     const bar = vm.runInContext('createMenuBar(container, pm, lm, ma)', ctx);
     const right = bar.children[1];
-    const saveInput = right.children[10]; // last child
+    const saveInput = right.children[11]; // last child
     assert(saveInput.className === 'command-bar-save-input', 'save input has correct className');
 })();
 
@@ -755,7 +759,7 @@ console.log('\n--- Save input ---');
     ctx.container = container; ctx.pm = pm; ctx.lm = lm; ctx.ma = ma;
     const bar = vm.runInContext('createMenuBar(container, pm, lm, ma)', ctx);
     const right = bar.children[1];
-    const saveInput = right.children[10];
+    const saveInput = right.children[11];
     assert(saveInput.hidden === true, 'save input starts hidden');
 })();
 
@@ -768,7 +772,7 @@ console.log('\n--- Save input ---');
     ctx.container = container; ctx.pm = pm; ctx.lm = lm; ctx.ma = ma;
     const bar = vm.runInContext('createMenuBar(container, pm, lm, ma)', ctx);
     const right = bar.children[1];
-    const saveInput = right.children[10];
+    const saveInput = right.children[11];
     assert(saveInput.type === 'text', 'save input type is "text"');
 })();
 
@@ -781,7 +785,7 @@ console.log('\n--- Save input ---');
     ctx.container = container; ctx.pm = pm; ctx.lm = lm; ctx.ma = ma;
     const bar = vm.runInContext('createMenuBar(container, pm, lm, ma)', ctx);
     const right = bar.children[1];
-    const saveInput = right.children[10];
+    const saveInput = right.children[11];
     assert(saveInput.placeholder === 'Layout name...', 'save input has correct placeholder');
 })();
 
@@ -794,7 +798,7 @@ console.log('\n--- Save input ---');
     ctx.container = container; ctx.pm = pm; ctx.lm = lm; ctx.ma = ma;
     const bar = vm.runInContext('createMenuBar(container, pm, lm, ma)', ctx);
     const right = bar.children[1];
-    const saveInput = right.children[10];
+    const saveInput = right.children[11];
     assert(saveInput.maxLength === 24, 'save input maxLength is 24');
 })();
 
@@ -807,7 +811,7 @@ console.log('\n--- Save input ---');
     ctx.container = container; ctx.pm = pm; ctx.lm = lm; ctx.ma = ma;
     const bar = vm.runInContext('createMenuBar(container, pm, lm, ma)', ctx);
     const right = bar.children[1];
-    const saveInput = right.children[10];
+    const saveInput = right.children[11];
     saveInput.hidden = false;
     saveInput.value = 'test-layout';
     // Simulate Enter keydown
@@ -829,7 +833,7 @@ console.log('\n--- Save input ---');
     ctx.container = container; ctx.pm = pm; ctx.lm = lm; ctx.ma = ma;
     const bar = vm.runInContext('createMenuBar(container, pm, lm, ma)', ctx);
     const right = bar.children[1];
-    const saveInput = right.children[10];
+    const saveInput = right.children[11];
     saveInput.hidden = false;
     const handlers = saveInput._eventListeners['keydown'];
     if (handlers && handlers.length > 0) {
@@ -847,7 +851,7 @@ console.log('\n--- Save input ---');
     ctx.container = container; ctx.pm = pm; ctx.lm = lm; ctx.ma = ma;
     const bar = vm.runInContext('createMenuBar(container, pm, lm, ma)', ctx);
     const right = bar.children[1];
-    const saveInput = right.children[10];
+    const saveInput = right.children[11];
     saveInput.hidden = false;
     saveInput.value = '   '; // whitespace only
     const handlers = saveInput._eventListeners['keydown'];
@@ -872,7 +876,7 @@ console.log('\n--- focusSaveInput ---');
     ctx.container = container; ctx.pm = pm; ctx.lm = lm; ctx.ma = ma;
     const bar = vm.runInContext('createMenuBar(container, pm, lm, ma)', ctx);
     const right = bar.children[1];
-    const saveInput = right.children[10];
+    const saveInput = right.children[11];
     saveInput.value = 'old-value';
 
     ctx._bar = bar;
@@ -999,7 +1003,7 @@ console.log('\n--- EventBus panel sync ---');
     ctx.container = container; ctx.pm = pm; ctx.lm = lm; ctx.ma = ma;
     const bar = vm.runInContext('createMenuBar(container, pm, lm, ma)', ctx);
     const right = bar.children[1];
-    const unitsBtn = right.children[1]; // units, initially closed
+    const unitsBtn = right.children[2]; // units, initially closed (index 0 is search)
     assert(!unitsBtn._classList.has('active'), 'UNITS button starts without active');
 
     // Emit panel:opened
@@ -1016,7 +1020,7 @@ console.log('\n--- EventBus panel sync ---');
     ctx.container = container; ctx.pm = pm; ctx.lm = lm; ctx.ma = ma;
     const bar = vm.runInContext('createMenuBar(container, pm, lm, ma)', ctx);
     const right = bar.children[1];
-    const amyBtn = right.children[0]; // amy, initially open
+    const amyBtn = right.children[1]; // amy, initially open (index 0 is search)
     assert(amyBtn._classList.has('active'), 'AMY button starts with active');
 
     // Emit panel:closed
@@ -1039,8 +1043,8 @@ console.log('\n--- EventBus panel sync ---');
     pm._openState['units'] = true;
 
     vm.runInContext('EventBus.emit("layout:changed")', ctx);
-    assert(!right.children[0]._classList.has('active'), 'layout:changed syncs AMY button to closed');
-    assert(right.children[1]._classList.has('active'), 'layout:changed syncs UNITS button to open');
+    assert(!right.children[1]._classList.has('active'), 'layout:changed syncs AMY button to closed');
+    assert(right.children[2]._classList.has('active'), 'layout:changed syncs UNITS button to open');
 })();
 
 (function testPanelOpenedIgnoresUnknownId() {
@@ -1139,18 +1143,25 @@ console.log('\n--- Dropdown items structure ---');
     const viewDropdown = left.children[1].children[1];
 
     viewTrigger.click();
-    // VIEW menu: 10 panel items + separator + Show All + Hide All + separator + Fullscreen = 15
-    assert(viewDropdown.children.length === 15,
-        'VIEW dropdown has 15 items (10 panels + sep + show all + hide all + sep + fullscreen), got ' + viewDropdown.children.length);
+    // VIEW menu: 6 category headers + 10 panel items + separator + Show All + Hide All + separator + Fullscreen = 21
+    assert(viewDropdown.children.length === 21,
+        'VIEW dropdown has 21 items (6 headers + 10 panels + sep + show all + hide all + sep + fullscreen), got ' + viewDropdown.children.length);
 
-    // First item (AMY COMMANDER) should be checkable with check indicator
-    const amyItem = viewDropdown.children[0];
-    assert(amyItem.className === 'menu-item', 'AMY COMMANDER item is a menu-item');
-    // Check indicator is first child
-    const check = amyItem.children[0];
-    assert(check.className === 'menu-item-check', 'first child is menu-item-check');
-    // AMY is open, so check should have bullet
-    assert(check.textContent === '\u2022', 'check indicator shows bullet for open panel');
+    // First item is a category header (Tactical), find first panel item (menu-item)
+    const firstHeader = viewDropdown.children[0];
+    assert(firstHeader.className === 'menu-category-header', 'first child is a category header, got "' + firstHeader.className + '"');
+    // Find AMY panel item -- it is under "AI & Comms" category
+    const menuItems = Array.from(viewDropdown.children).filter(c => c.className === 'menu-item');
+    assert(menuItems.length === 13, '13 menu-items (10 panels + Show All + Hide All + Fullscreen), got ' + menuItems.length);
+    // AMY should be checkable with check indicator (it is open)
+    const amyItem = menuItems.find(item => {
+        const label = item.children[1];
+        return label && label.textContent === 'AMY COMMANDER';
+    });
+    assert(amyItem, 'AMY COMMANDER item found in VIEW menu');
+    const check = amyItem ? amyItem.children[0] : null;
+    assert(check && check.className === 'menu-item-check', 'first child is menu-item-check');
+    assert(check && check.textContent === '\u2022', 'check indicator shows bullet for open panel');
 })();
 
 (function testViewMenuUncheckedItem() {
@@ -1166,10 +1177,15 @@ console.log('\n--- Dropdown items structure ---');
     const viewDropdown = left.children[1].children[1];
 
     viewTrigger.click();
-    // UNITS (index 1) is closed
-    const unitsItem = viewDropdown.children[1];
-    const check = unitsItem.children[0];
-    assert(check.textContent === '', 'check indicator is empty for closed panel');
+    // UNITS is closed — find it by label
+    const menuItems2 = Array.from(viewDropdown.children).filter(c => c.className === 'menu-item');
+    const unitsItem = menuItems2.find(item => {
+        const label = item.children[1];
+        return label && label.textContent === 'UNITS';
+    });
+    assert(unitsItem, 'UNITS item found in VIEW menu');
+    const check = unitsItem ? unitsItem.children[0] : null;
+    assert(check && check.textContent === '', 'check indicator is empty for closed panel');
 })();
 
 (function testViewMenuSeparator() {
@@ -1185,9 +1201,10 @@ console.log('\n--- Dropdown items structure ---');
     const viewDropdown = left.children[1].children[1];
 
     viewTrigger.click();
-    // 11th item (index 10) should be a separator (after 10 panel items)
-    const sep = viewDropdown.children[10];
-    assert(sep.className === 'menu-separator', 'item at index 10 is a separator, got class "' + sep.className + '"');
+    // After all category headers and panel items, there should be a separator before Show All/Hide All
+    const allChildren = Array.from(viewDropdown.children);
+    const seps = allChildren.filter(c => c.className === 'menu-separator');
+    assert(seps.length >= 1, 'VIEW dropdown contains at least one separator, got ' + seps.length);
 })();
 
 (function testViewMenuShortcuts() {
@@ -1203,10 +1220,15 @@ console.log('\n--- Dropdown items structure ---');
     const viewDropdown = left.children[1].children[1];
 
     viewTrigger.click();
-    // AMY item (index 0) has shortcut '1'
-    const amyItem = viewDropdown.children[0];
+    // Find AMY item by label (first child is now a category header)
+    const allItems = Array.from(viewDropdown.children).filter(c => c.className === 'menu-item');
+    const amyShortcutItem = allItems.find(item => {
+        const label = item.children[1];
+        return label && label.textContent === 'AMY COMMANDER';
+    });
+    assert(amyShortcutItem, 'AMY COMMANDER item found for shortcut test');
     // Find shortcut span: check(0), label(1), spacer(2), shortcut(3)
-    const shortcut = amyItem.children[3];
+    const shortcut = amyShortcutItem ? amyShortcutItem.children[3] : null;
     assert(shortcut && shortcut.className === 'menu-item-shortcut', 'AMY item has shortcut span');
     assert(shortcut && shortcut.textContent === '1', 'AMY item shortcut is "1"');
 })();
@@ -1683,8 +1705,8 @@ console.log('\n--- Edge cases ---');
     ctx.container = container; ctx.pm = pm; ctx.lm = lm; ctx.ma = ma;
     const bar = vm.runInContext('createMenuBar(container, pm, lm, ma)', ctx);
     const right = bar.children[1];
-    // Only the save input, no panel buttons
-    assert(right.children.length === 1, 'right side has only save input when no panels, got ' + right.children.length);
+    // Search input + save input, no panel buttons
+    assert(right.children.length === 2, 'right side has search input + save input when no panels, got ' + right.children.length);
 })();
 
 (function testLayoutManagerNoUserLayouts() {

@@ -6,13 +6,8 @@
 // Uses /api/discovery/*, /api/cameras/*, /api/telemetry/* endpoints.
 
 import { EventBus } from '../events.js';
+import { _esc } from '../panel-utils.js';
 
-function _esc(text) {
-    if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = String(text);
-    return div.innerHTML;
-}
 
 export const SystemPanelDef = {
     id: 'system',

@@ -6,13 +6,8 @@
 // Subscribes to: EventBus '*' (all events), filtered to relevant types.
 
 import { EventBus } from '../events.js';
+import { _esc } from '../panel-utils.js';
 
-function _esc(text) {
-    if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = String(text);
-    return div.innerHTML;
-}
 
 const EVENT_TYPES = {
     'alert:new':          { label: 'ALERT',   color: '#fcee0a', icon: '!' },

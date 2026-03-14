@@ -104,6 +104,12 @@ const mockDocument = {
 // exposed on window.GameHudHelpers and window.CombatStatsTracker.
 // The approach: read the file, strip the ESM import/export, provide mocks.
 
+// Load panel-utils first (provides _esc, _timeAgo, etc.)
+const panelUtilsCode = fs.readFileSync(__dirname + '/../../src/frontend/js/command/panel-utils.js', 'utf8');
+const panelUtilsPlain = panelUtilsCode
+    .replace(/^export\s+/gm, '')
+    .replace(/^import\s+.*$/gm, '');
+
 const gameHudCode = fs.readFileSync(__dirname + '/../../src/frontend/js/command/panels/game-hud.js', 'utf8');
 
 // Strip ES module import statements and export keyword
@@ -136,6 +142,7 @@ const ctx = vm.createContext({
 });
 
 try {
+    vm.runInContext(panelUtilsPlain, ctx);
     vm.runInContext(processedCode, ctx);
 } catch (e) {
     console.error('Failed to load game-hud.js:', e.message);

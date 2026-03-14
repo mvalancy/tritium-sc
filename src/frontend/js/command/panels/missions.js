@@ -6,13 +6,8 @@
 // geofence zone definition, and lifecycle management (start/pause/complete/abort).
 
 import { EventBus } from '../events.js';
+import { _esc } from '../panel-utils.js';
 
-function _esc(text) {
-    if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = String(text);
-    return div.innerHTML;
-}
 
 const STATUS_COLORS = {
     draft: '#888',

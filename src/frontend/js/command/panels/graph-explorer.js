@@ -7,6 +7,7 @@
 // drag to rearrange, scroll to zoom, right-drag to pan.
 
 import { EventBus } from '../events.js';
+import { _esc } from '../panel-utils.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -47,12 +48,6 @@ const LEGEND_FONT = '10px monospace';
 // Helpers
 // ---------------------------------------------------------------------------
 
-function _esc(text) {
-    if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = String(text);
-    return div.innerHTML;
-}
 
 function edgeConfidenceColor(confidence) {
     const c = Math.max(0, Math.min(1, confidence || 0));

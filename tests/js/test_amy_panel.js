@@ -159,6 +159,13 @@ const storePlain = storeCode
     .replace(/^import\s+.*$/gm, '');
 vm.runInContext(storePlain, ctx);
 
+// Load panel-utils.js (shared helpers)
+const panelUtilsCode = fs.readFileSync(__dirname + '/../../src/frontend/js/command/panel-utils.js', 'utf8');
+const panelUtilsPlain = panelUtilsCode
+    .replace(/^export\s+/gm, '')
+    .replace(/^import\s+.*$/gm, '');
+vm.runInContext(panelUtilsPlain, ctx);
+
 // Load amy.js panel
 const amyCode = fs.readFileSync(__dirname + '/../../src/frontend/js/command/panels/amy.js', 'utf8');
 const amyPlain = amyCode

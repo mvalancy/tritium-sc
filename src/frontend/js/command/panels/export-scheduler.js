@@ -9,13 +9,8 @@
 // Uses existing export APIs.
 
 import { EventBus } from '../events.js';
+import { _esc } from '../panel-utils.js';
 
-function _esc(text) {
-    if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = String(text);
-    return div.innerHTML;
-}
 
 // Scheduled exports persisted in localStorage
 const STORAGE_KEY = 'tritium-export-schedules';

@@ -7,13 +7,8 @@
 //                fleet:registered, fleet:offline
 
 import { EventBus } from '../events.js';
+import { _esc, _timeAgo } from '../panel-utils.js';
 
-function _esc(text) {
-    if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = String(text);
-    return div.innerHTML;
-}
 
 // ============================================================
 // Status helpers
@@ -40,15 +35,6 @@ function _healthColor(classification) {
     }
 }
 
-function _timeAgo(ts) {
-    if (!ts) return 'never';
-    const secs = Math.floor(Date.now() / 1000 - ts);
-    if (secs < 5) return 'just now';
-    if (secs < 60) return `${secs}s ago`;
-    if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
-    if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
-    return `${Math.floor(secs / 86400)}d ago`;
-}
 
 function _formatBytes(bytes) {
     if (bytes === undefined || bytes === null) return '--';

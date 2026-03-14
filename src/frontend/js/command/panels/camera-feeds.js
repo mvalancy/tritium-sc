@@ -6,22 +6,7 @@
 // with live MJPEG preview, status indicators, and latest detection info.
 
 import { EventBus } from '../events.js';
-
-function _esc(text) {
-    if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = String(text);
-    return div.innerHTML;
-}
-
-function _timeAgo(ts) {
-    if (!ts) return '';
-    const secs = Math.floor((Date.now() - new Date(ts).getTime()) / 1000);
-    if (secs < 5) return 'just now';
-    if (secs < 60) return `${secs}s ago`;
-    if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
-    return `${Math.floor(secs / 3600)}h ago`;
-}
+import { _esc, _timeAgo } from '../panel-utils.js';
 
 function _statusDot(status) {
     const colors = {

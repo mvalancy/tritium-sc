@@ -83,6 +83,10 @@ const ctx = vm.createContext({
     module: { exports: {} },
 });
 
+// Load panel-utils.js (shared helpers)
+vm.runInContext(fs.readFileSync(__dirname + '/../../src/frontend/js/command/panel-utils.js', 'utf8')
+    .replace(/^export\s+/gm, '').replace(/^import\s+.*$/gm, ''), ctx);
+
 // Load the game-hud.js file (it will register helpers on window)
 const hudCode = fs.readFileSync(__dirname + '/../../src/frontend/js/command/panels/game-hud.js', 'utf8');
 // Strip ES module syntax for Node.js

@@ -8,13 +8,8 @@
 
 import { EventBus } from '../events.js';
 import { TritiumStore } from '../store.js';
+import { _esc } from '../panel-utils.js';
 
-function _esc(text) {
-    if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = String(text);
-    return div.innerHTML;
-}
 
 // Selected target IDs for comparison
 let _selectedIds = [];

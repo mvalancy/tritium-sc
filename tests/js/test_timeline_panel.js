@@ -83,6 +83,7 @@ const ctx = vm.createContext(sandbox);
 // Load dependencies
 vm.runInContext(fs.readFileSync(__dirname + '/../../src/frontend/js/command/events.js', 'utf8').replace(/^export\s+/gm, '').replace(/^import\s+.*$/gm, ''), ctx);
 vm.runInContext(fs.readFileSync(__dirname + '/../../src/frontend/js/command/store.js', 'utf8').replace(/^export\s+/gm, '').replace(/^import\s+.*$/gm, ''), ctx);
+vm.runInContext(fs.readFileSync(__dirname + '/../../src/frontend/js/command/panel-utils.js', 'utf8').replace(/^export\s+/gm, '').replace(/^import\s+.*$/gm, ''), ctx);
 
 // Load timeline panel
 const tlCode = fs.readFileSync(__dirname + '/../../src/frontend/js/command/panels/timeline.js', 'utf8');
