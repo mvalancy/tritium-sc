@@ -797,6 +797,49 @@ async def lifespan(app: FastAPI):
         if sim_engine is not None:
             sim_engine.set_plugin_manager(plugin_manager)
 
+    # RL auto-retrain scheduler — retrains correlation model every 6h or
+    # after 50 new feedback entries. Pushes results to Amy's sensorium.
+    try:
+        from engine.intelligence.correlation_learner import start_retrain_scheduler
+
+        def _on_retrain(result: dict) -> None:
+            """Push retrain results into Amy's sensorium for narration."""
+            _amy = getattr(app.state, "amy", None)
+            if _amy is None or not hasattr(_amy, "sensorium"):
+                return
+            success = result.get("success", False)
+            accuracy = result.get("accuracy", 0.0)
+            count = result.get("training_count", 0)
+            if success:
+                if accuracy < 0.70:
+                    _amy.sensorium.push(
+                        "tactical",
+                        f"Correlation model retrained but accuracy is low: "
+                        f"{accuracy:.0%} on {count} examples. Needs more feedback.",
+                        importance=0.8,
+                    )
+                else:
+                    _amy.sensorium.push(
+                        "tactical",
+                        f"Correlation model retrained: {accuracy:.0%} accuracy "
+                        f"on {count} examples. Target fusion improving.",
+                        importance=0.5,
+                    )
+            else:
+                error = result.get("error", "unknown")
+                if "Insufficient" not in str(error):
+                    _amy.sensorium.push(
+                        "tactical",
+                        f"Correlation model retrain failed: {error}",
+                        importance=0.6,
+                    )
+
+        _retrain_sched = start_retrain_scheduler(on_retrain=_on_retrain)
+        app.state.retrain_scheduler = _retrain_sched
+        logger.info("RL retrain scheduler started (6h interval, 50-entry threshold)")
+    except Exception as e:
+        logger.warning(f"Retrain scheduler failed to start: {e}")
+
     # Record startup time for /api/health uptime calculation
     from app.routers.health import reset_start_time
     reset_start_time()
@@ -827,6 +870,11 @@ async def lifespan(app: FastAPI):
     _enrich_pipe = getattr(app.state, "enrichment_pipeline", None)
     if _enrich_pipe is not None:
         _enrich_pipe.stop()
+
+    # Stop retrain scheduler
+    _retrain = getattr(app.state, "retrain_scheduler", None)
+    if _retrain is not None:
+        _retrain.stop()
 
     _shutdown_subsystems(amy_instance, sim_engine, mqtt_bridge, app)
     logger.info("TRITIUM-SC shutting down...")

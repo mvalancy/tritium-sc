@@ -15,6 +15,7 @@ LearnedScorer from tritium-lib.
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from pathlib import Path
 from typing import Any, Optional
@@ -447,8 +448,125 @@ def _check_sklearn() -> bool:
         return False
 
 
+# ---------------------------------------------------------------------------
+# Auto-retrain scheduler
+# ---------------------------------------------------------------------------
+
+class RetrainScheduler:
+    """Periodically retrains the correlation model in a daemon thread.
+
+    Retrains every ``interval_seconds`` (default 6 hours) OR when the
+    TrainingStore accumulates ``retrain_threshold`` new feedback entries
+    since the last training run.
+
+    All callbacks (on_retrain) are invoked in the daemon thread.
+    """
+
+    def __init__(
+        self,
+        learner: CorrelationLearner,
+        *,
+        interval_seconds: float = 6 * 3600,  # 6 hours
+        retrain_threshold: int = 50,  # entries since last train
+        on_retrain: Optional[Any] = None,  # callback(result_dict)
+    ) -> None:
+        self._learner = learner
+        self._interval = interval_seconds
+        self._threshold = retrain_threshold
+        self._on_retrain = on_retrain
+        self._running = False
+        self._thread: Optional[threading.Thread] = None
+        self._last_feedback_count: int = 0
+
+    def start(self) -> None:
+        """Start the scheduler daemon thread."""
+        if self._running:
+            return
+        self._running = True
+        self._thread = threading.Thread(
+            target=self._loop,
+            name="retrain-scheduler",
+            daemon=True,
+        )
+        self._thread.start()
+        logger.info(
+            "RetrainScheduler started: interval=%ds, threshold=%d",
+            int(self._interval), self._threshold,
+        )
+
+    def stop(self) -> None:
+        """Stop the scheduler."""
+        self._running = False
+        if self._thread:
+            self._thread.join(timeout=5)
+            self._thread = None
+
+    @property
+    def running(self) -> bool:
+        return self._running
+
+    def _should_retrain(self) -> bool:
+        """Check if retraining is warranted due to new feedback."""
+        if self._learner._training_store is None:
+            return False
+        try:
+            stats = self._learner._training_store.get_stats()
+            current_confirmed = stats.get("correlation", {}).get("confirmed", 0)
+            delta = current_confirmed - self._last_feedback_count
+            if delta >= self._threshold:
+                return True
+        except Exception:
+            pass
+        return False
+
+    def _loop(self) -> None:
+        """Background retrain loop — sleeps in short segments for responsiveness."""
+        check_interval = min(60.0, self._interval)  # Check every minute
+        elapsed = 0.0
+
+        while self._running:
+            time.sleep(check_interval)
+            elapsed += check_interval
+
+            should_train = elapsed >= self._interval or self._should_retrain()
+
+            if should_train:
+                elapsed = 0.0
+                try:
+                    result = self._learner.train()
+                    if result.get("success"):
+                        # Update feedback count baseline
+                        try:
+                            stats = self._learner._training_store.get_stats()
+                            self._last_feedback_count = stats.get(
+                                "correlation", {}
+                            ).get("confirmed", 0)
+                        except Exception:
+                            pass
+
+                    logger.info(
+                        "Auto-retrain: success=%s accuracy=%.3f n=%d",
+                        result.get("success"),
+                        result.get("accuracy", 0.0),
+                        result.get("training_count", 0),
+                    )
+
+                    if self._on_retrain:
+                        try:
+                            self._on_retrain(result)
+                        except Exception as exc:
+                            logger.warning("Retrain callback failed: %s", exc)
+                except Exception as exc:
+                    logger.error("Auto-retrain failed: %s", exc)
+
+
+# ---------------------------------------------------------------------------
+# Singletons
+# ---------------------------------------------------------------------------
+
 # Singleton learner
 _learner: Optional[CorrelationLearner] = None
+_scheduler: Optional[RetrainScheduler] = None
 
 
 def get_correlation_learner(
@@ -469,3 +587,40 @@ def get_correlation_learner(
             model_path=model_path,
         )
     return _learner
+
+
+def start_retrain_scheduler(
+    on_retrain: Optional[Any] = None,
+    interval_seconds: float = 6 * 3600,
+    retrain_threshold: int = 50,
+) -> RetrainScheduler:
+    """Start the auto-retrain scheduler (singleton).
+
+    Args:
+        on_retrain: Optional callback invoked after each retrain with result dict.
+        interval_seconds: Max interval between retrains (default 6 hours).
+        retrain_threshold: Number of new feedback entries to trigger early retrain.
+
+    Returns:
+        The running RetrainScheduler.
+    """
+    global _scheduler
+    if _scheduler is not None and _scheduler.running:
+        return _scheduler
+    learner = get_correlation_learner()
+    _scheduler = RetrainScheduler(
+        learner,
+        interval_seconds=interval_seconds,
+        retrain_threshold=retrain_threshold,
+        on_retrain=on_retrain,
+    )
+    _scheduler.start()
+    return _scheduler
+
+
+def stop_retrain_scheduler() -> None:
+    """Stop the auto-retrain scheduler."""
+    global _scheduler
+    if _scheduler is not None:
+        _scheduler.stop()
+        _scheduler = None

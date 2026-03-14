@@ -12,6 +12,7 @@ correlation strategies evaluate the pair independently:
   2. Temporal co-movement — same direction and speed over time
   3. Signal pattern matching — BLE/camera appear/disappear together
   4. Dossier lookup — known prior associations from DossierStore
+  5. Learned model — RL-trained logistic regression from operator feedback
 
 Each strategy produces a score (0-1). A weighted sum determines final
 correlation confidence. When correlated, targets are merged and a
@@ -77,10 +78,11 @@ class CorrelationRecord:
 
 # Default strategy weights — spatial dominates, others contribute
 DEFAULT_WEIGHTS: dict[str, float] = {
-    "spatial": 0.40,
-    "temporal": 0.20,
-    "signal_pattern": 0.20,
-    "dossier": 0.20,
+    "spatial": 0.35,
+    "temporal": 0.18,
+    "signal_pattern": 0.17,
+    "dossier": 0.15,
+    "learned": 0.15,
 }
 
 
@@ -141,13 +143,38 @@ class TargetCorrelator:
         self._thread: threading.Thread | None = None
 
     def _default_strategies(self) -> list[CorrelationStrategy]:
-        """Create the default set of correlation strategies."""
-        return [
+        """Create the default set of correlation strategies (5 total)."""
+        strategies: list[CorrelationStrategy] = [
             SpatialStrategy(radius=self.radius),
             TemporalStrategy(history=self.tracker.history),
             SignalPatternStrategy(),
             DossierStrategy(dossier_store=self.dossier_store),
         ]
+
+        # Add learned strategy if CorrelationLearner is available
+        try:
+            from engine.intelligence.correlation_learner import (
+                LearnedStrategy,
+                get_correlation_learner,
+            )
+            learner = get_correlation_learner()
+            strategies.append(LearnedStrategy(learner))
+            logger.info("LearnedStrategy registered as 5th correlation strategy")
+        except Exception as exc:
+            logger.debug("LearnedStrategy not available: %s", exc)
+
+        return strategies
+
+    def add_strategy(self, strategy: CorrelationStrategy, weight: float = 0.1) -> None:
+        """Register an additional correlation strategy at runtime.
+
+        Args:
+            strategy: The strategy to add.
+            weight: Weight for the strategy in the weighted score.
+        """
+        self.strategies.append(strategy)
+        self.weights[strategy.name] = weight
+        logger.info("Added strategy %s with weight %.2f", strategy.name, weight)
 
     def correlate(self) -> list[CorrelationRecord]:
         """Run one correlation pass over all tracked targets.
